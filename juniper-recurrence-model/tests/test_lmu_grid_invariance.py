@@ -16,6 +16,7 @@ converting "fixed-Δt fails" from an analytic assertion into a measurement.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from juniper_recurrence_model.units import VariableStepLMUMemory, lmu_matrices
 
@@ -69,3 +70,25 @@ def test_rollout_rejects_nonpositive_gap():
     except ValueError:
         return
     raise AssertionError("rollout should raise ValueError on a non-positive gap")
+
+
+def test_lmu_matrices_rejects_bad_order():
+    with pytest.raises(ValueError):
+        lmu_matrices(0)
+
+
+def test_memory_rejects_nonpositive_theta():
+    with pytest.raises(ValueError):
+        VariableStepLMUMemory(8, 0.0)
+
+
+def test_rollout_rejects_shape_mismatch():
+    mem = VariableStepLMUMemory(8, 1.0)
+    with pytest.raises(ValueError):
+        mem.rollout(np.zeros(5), np.zeros(4))
+
+
+def test_decode_weights_length_matches_order():
+    mem = VariableStepLMUMemory(12, 1.0)
+    w = mem.decode_weights(0.5)
+    assert w.shape == (12,)

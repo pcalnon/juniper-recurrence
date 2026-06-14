@@ -1,0 +1,85 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence-model (subdirectory of juniper-recurrence)
+# File Name:     ci-recurrence-model.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-14
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    CI pipeline for the juniper-recurrence-model package. Runs on PRs and
+#    pushes that touch the package or this workflow. The future juniper-recurrence
+#    application's own ci.yml will gate the service independently; this workflow
+#    handles the model-package lifecycle (mirrors juniper-cascor's ci-protocol.yml).
+#
+#####################################################################################################################################################################################################
+
+name: CI — juniper-recurrence-model
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "juniper-recurrence-model/**"
+      - ".github/workflows/ci-recurrence-model.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "juniper-recurrence-model/**"
+      - ".github/workflows/ci-recurrence-model.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    defaults:
+      run:
+        working-directory: juniper-recurrence-model
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package + test extras
+        run: pip install --upgrade "pip>=26.1.1" && pip install -e ".[test]"
+
+      - name: Run unit tests with coverage
+        run: |
+          python -m pytest --cov=juniper_recurrence_model --cov-report=term-missing --cov-fail-under=90
+
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    needs: test
+    defaults:
+      run:
+        working-directory: juniper-recurrence-model
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build sdist + wheel
+        run: python -m build --sdist --wheel
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
