@@ -23,12 +23,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-# numpy-only at the core: the LMU memory is a fixed linear recurrence (the A/B
-# matrices are closed-form and never trained), so no autodiff framework is
-# required for the memory itself. A torch-backed read-in/readout arrives when the
-# model is wired to juniper-model-core's TrainableModel interface.
+# numpy at the core: the LMU memory is a fixed linear recurrence (the A/B matrices
+# are closed-form and never trained) and FixedOrderLMURegressor fits its readout in
+# closed form, so no autodiff framework is required. juniper-model-core supplies the
+# shared TrainableModel / ModelSerializer contract (and the conformance kit used in
+# tests). A torch-backed read-in/readout would only arrive for a BPTT variant.
 dependencies = [
     "numpy>=1.24",
+    "juniper-model-core>=0.1.0,<0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -62,3 +64,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "I", "N"]
+
+[tool.ruff.lint.pep8-naming]
+# `X` / `X_val` are the universal ML feature-matrix names and are fixed by the
+# juniper-model-core `TrainableModel` ABC signature this package overrides verbatim,
+# so allow them as argument / variable names (suppresses N803 / N806 for these only).
+extend-ignore-names = ["X", "X_val"]
