@@ -160,6 +160,73 @@ class VariableStepLMUMemory:
             out[k] = m[:, 0]
         return out
 
+    def rollout_batch(self, u: np.ndarray, dt: np.ndarray) -> np.ndarray:
+        """Batched, multi-channel ZOH rollout, integrated in the eigenbasis.
+
+        Rolls ``F`` independent input channels through this *same* fixed LMU memory
+        operator, for a batch of ``n`` sequences, with per-(sequence, step) real gaps
+        ``dt``. Channel ``f`` of sequence ``i`` evolves exactly as :meth:`rollout`
+        would for the 1-D drive ``u[i, :, f]`` — this is the per-feature identity
+        read-in of the recurrence regressor (each feature drives its own memory).
+
+        The recurrence is integrated in the eigenbasis of the fixed matrix ``A`` so a
+        step is an elementwise scaling by ``exp(z)`` rather than a per-sequence ``d×d``
+        matmul. The memory matrices are never differentiated (C1-clean); this returns
+        plain arrays with no autograd graph.
+
+        Parameters
+        ----------
+        u:
+            Per-step channel drives, shape ``(n, T, F)`` (``(n, T)`` is accepted and
+            treated as a single channel, ``F == 1``).
+        dt:
+            Per-step elapsed real time, shape ``(n, T)``. ``dt[:, 0]`` is unused (empty
+            initial window). Gaps must be ``>= 0``; ``dt == 0`` is a *no-op* step (the
+            memory is held and the step's drive is ignored), so padded tails past
+            ``seq_lengths`` pass through harmlessly. Negative gaps are a contract
+            violation.
+
+        Returns
+        -------
+        np.ndarray
+            Real memory trajectory of shape ``(n, T, F, d)``; ``out[:, 0]`` is the zero
+            initial state.
+
+        Notes
+        -----
+        Returns the full trajectory (needed for parity testing and a future dense
+        many-to-many readout); a many-to-one consumer keeps only the readout step.
+        A per-``dt``-bucket cache of ``exp(z)`` / ``expm1(z)/λ`` is a future
+        optimisation when ``dt`` is quantised (e.g. integer calendar-day gaps).
+        """
+        u = np.asarray(u, dtype=float)
+        if u.ndim == 2:
+            u = u[:, :, None]
+        if u.ndim != 3:
+            raise ValueError(f"u must be (n, T, F) or (n, T); got shape {u.shape}")
+        dt = np.asarray(dt, dtype=float)
+        n, n_steps, n_channels = u.shape
+        if dt.shape != (n, n_steps):
+            raise ValueError(f"dt must have shape {(n, n_steps)} to match u; got {dt.shape}")
+        if np.any(dt < 0):
+            raise ValueError("dt must be >= 0 everywhere (dt == 0 is a held/no-op step)")
+
+        lam = self.lam[None, :]  # (1, d)
+        vinv_b = self.VinvB[:, 0]  # (d,) — B projected into the eigenbasis
+        # eigen-coordinate state, complex: p[i, :, f] are the eigen-coefficients of memory f.
+        p = np.zeros((n, self.d, n_channels), dtype=np.complex128)
+        out = np.zeros((n, n_steps, n_channels, self.d), dtype=float)
+        for k in range(1, n_steps):
+            z = lam * (dt[:, k][:, None] / self.theta)  # (n, d)
+            ez = np.exp(z)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                fac = np.expm1(z) / lam
+            fac = np.where(np.abs(self.lam)[None, :] < _LAMBDA_ZERO_TOL, dt[:, k][:, None] / self.theta, fac)
+            gain = fac * vinv_b[None, :]  # (n, d) per-eigenmode input gain
+            p = ez[:, :, None] * p + gain[:, :, None] * u[:, k - 1, :][:, None, :]
+            out[:, k] = np.einsum("ij,njf->nif", self.V, p).real.transpose(0, 2, 1)
+        return out
+
     def decode_weights(self, rho: float) -> np.ndarray:
         """Readout weights to reconstruct the input at delay ``rho * theta`` into the past.
 

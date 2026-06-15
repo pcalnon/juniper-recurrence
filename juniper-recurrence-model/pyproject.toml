@@ -23,11 +23,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-# numpy at the core: the LMU memory is a fixed linear recurrence (the A/B matrices
-# are closed-form and never trained) and FixedOrderLMURegressor fits its readout in
-# closed form, so no autodiff framework is required. juniper-model-core supplies the
-# shared TrainableModel / ModelSerializer contract (and the conformance kit used in
-# tests). A torch-backed read-in/readout would only arrive for a BPTT variant.
+# numpy-only: the LMU memory is a fixed linear recurrence (the A/B matrices are
+# closed-form and never trained) and the fixed-order regressor's readout is a
+# closed-form least-squares solve, so no autodiff framework is required. (A
+# torch-backed trained projection read-in / nonlinear readout is a deferred
+# increment — the point at which torch would enter.)
 dependencies = [
     "numpy>=1.24",
     "juniper-model-core>=0.1.0,<0.2.0",
@@ -64,6 +64,16 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "I", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# A / B / V / Abar / Bbar are the linear-algebra matrix names from the LMU/HiPPO literature;
+# X / y / X_val / y_val are juniper-model-core's array-contract names (the standard ML
+# design-matrix / target convention). pep8-naming N803/N806 false-positive on these standard
+# mathematical / ML conventions, so they are ignored per-file — the names are correct, not renamed.
+"juniper_recurrence_model/units/lmu_varstep.py" = ["N806"]
+"juniper_recurrence_model/model.py" = ["N803", "N806"]
+"tests/test_lmu_grid_invariance.py" = ["N806"]
+"tests/test_lmu_model.py" = ["N806"]
 
 [tool.ruff.lint.pep8-naming]
 # `X` / `X_val` are the universal ML feature-matrix names and are fixed by the
