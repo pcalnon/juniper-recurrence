@@ -57,6 +57,9 @@ class LMURegressor(TrainableModel):
         LMU memory order (Legendre coefficients per feature). Practical range ~4..64.
     theta:
         Memory window length, in the same real-time units as ``dt`` (e.g. calendar days).
+        ``None`` (default) resolves it data-drivenly at ``fit``: the median per-window total
+        elapsed time ``median(sum(dt, axis=1))``, falling back to the window length ``T`` when
+        ``dt`` is absent or non-positive.
     ridge:
         L2 penalty on the readout (the bias column is never penalised). ``0.0`` (default)
         uses a plain min-norm least-squares solve — which lets the readout memorise a tiny
@@ -67,14 +70,15 @@ class LMURegressor(TrainableModel):
         Stored for the contract; the closed-form fit is deterministic regardless.
     """
 
-    def __init__(self, d: int = 16, theta: float = 30.0, *, ridge: float = 0.0, time_unit: str = "steps", random_seed: int | None = 0) -> None:
+    def __init__(self, d: int = 16, theta: float | None = None, *, ridge: float = 0.0, time_unit: str = "steps", random_seed: int | None = 0) -> None:
         self.task_type: TaskType = "regression"
         self.random_seed = random_seed
         self.d = int(d)
-        self.theta = float(theta)
+        self.theta: float | None = None if theta is None else float(theta)
         self.ridge = float(ridge)
         self.time_unit = str(time_unit)
-        self._memory = VariableStepLMUMemory(self.d, self.theta)
+        # When theta is data-driven (None) the fixed memory is built in fit(); see fit().
+        self._memory = None if self.theta is None else VariableStepLMUMemory(self.d, self.theta)
         self._coef: np.ndarray | None = None
         self._in_shape: tuple[int, ...] = ()
         self._out_shape: tuple[int, ...] = ()
@@ -131,6 +135,14 @@ class LMURegressor(TrainableModel):
         self._n_features = n_features
         self._out_shape = (int(y.shape[1]),)
         self._uses_target_dt = kw.get("target_dt") is not None
+        # Resolve a data-driven theta (median per-window elapsed time) when not pinned,
+        # then build the fixed LMU memory. A pinned theta is used as-is.
+        if self.theta is None:
+            window_dt = kw.get("dt")
+            theta = float(np.median(np.sum(np.asarray(window_dt, dtype=float), axis=1))) if window_dt is not None else float(n_steps)
+            self.theta = theta if theta > 0 else float(n_steps)
+        if self._memory is None:
+            self._memory = VariableStepLMUMemory(self.d, self.theta)
 
         seq = 0
         if on_event is not None:
