@@ -6,11 +6,8 @@ These pin the load-bearing claims of the model pick:
   - that reconstruction is *grid-invariant* — an irregular sampling grid does not
     materially degrade it (this is the irregular-Δt win Approach-C exists to deliver).
 
-Mirrors the verified reference util/ad-hoc/verify_delta_t_reference_code.py in juniper-ml.
-
-TODO (design doc §9.1a): add a FixedStepLMUMemory negative control asserting a
-fixed-Δt discretisation *fails* the e_irr bound that the variable-step memory passes,
-converting "fixed-Δt fails" from an analytic assertion into a measurement.
+Mirrors the verified reference util/ad-hoc/verify_delta_t_reference_code.py in juniper-ml,
+including the §9.1a fixed-Δt negative control (the FixedStepLMUMemory foil below).
 """
 
 from __future__ import annotations
@@ -92,3 +89,50 @@ def test_decode_weights_length_matches_order():
     mem = VariableStepLMUMemory(12, 1.0)
     w = mem.decode_weights(0.5)
     assert w.shape == (12,)
+
+
+class _FixedStepLMUMemory(VariableStepLMUMemory):
+    """§9.1a negative control: bakes Ā/B̄ ONCE at the grid's mean gap and applies them
+    uniformly, ignoring the actual per-step gaps (i.e. it assumes uniform sampling at the
+    average rate). On a regular grid this matches the variable-step memory; on an irregular
+    grid it mismodels every step, so its grid-invariance breaks. The empirical foil that
+    proves Approach-C's per-step Δt adaptation does real work."""
+
+    def rollout(self, u: np.ndarray, dt: np.ndarray) -> np.ndarray:
+        dt = np.asarray(dt, dtype=float)
+        gaps = dt[1:]
+        dt_bar = float(np.mean(gaps)) if gaps.size else 0.0
+        a_bar, b_bar = self.step_matrices(dt_bar)  # baked once at the mean gap
+        m = np.zeros((self.d, 1))
+        out = np.zeros((len(u), self.d))
+        for k in range(1, len(u)):
+            m = a_bar @ m + b_bar * u[k - 1]  # same matrices every step
+            out[k] = m[:, 0]
+        return out
+
+
+def test_fixed_dt_negative_control_degrades_on_irregular_grid():
+    """§9.1a: the variable-step memory passes the grid-invariance bound on every (d, ρ), while
+    a fixed-Δt control (baked at the mean gap) reconstructs the irregular grid ~2-4× worse. The
+    degradation *ratio*, not the lenient gate, is the load-bearing signal (the gate is generous
+    at these small errors). Mirrors verify_delta_t_reference_code.py in juniper-ml."""
+    theta, omega = 1.0, 2.0
+    rng = np.random.default_rng(0)
+    ratios = []
+    variable_passes_all = True
+    for d in (16, 24):
+        variable = VariableStepLMUMemory(d, theta)
+        fixed = _FixedStepLMUMemory(d, theta)
+        for rho in (0.5, 0.8, 1.0):
+            w = variable.decode_weights(rho)
+            t_reg = np.linspace(0, 12, 240)
+            gaps = np.r_[0.02, rng.uniform(0.02, 0.08, 239)]  # small gaps << theta: the sharp discriminator
+            t_irr = np.cumsum(gaps)
+            e_var_reg = _err_on(variable, t_reg, theta, omega, rho, w)
+            e_var_irr = _err_on(variable, t_irr, theta, omega, rho, w)
+            e_fixed_irr = _err_on(fixed, t_irr, theta, omega, rho, w)
+            variable_passes_all &= e_var_irr < 3.0 * e_var_reg + 0.02
+            ratios.append(e_fixed_irr / max(e_var_irr, 1e-9))
+    mean_ratio = float(np.mean(ratios))
+    assert variable_passes_all, "variable-step memory must pass the grid-invariance bound on every (d, rho)"
+    assert mean_ratio >= 2.0, f"fixed-Δt control should degrade ~2-4x on the irregular grid; got {mean_ratio:.1f}x"

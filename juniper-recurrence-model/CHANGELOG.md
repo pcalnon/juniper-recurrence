@@ -17,50 +17,49 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   Legendre Memory Unit (Approach-C): the fixed closed-form LegT state matrices and their exact
   variable-step zero-order-hold discretisation via a one-time eigendecomposition. C1-clean
   (no ODE solver, no autodiff-through-solver; `A`/`B` never trained). numpy-only.
-- **`juniper_recurrence_model.models.FixedOrderLMURegressor`** — the first *real recurrence*
-  model wired to the shared `juniper-model-core` `TrainableModel` contract (P3-C / Approach-C).
-  The LMU memory is **fixed**; only the linear readout is trained, in **closed form** via
-  `numpy.linalg.lstsq` (no BPTT, fully deterministic). Δt-native: accepts per-step gaps `dt` and
-  a `readout_mask` as `fit`/`predict` keywords, defaulting to uniform gaps and the final step so
-  the bare ABC `predict(X)` still works. Emits the `training_start` / `epoch_end` /
-  `training_end` events and reports canonical regression metrics (`mse`, `rmse`, `mae`, `r2`).
-- **`juniper_recurrence_model.models.LMURegressorSerializer`** — a `ModelSerializer` strategy that
-  round-trips the model losslessly via a single `.npz` (hyperparameters + readout `W`; the fixed
-  memory is rebuilt from `(d, theta)` on load).
-- **Dependency**: now depends on `juniper-model-core>=0.1.0,<0.2.0` (the shared `TrainableModel` /
-  `ModelSerializer` contract and the conformance kit). Still autodiff-free.
-- **Conformance tests** (`tests/test_lmu_conformance.py`): subclasses model-core's
-  `TrainableModelConformance` against `FixedOrderLMURegressor`, running all ~10 contract checks
-  (isinstance, task_type, fit→`TrainResult`, fit/predict/metrics round-trip, predict output shape,
-  metric keys, the RK-6 no-classification-assumptions guard, renderable topology, legal event
-  ordering, lossless serialization round-trip).
-- **Conformance tests** (`tests/test_lmu_grid_invariance.py`): matrix stability, delayed-sinusoid
-  reconstruction (`e_reg < 0.05`), and grid-invariance (`e_irr < 3·e_reg + 0.02`). Numerics match
-  the verified reference `util/ad-hoc/verify_delta_t_reference_code.py` in juniper-ml.
+- **`VariableStepLMUMemory.rollout_batch`** — batched, multi-channel eigenbasis ZOH rollout
+  reused by the regressor; per-(sample, feature) parity-tested against `rollout`.
 - **`juniper_recurrence_model.LMURegressor`** — the fixed-order Δt-native LMU **regressor**
   implementing `juniper-model-core`'s `TrainableModel` (WS-4). Per-feature identity read-in
   (each feature drives its own order-`d` memory through the shared fixed `A`/`B`/θ), a fixed
   LMU-memory rollout, and a **closed-form least-squares readout** (the only trained surface),
-  with `target_dt` as an optional readout feature. `predict(X, *, dt=…)` widens the contract
-  with optional sequence keywords (uniform-`dt` fallback when omitted). Regression-only metrics
-  (`mse`/`rmse`/`mae`/`r2`/`loss`); never `accuracy` (RK-6). numpy-only (closed-form, no torch).
+  with `target_dt` as an optional readout feature (D-WS4-2). `theta` is **data-driven by default**
+  (the median per-window elapsed time) or may be pinned. `predict(X, *, dt=…)` widens the contract
+  with optional sequence keywords (`dt`/`target_dt`/`readout_mask`/`seq_lengths`; uniform-`dt`
+  fallback when omitted). Regression-only metrics (`mse`/`rmse`/`mae`/`r2`/`loss`); never
+  `accuracy` (RK-6). numpy-only (closed-form, no torch).
 - **`juniper_recurrence_model.LMUSerializer`** — lossless `.npz` + JSON serializer (readout
   coefficients + hyperparameters; the fixed memory is recomputed from `d`/θ on load).
-- **`VariableStepLMUMemory.rollout_batch`** — batched, multi-channel eigenbasis ZOH rollout
-  reused by the regressor; per-(sample, feature) parity-tested against `rollout`.
+- **`juniper-model-core>=0.1.0,<0.2.0`** runtime dependency (the shared `TrainableModel` /
+  `ModelSerializer` contract + the conformance kit; on PyPI). Still autodiff-free.
 - **Model tests** (`tests/test_lmu_model.py`): batched-rollout parity, linear-over-memory
-  recovery, determinism, overfit-tiny, bare-`predict(X)`, regression-only metrics, topology
-  validity, and serializer round-trip.
-- **`juniper-model-core>=0.1.0,<0.2.0`** runtime dependency (the model contract + conformance kit; on PyPI).
+  recovery, determinism, overfit-tiny, bare-`predict(X)`, ridge path, `seq_lengths`/`readout_mask`
+  selection, regression-only metrics, topology validity, serializer round-trip, input validation,
+  and the **R-Δt-3 shuffle-`dt`** guardrail (predictions degrade when the gaps are reordered —
+  proof the model uses timing).
+- **Conformance tests** (`tests/test_conformance.py`): subclasses model-core's
+  `TrainableModelConformance` against `LMURegressor` over `tiny_regression_3d`, running every
+  contract check (isinstance, task_type, fit→`TrainResult`, fit/predict/metrics round-trip,
+  predict output shape, metric keys, the RK-6 no-classification-assumptions guard, renderable
+  topology, legal event ordering, lossless serialization round-trip).
+- **Conformance tests** (`tests/test_lmu_grid_invariance.py`): matrix stability, delayed-sinusoid
+  reconstruction (`e_reg < 0.05`), grid-invariance (`e_irr < 3·e_reg + 0.02`), and the **§9.1a
+  fixed-Δt negative control** — a `FixedStepLMUMemory` foil (baked at the mean gap) that degrades
+  ~2-4× on the irregular grid, proving the per-step Δt adaptation does real work. Numerics match
+  the verified reference `util/ad-hoc/verify_delta_t_reference_code.py` in juniper-ml.
 
 ### Notes
 
-- **WS-0 ratified 2026-06-14**; this change adds the WS-4 model layer (the fixed-order LMU
-  regressor). Deferred to later WS-4 increments / workstreams: dense many-to-many readout, a
-  trained projection read-in / nonlinear readout (the point at which torch enters), cascor 3-D
-  ingestion (design §9.1c), and the `juniper-service-core`-backed service/app layer. See the
-  WS-4 build plan `notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.md` (juniper-ml).
-- Open follow-up (design doc §9.1a): port the fixed-Δt negative control from the juniper-ml POC
-  into the conformance suite — planned for the conformance / Δt-guardrails change (PR-2).
+- **WS-0 ratified 2026-06-14.** The WS-4 model layer is the fixed-order LMU regressor
+  (`LMURegressor`). A concurrent-session duplicate (`FixedOrderLMURegressor` / `models/`) was
+  **consolidated away** in favour of `LMURegressor` — it carries the ratified D-WS4-2 `target_dt`
+  readout feature plus `seq_lengths`/`ridge`/batched rollout; the duplicate's data-driven-`theta`
+  default was grafted across. Deferred to later WS-4 increments / workstreams: dense
+  many-to-many readout, a trained projection read-in / nonlinear readout (the point at which torch
+  enters), cascor 3-D ingestion (design §9.1c), and the `juniper-service-core`-backed service/app
+  layer. See the WS-4 build plan `notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.md`
+  (juniper-ml).
+- **§9.1a fixed-Δt negative control: DONE** — ported from the juniper-ml POC into
+  `tests/test_lmu_grid_invariance.py` (the degradation *ratio*, not the lenient gate, is the signal).
 
 [Unreleased]: https://github.com/pcalnon/juniper-recurrence/commits/main

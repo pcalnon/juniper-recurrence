@@ -241,3 +241,53 @@ def test_serializer_rejects_non_lmu_and_unfitted():
             serializer.save(ReferenceLinearModel(), target)  # not an LMURegressor
         with pytest.raises(RuntimeError):
             serializer.save(LMURegressor(d=8, theta=5.0), target)  # unfitted
+
+
+def test_shuffle_dt_degrades_predictions():
+    """R-Δt-3: shuffling the per-step gaps must degrade predictions — proof the model *uses*
+    the timing, not just its presentation. The target is generated from the true-dt memory;
+    predicting with the same gaps reordered mismodels the memory and inflates the error."""
+    rng = np.random.default_rng(31)
+    n, n_steps, n_features, d, theta = 300, 16, 2, 16, 3.0
+    X = rng.normal(size=(n, n_steps, n_features))
+    dt = np.zeros((n, n_steps))
+    dt[:, 1:] = rng.uniform(0.2, 1.5, size=(n, n_steps - 1))  # irregular gaps, comparable to theta
+    memory_state = VariableStepLMUMemory(d, theta).rollout_batch(X, dt)[:, -1].reshape(n, -1)
+    y = memory_state @ rng.normal(size=(memory_state.shape[1], 1)) + 0.01 * rng.normal(size=(n, 1))
+
+    model = LMURegressor(d=d, theta=theta)
+    model.fit(X, y, dt=dt)
+
+    def _mse(pred):
+        return float(np.mean((pred - y) ** 2))
+
+    err_true = _mse(model.predict(X, dt=dt))
+    dt_shuffled = dt.copy()
+    for i in range(n):  # reorder each row's gaps (same multiset; dt[:, 0] stays 0)
+        dt_shuffled[i, 1:] = dt[i, rng.permutation(n_steps - 1) + 1]
+    err_shuffled = _mse(model.predict(X, dt=dt_shuffled))
+
+    assert err_true < 0.05, f"true-dt fit should be good; got MSE {err_true}"
+    assert err_shuffled > 10.0 * err_true, f"shuffling dt should degrade predictions ({err_shuffled} vs {err_true})"
+
+
+def test_data_driven_theta_resolves_from_dt_at_fit():
+    """theta=None (default) resolves to the median per-window elapsed time at fit; the fixed
+    memory is built lazily then, not in __init__."""
+    X, dt, rng = _toy_3d(n=30, n_steps=8, n_features=2, seed=40)
+    y = rng.normal(size=(30, 1))
+    model = LMURegressor()  # theta defaults to None (data-driven)
+    assert model.theta is None and model._memory is None
+    model.fit(X, y, dt=dt)
+    assert model.theta is not None and model.theta > 0
+    assert abs(model.theta - float(np.median(np.sum(dt, axis=1)))) < 1e-9
+    assert model.predict(X, dt=dt).shape == (30, 1)
+
+
+def test_data_driven_theta_falls_back_to_window_length_without_dt():
+    rng = np.random.default_rng(41)
+    X = rng.normal(size=(20, 7, 2))
+    y = rng.normal(size=(20, 1))
+    model = LMURegressor()  # theta=None and no dt supplied
+    model.fit(X, y)
+    assert model.theta == 7.0  # falls back to the window length T
