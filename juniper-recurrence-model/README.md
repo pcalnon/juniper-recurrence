@@ -3,11 +3,14 @@
 The model-specific core for the [juniper-recurrence](https://github.com/pcalnon/juniper-recurrence)
 application — the selected model **P3-C (LMU + Approach-C)**.
 
-This package currently ships the **Δt-native Legendre Memory Unit (Approach-C)**: a closed-form,
+This package ships the **Δt-native Legendre Memory Unit (Approach-C)** — a closed-form,
 variable-step LMU discretisation that is the only first-principles-clean ("C1") option natively
-handling irregularly-sampled time series. The recurrent model implementing the shared
-[`juniper-model-core`](https://github.com/pcalnon/juniper-ml) `TrainableModel` interface is added
-when that package lands.
+handling irregularly-sampled time series — **and** `FixedOrderLMURegressor`, the recurrent model
+implementing the shared [`juniper-model-core`](https://github.com/pcalnon/juniper-ml)
+`TrainableModel` interface (now that that package has landed). The regressor keeps the LMU memory
+**fixed** and trains only a linear readout in **closed form** (least squares — no BPTT, fully
+deterministic); it passes model-core's conformance kit unchanged, making it the WS-4 refactor
+template (a non-cascor model on the shared model seam).
 
 Design of record (in juniper-ml):
 [`notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md).
@@ -46,6 +49,34 @@ m = mem.rollout(u, dt)                          # (240, 16) memory trajectory
 w = mem.decode_weights(rho=1.0)                 # read the input one full window ago
 reconstruction = m @ w
 ```
+
+## Trainable model (`FixedOrderLMURegressor`)
+
+The package also exposes `FixedOrderLMURegressor`, a `juniper-model-core` `TrainableModel`. The
+LMU memory is fixed; only a linear readout is fit, in closed form (least squares — no BPTT, fully
+deterministic). It is Δt-native: pass per-step gaps `dt` (`(n, T)`) and an optional `readout_mask`
+to `fit` / `predict`; both default to uniform gaps and the final step, so the bare ABC
+`predict(X)` works too. It reports canonical regression metrics (`mse`, `rmse`, `mae`, `r2`).
+
+```python
+import numpy as np
+from juniper_recurrence_model import FixedOrderLMURegressor, LMURegressorSerializer
+
+n, T, F = 48, 6, 3
+X = np.random.default_rng(0).normal(size=(n, T, F))
+y = X.reshape(n, -1) @ np.random.default_rng(1).normal(size=(T * F, 1))
+dt = np.zeros((n, T)); dt[:, 1:] = np.random.default_rng(2).integers(1, 4, size=(n, T - 1))
+
+model = FixedOrderLMURegressor(d=6)             # theta resolved data-driven from dt at fit time
+result = model.fit(X, y, dt=dt)                 # closed-form readout solve
+preds = model.predict(X, dt=dt)                 # (n, 1)
+print(result.final_metrics["r2"], model.describe_topology()["model_type"])
+
+LMURegressorSerializer().save(model, "/tmp/lmu")   # writes /tmp/lmu.npz (lossless round-trip)
+```
+
+`FixedOrderLMURegressor` passes model-core's conformance kit unchanged
+(`tests/test_lmu_conformance.py`), proving the WS-4 refactor template.
 
 ## Verified behaviour
 

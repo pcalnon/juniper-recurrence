@@ -74,3 +74,9 @@ select = ["E", "F", "W", "B", "I", "N"]
 "juniper_recurrence_model/model.py" = ["N803", "N806"]
 "tests/test_lmu_grid_invariance.py" = ["N806"]
 "tests/test_lmu_model.py" = ["N806"]
+
+[tool.ruff.lint.pep8-naming]
+# `X` / `X_val` are the universal ML feature-matrix names and are fixed by the
+# juniper-model-core `TrainableModel` ABC signature this package overrides verbatim,
+# so allow them as argument / variable names (suppresses N803 / N806 for these only).
+extend-ignore-names = ["X", "X_val"]
