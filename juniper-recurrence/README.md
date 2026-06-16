@@ -36,14 +36,37 @@ juniper-recurrence serve
 juniper-recurrence serve --host 127.0.0.1 --port 8210
 ```
 
-Once running:
+Once running, the API exposes (every `/v1/*` route below requires `X-API-Key` when API
+keys are configured; health + docs are always exempt):
 
-* `GET /v1/health` → `{"status": "ok"}` (liveness)
-* `GET /v1/health/ready` → `{"status": "ready"}` (readiness)
-* `GET /docs` → OpenAPI / Swagger UI
+| Route | Method | Behavior |
+|---|---|---|
+| `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
+| `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`. |
+| `/v1/training/status` | GET | `idle` / `trained` + last metrics + training events. |
+| `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref. |
+| `/v1/model` | GET | Current model topology + regression metrics. |
+| `/v1/dataset` | GET | Descriptor of the trained-on dataset. |
+| `/docs` | GET | OpenAPI / Swagger UI (exempt). |
 
-The training / predict / model / dataset routes and the headless
-`juniper-recurrence train` subcommand land in WS-4b PR-2.
+Training runs **inline** (a one-shot closed-form solve), so `POST /v1/train` returns the
+result in the response — no background jobs or WebSocket streams in v1.
+
+```bash
+# Train on a juniper-data dataset, then inspect the model.
+curl -sX POST localhost:8210/v1/train \
+  -H 'Content-Type: application/json' \
+  -d '{"dataset": {"dataset_id": "<id>"}, "d": 16}'
+curl -s localhost:8210/v1/model
+```
+
+### Train (headless CLI)
+
+```bash
+# Fit the LMU on a dataset and persist it — no server.
+juniper-recurrence train --dataset <id> --d 16 --out model.npz
+juniper-recurrence train --name equities_seq_v1 --split train
+```
 
 ## Configuration
 
@@ -65,6 +88,19 @@ are configured, authentication is disabled (open access — development default)
 ```bash
 pip install -e ".[test]"
 pytest tests/ -v
+```
+
+## Publishing
+
+Releases are published to PyPI via GitHub Actions
+(`.github/workflows/publish-recurrence-app.yml`) on a `juniper-recurrence-v*` tag —
+TestPyPI first (with a `--no-deps` install verification), then PyPI, via OIDC trusted
+publishing (no API tokens). The model package (`juniper-recurrence-model`) publishes
+separately on `juniper-recurrence-model-v*` tags.
+
+```bash
+git tag juniper-recurrence-v0.1.0
+git push origin juniper-recurrence-v0.1.0
 ```
 
 ## Ecosystem

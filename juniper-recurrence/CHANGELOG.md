@@ -27,8 +27,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   holder behind a lock), `events.py` (ring-buffer event sink), `data.py` (juniper-data-client
   → 3-D NPZ → model kwargs), and `schemas.py`. Adds the headless `juniper-recurrence train`
   CLI subcommand. All routes are regression-generic (RK-6: no `argmax`, no `accuracy`).
+- **Publish workflow + docs (WS-4b PR-3).** `publish-recurrence-app.yml` publishes the
+  app to PyPI on a `juniper-recurrence-v*` tag — TestPyPI first (hardened `--no-deps`,
+  no-fallback install verification), then PyPI, via OIDC trusted publishing. README
+  documents the full endpoint surface, the headless `train` CLI, and the publish flow.
 
 ### Notes
 
-- The publish workflow (`publish-recurrence-app.yml`) and expanded docs arrive in
-  WS-4b PR-3.
+- The app pins published-PyPI upstreams directly (`juniper-service-core`,
+  `juniper-model-core`, `juniper-recurrence-model`, `juniper-data-client`); no
+  editable-sibling installs are required.
+- The published `juniper-data-client 0.4.1` does not yet export `validate_npz_contract`
+  (added upstream after 0.4.1); `data.py` guards the import and falls back to the model's
+  `sequence_data_from_arrays` contract checks until the validator publishes.
+- A `juniper-recurrence` entry in the `juniper-ml [servers]` extra follows in WS-7,
+  after the app is on PyPI.
