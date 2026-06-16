@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-15
+
 ### Added
 
 - **Initial package scaffold** for the juniper-recurrence model-specific core, homed as a
@@ -62,4 +64,5 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 - **§9.1a fixed-Δt negative control: DONE** — ported from the juniper-ml POC into
   `tests/test_lmu_grid_invariance.py` (the degradation *ratio*, not the lenient gate, is the signal).
 
-[Unreleased]: https://github.com/pcalnon/juniper-recurrence/commits/main
+[Unreleased]: https://github.com/pcalnon/juniper-recurrence/compare/juniper-recurrence-model-v0.1.0...main
+[0.1.0]: https://github.com/pcalnon/juniper-recurrence/releases/tag/juniper-recurrence-model-v0.1.0
