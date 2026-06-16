@@ -80,3 +80,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "I", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# ``X`` is the standard ML design-matrix name (juniper-model-core's array contract);
+# pep8-naming N806's lowercase rule is a false positive on it (mirrors the model package).
+"tests/conftest.py" = ["N806"]

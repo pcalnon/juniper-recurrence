@@ -11,9 +11,9 @@ Middleware order mirrors the canonical cascor / canopy / data assembly —
 ``SecurityMiddleware`` — added in that sequence so that, under Starlette's LIFO
 execution, ``SecurityMiddleware`` (API-key auth + rate limiting) runs outermost.
 
-The train / predict / model / dataset routers arrive in WS-4b PR-2; ``build_app``
-already threads them through ``create_app(routers=...)`` so adding them is a
-one-line change.
+The train / predict / model / dataset routers are threaded through
+``create_app(routers=...)``; a fresh :class:`AppState` (the in-process model / result /
+event holder) is created per ``build_app`` and stashed on ``app.state`` for the routers.
 """
 
 from __future__ import annotations
@@ -29,7 +29,9 @@ from juniper_service_core import (
 )
 
 from juniper_recurrence._version import __version__
+from juniper_recurrence.routers import dataset_router, model_router, predict_router, training_router
 from juniper_recurrence.settings import Settings
+from juniper_recurrence.state import AppState
 
 __all__ = ["build_app", "app"]
 
@@ -51,7 +53,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     application = create_app(
         title="Juniper Recurrence",
         version=__version__,
-        routers=(),  # WS-4b PR-2: training / predict / model / dataset routers
+        routers=(training_router, predict_router, model_router, dataset_router),
     )
 
     # Middleware (Starlette LIFO: last added runs first on the request path). This
@@ -67,9 +69,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     )
     application.add_middleware(SecurityMiddleware, api_key_auth=api_key_auth, rate_limiter=rate_limiter)
 
-    # Stash for routers / tests (mirrors cascor's ``app.state.api_key_auth``).
+    # Stash per-app instances for routers / tests (mirrors cascor's app.state usage).
+    # AppState is created fresh per build_app, so each app — and each test — gets
+    # isolated in-process model / result / event state.
     application.state.settings = settings
     application.state.api_key_auth = api_key_auth
+    application.state.app_state = AppState()
 
     return application
 
