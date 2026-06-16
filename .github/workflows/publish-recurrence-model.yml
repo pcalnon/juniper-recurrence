@@ -24,6 +24,13 @@
 #        workflow    = publish-recurrence-model.yml
 #        environment = pypi   (PyPI)   /   testpypi  (TestPyPI)
 #
+#    SECURITY (TestPyPI verify): the install-verification step resolves the
+#    published package from TestPyPI ONLY (--no-deps, single --index-url, no
+#    production-PyPI fallback) so a squatted production-PyPI package can never be
+#    resolved in its place during a trusted publish. Runtime deps for the import
+#    smoke (numpy + juniper-model-core) are installed separately by name from the
+#    default index. TestPyPI index lag is handled by the retry loop.
+#
 #####################################################################################################################################################################################################
 
 name: Publish juniper-recurrence-model to PyPI
@@ -106,20 +113,25 @@ jobs:
           set -euo pipefail
           version=$(grep -E '^__version__' juniper-recurrence-model/juniper_recurrence_model/_version.py | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Verifying juniper-recurrence-model==${version}"
-          # Installs WITH deps (numpy) so the import check below succeeds; the
-          # --extra-index-url is required for that and is acceptable because this is
-          # not a --no-deps install (cf. the ecosystem no-fallback policy, which
-          # only bars the extra-index on --no-deps installs).
+          # SECURITY: resolve the published package from TestPyPI ONLY (--no-deps,
+          # single --index-url, no production-PyPI fallback) so a squatted
+          # production-PyPI package can never be resolved in its place during a
+          # trusted publish. TestPyPI index lag is covered by the retry loop.
           for attempt in 1 2 3 4 5; do
             if pip install \
+              --no-deps \
               --index-url https://test.pypi.org/simple/ \
-              --extra-index-url https://pypi.org/simple/ \
               "juniper-recurrence-model==${version}"; then
               break
             fi
             echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"
             sleep 10
           done
+          # Runtime deps for the import smoke come from the default (production)
+          # index, installed separately by name — never via an extra-index on the
+          # target resolution above. (The top-level import pulls in numpy +
+          # juniper-model-core.)
+          pip install "numpy>=1.24" "juniper-model-core>=0.1.0,<0.2.0"
           python -c "import juniper_recurrence_model; print('TestPyPI install OK', juniper_recurrence_model.__version__)"
 
   publish-pypi:
