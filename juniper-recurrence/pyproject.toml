@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juniper-recurrence"
+dynamic = ["version"]
+description = "FastAPI + CLI service wrapping the Δt-native LMU recurrence model on the juniper-service-core framework"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Paul Calnon" }]
+keywords = ["juniper", "recurrence", "lmu", "fastapi", "time-series", "irregular-dt", "model-service"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.1.0,
+# juniper-service-core 0.1.0, juniper-recurrence-model 0.1.0, juniper-data-client
+# 0.4.1), so the app pins them directly — no editable-sibling / cross-repo-clone
+# step is required (plan §10 publish-first end-state).
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.2",
+    "numpy>=1.24",
+    "juniper-service-core>=0.1.0,<0.2.0",
+    "juniper-model-core>=0.1.0,<0.2.0",
+    "juniper-recurrence-model>=0.1.0,<0.2.0",
+    "juniper-data-client>=0.4.1,<0.5.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",  # required by fastapi/starlette TestClient
+]
+# Prometheus /v1/metrics + MetricsAuthMiddleware is a deferred fast-follow (plan §6/§14);
+# the extra is declared now so the dependency surface is stable when it lands.
+observability = [
+    "juniper-observability>=0.3.1",
+]
+
+[project.scripts]
+juniper-recurrence = "juniper_recurrence.main:main"
+
+[project.urls]
+Homepage = "https://github.com/pcalnon/juniper-recurrence"
+Repository = "https://github.com/pcalnon/juniper-recurrence"
+Issues = "https://github.com/pcalnon/juniper-recurrence/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "juniper_recurrence._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["juniper_recurrence*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-ra", "-q", "--strict-markers", "--strict-config"]
+
+[tool.ruff]
+line-length = 512
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "N"]
