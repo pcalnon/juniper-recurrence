@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-17
+
 ### Fixed
 
 - **README API drift** — the quick-start referenced `FixedOrderLMURegressor`, `LMURegressorSerializer`,
