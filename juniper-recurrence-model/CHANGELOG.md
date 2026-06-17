@@ -8,6 +8,13 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **README API drift** — the quick-start referenced `FixedOrderLMURegressor`, `LMURegressorSerializer`,
+  and `tests/test_lmu_conformance.py`, none of which exist; the public API is `LMURegressor` /
+  `LMUSerializer` (`tests/test_conformance.py`). The documented import and both runnable examples now
+  execute against the real 0.1.0 surface.
+
 ## [0.1.0] - 2026-06-15
 
 ### Added
