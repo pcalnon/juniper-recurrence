@@ -1,0 +1,29 @@
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   juniper-recurrence
+# File Name:     CODEOWNERS
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-17
+# Last Modified: 2026-06-17
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    GitHub CODEOWNERS file — defines code ownership for automatic review requests.
+#    This repository hosts two distributions: the model core (juniper-recurrence-model)
+#    and the FastAPI/CLI application (juniper-recurrence).
+#####################################################################################################################################################################################################
+
+# Default owner for everything in the repository
+* @pcalnon
+
+# CI/CD workflows and GitHub configuration
+/.github/ @pcalnon
+
+# Model package (juniper-recurrence-model distribution)
+/juniper-recurrence-model/ @pcalnon
+
+# Application package (juniper-recurrence distribution)
+/juniper-recurrence/ @pcalnon
