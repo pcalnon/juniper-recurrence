@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-17
+
 ### Added
 
 - **App skeleton (WS-4b PR-1).** New `juniper-recurrence` application distribution:
