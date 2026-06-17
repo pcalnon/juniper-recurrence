@@ -1,0 +1,79 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (repository-level CI guard)
+# File Name:     pr-base-branch-guard.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-17
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    Repository hygiene guard. Fails any pull request whose base branch is NOT the
+#    repository default branch, catching the "stacked-PR squash-merge" footgun: a PR
+#    based on a feature branch can merge into that feature branch instead of the
+#    default branch, silently stranding its content off the line everything else
+#    builds on. This class of defect has recurred multiple times across the Juniper
+#    ecosystem (e.g. the WS-4b app routes/publish PRs #7/#8 were stranded this way:
+#    both merged into their stacked bases rather than ``main``).
+#
+#    Behaviour:
+#      - base == default branch  -> pass (no-op notice)
+#      - base != default branch  -> FAIL with a remediation message
+#      - base != default branch AND the PR carries the ``stacked-pr`` label
+#                                -> warn but pass (intentional stacks opt out)
+#
+#    The default branch is read dynamically from the event payload, so this workflow
+#    is portable to any repository without edits.
+#
+#    Roadmap reference: juniper-ml
+#    notes/JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md (guardrail G-1).
+#
+#    NOTE: GitHub evaluates ``pull_request`` workflows from the PR's own refs, so this
+#    guard runs on any PR whose branches carry it -- including, as verified live, its
+#    own introducing PR (base ``main`` -> pass). Once it is on the default branch,
+#    branches cut from it inherit the guard and stacked PRs (base != default) fail.
+#    Confirm the fail path once with a throwaway PR against a non-default base.
+#
+#####################################################################################################################################################################################################
+
+name: PR Base-Branch Guard
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  guard-base-branch:
+    name: Guard PR base branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require PR base to be the default branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          HAS_BYPASS: ${{ contains(github.event.pull_request.labels.*.name, 'stacked-pr') }}
+        run: |
+          echo "PR base branch : ${BASE_REF}"
+          echo "Default branch : ${DEFAULT_BRANCH}"
+          echo "Bypass label   : ${HAS_BYPASS}"
+
+          if [ "${BASE_REF}" = "${DEFAULT_BRANCH}" ]; then
+            echo "::notice title=Base-branch guard::PR targets the default branch (${DEFAULT_BRANCH}); OK."
+            exit 0
+          fi
+
+          if [ "${HAS_BYPASS}" = "true" ]; then
+            echo "::warning title=Base-branch guard::PR base is '${BASE_REF}', not '${DEFAULT_BRANCH}'. Allowed via the 'stacked-pr' label. Re-land the stack on ${DEFAULT_BRANCH} after merge: a squash-merge of a stacked PR ships only its base."
+            exit 0
+          fi
+
+          echo "::error title=Base-branch guard::PR base is '${BASE_REF}', not the default branch '${DEFAULT_BRANCH}'."
+          echo "Merging a PR whose base is a feature branch strands its content off ${DEFAULT_BRANCH} (the 'squash-merge ships first commit only' trap)."
+          echo "Fix: retarget this PR to '${DEFAULT_BRANCH}' (Edit -> change base). If a stacked PR is intentional, add the 'stacked-pr' label AND re-land the stack on ${DEFAULT_BRANCH} after merge."
+          exit 1
