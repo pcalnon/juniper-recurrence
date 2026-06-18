@@ -9,6 +9,10 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Changed
+
+- **Δt contract validation is now mandatory.** Bumped the `juniper-data-client` pin to `>=0.4.2,<0.5.0` (the release that publishes `validate_npz_contract`) and removed the optional-import guard in `juniper_recurrence/data.py`: the full NPZ contract gate now always runs on a downloaded artifact, instead of silently falling back to model-side shape checks when the installed client lacked the validator. Closes roadmap I1 / D-2.
+
 ## [0.1.0] - 2026-06-17
 
 ### Added
