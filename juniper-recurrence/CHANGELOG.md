@@ -20,6 +20,12 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `n_folds` / `scheme` (`expanding`|`rolling`) / `embargo` / `min_train` plus the LMU
   hyperparameters; the most recent result is persisted in-process and returned by
   `GET /v1/crossval/status`. Regression-generic (RK-6 — no `accuracy`, no `argmax`).
+- **Prometheus `/metrics` endpoint (IP-allowlist gated).** When `metrics_enabled` is set, mounts a
+  Prometheus exposition endpoint at `/metrics` via `juniper-observability` (the `[observability]`
+  extra): `PrometheusMiddleware` records HTTP-request + build-info metrics, and `MetricsAuthMiddleware`
+  IP-gates the path against `metrics_trusted_ips`. `/metrics` is exempt from the API-key
+  `SecurityMiddleware` (service-core `EXEMPT_PATHS`, SEC-16) and IP-gated instead. Guarded — the app
+  still runs (with a warning) when `juniper-observability` is absent.
 
 ### Changed
 
