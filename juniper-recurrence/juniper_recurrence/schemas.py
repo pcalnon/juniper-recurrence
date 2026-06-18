@@ -7,7 +7,7 @@ the regression set (``mse`` / ``rmse`` / ``mae`` / ``r2`` / ``loss``) — never 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -21,6 +21,10 @@ __all__ = [
     "PredictRequest",
     "PredictResponse",
     "ModelResponse",
+    "CrossValRequest",
+    "CrossValFoldModel",
+    "CrossValResponse",
+    "CrossValStatusResponse",
 ]
 
 
@@ -133,3 +137,49 @@ class ModelResponse(BaseModel):
 
     topology: dict[str, Any]
     metrics: dict[str, float]
+
+
+class CrossValRequest(BaseModel):
+    """Body for ``POST /v1/crossval``: a dataset ref + walk-forward CV params + LMU hyperparameters.
+
+    Cross-validation always derives folds from the dataset's ``full`` split (the chronologically
+    ordered set), so the ``split`` field of the dataset ref is not used here. Unset hyperparameters
+    fall back to the service defaults; ``theta=None`` asks each fold's model to resolve θ
+    data-drivenly from that fold's elapsed time.
+    """
+
+    dataset: DatasetRef
+    n_folds: int = Field(ge=2)
+    scheme: Literal["expanding", "rolling"] = "expanding"
+    embargo: int = Field(default=0, ge=0)
+    min_train: int | None = Field(default=None, ge=1)
+    d: int | None = Field(default=None, ge=1)
+    theta: float | None = Field(default=None, gt=0)
+    ridge: float | None = Field(default=None, ge=0)
+
+
+class CrossValFoldModel(BaseModel):
+    """One fold's outcome: the model's own train-time metrics + the held-out eval metrics."""
+
+    fold: int
+    train_metrics: dict[str, float]
+    eval_metrics: dict[str, float]
+    n_epochs: int
+
+
+class CrossValResponse(BaseModel):
+    """``POST /v1/crossval`` result: per-fold detail + per-metric mean / std aggregates."""
+
+    task_type: str
+    n_folds: int
+    folds: list[CrossValFoldModel]
+    eval_aggregate: dict[str, float]
+    eval_std: dict[str, float]
+    dataset: DatasetDescriptor
+
+
+class CrossValStatusResponse(BaseModel):
+    """``GET /v1/crossval/status``: the most recent persisted CV result, or ``idle`` if none has run."""
+
+    state: str  # "idle" | "done"
+    result: CrossValResponse | None = None

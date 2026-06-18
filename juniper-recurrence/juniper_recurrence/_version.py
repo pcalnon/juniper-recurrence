@@ -6,4 +6,4 @@ pydantic-settings. This also lets the TestPyPI publish-verify run a clean
 ``import juniper_recurrence`` (top-level package re-exports only this value).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
