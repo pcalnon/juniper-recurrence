@@ -8,6 +8,22 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-17
+
+### Changed
+
+- **Adopt the `juniper-model-core` 0.2.0 cross-validation layer.** Widened the `juniper-model-core`
+  dependency ceiling to `<0.3.0` (admits 0.2.0) and added `juniper-model-core[crossval]>=0.2.0` to
+  the `[test]` extra. The model's runtime surface is unchanged.
+
+### Added
+
+- **Cross-validation second-implementer proof** (`tests/test_crossval.py`). Drives `LMURegressor`
+  through `juniper_model_core.crossval.cross_validate` over a 3-D Δt fixture with
+  `aux={dt, target_dt, seq_lengths}`, confirming the generic fold executor slices the auxiliary
+  arrays per fold and engages the Δt path on a real model (with a shuffled-`dt` guardrail and a
+  determinism check).
+
 ## [0.1.1] - 2026-06-17
 
 ### Fixed
