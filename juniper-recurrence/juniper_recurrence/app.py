@@ -18,6 +18,8 @@ event holder) is created per ``build_app`` and stashed on ``app.state`` for the 
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from juniper_service_core import (
     RequestBodyLimitMiddleware,
@@ -34,6 +36,8 @@ from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
 __all__ = ["build_app", "app"]
+
+logger = logging.getLogger(__name__)
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
@@ -62,6 +66,37 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     # outermost.
     application.add_middleware(RequestBodyLimitMiddleware)
     application.add_middleware(SecurityHeadersMiddleware)
+
+    # Observability: Prometheus /metrics (IP-allowlist gated) + build-info + HTTP
+    # request metrics. Optional — guarded so the app still runs without the
+    # [observability] extra. Added BEFORE SecurityMiddleware so Security stays the
+    # outermost handler (canonical order): unauthenticated / rate-limited requests are
+    # rejected before PrometheusMiddleware runs, so they add no metric cardinality.
+    # /metrics is exempt from SecurityMiddleware's API-key check via service-core's
+    # EXEMPT_PATHS (SEC-16); MetricsAuthMiddleware IP-gates it instead.
+    if settings.metrics_enabled:
+        try:
+            from juniper_observability import (
+                MetricsAuthMiddleware,
+                PrometheusMiddleware,
+                get_prometheus_app,
+                set_build_info,
+            )
+        except ImportError:
+            logger.warning(
+                "metrics_enabled is true but juniper-observability is not installed; "
+                "/metrics will not be mounted (install the [observability] extra)."
+            )
+        else:
+            application.add_middleware(PrometheusMiddleware, service_name=settings.service_name)
+            # Prometheus metric names are underscore-only; the build-info namespace is the
+            # underscored service name -> the metric is ``juniper_recurrence_build_info``.
+            set_build_info(settings.service_name.replace("-", "_"), __version__)
+            application.mount(
+                "/metrics",
+                MetricsAuthMiddleware(get_prometheus_app(), trusted_ips=settings.metrics_trusted_ips),
+            )
+
     api_key_auth = build_api_key_auth(settings.resolve_api_keys())
     rate_limiter = build_rate_limiter(
         requests_per_minute=settings.rate_limit_requests_per_minute,
