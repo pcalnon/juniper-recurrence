@@ -9,9 +9,22 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-17
+
+### Added
+
+- **Cross-validation endpoint (`POST /v1/crossval` + `GET /v1/crossval/status`).** The indirect
+  evaluation route: a dataset selection → synchronous walk-forward cross-validation over the
+  `_full` split via `juniper_model_core.crossval.cross_validate` (a fresh `LMURegressor` per fold,
+  held-out scoring, per-metric mean/std aggregate) → an aggregated result. Accepts
+  `n_folds` / `scheme` (`expanding`|`rolling`) / `embargo` / `min_train` plus the LMU
+  hyperparameters; the most recent result is persisted in-process and returned by
+  `GET /v1/crossval/status`. Regression-generic (RK-6 — no `accuracy`, no `argmax`).
+
 ### Changed
 
 - **Δt contract validation is now mandatory.** Bumped the `juniper-data-client` pin to `>=0.4.2,<0.5.0` (the release that publishes `validate_npz_contract`) and removed the optional-import guard in `juniper_recurrence/data.py`: the full NPZ contract gate now always runs on a downloaded artifact, instead of silently falling back to model-side shape checks when the installed client lacked the validator. Closes roadmap I1 / D-2.
+- **Adopt the juniper-model-core 0.2.0 cross-validation layer.** Bumped `juniper-model-core` to `[crossval]>=0.2.0,<0.3.0` (the app now imports `juniper_model_core.crossval` at runtime) and `juniper-recurrence-model` to `>=0.1.2,<0.2.0` (the crossval-capable model release that admits model-core 0.2.0).
 
 ## [0.1.0] - 2026-06-17
 

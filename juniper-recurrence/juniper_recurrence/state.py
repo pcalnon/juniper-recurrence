@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from juniper_model_core import TrainResult
+    from juniper_model_core.crossval import CrossValResult
     from juniper_recurrence_model import LMURegressor
 
     from juniper_recurrence.events import EventSink
@@ -39,6 +40,10 @@ class AppState:
         self._result: TrainResult | None = None
         self._events: EventSink | None = None
         self._dataset: DatasetDescriptor | None = None
+        # Cross-validation runs are independent of training; a separate lock + last-result holder.
+        self.crossval_lock = threading.Lock()
+        self._crossval_result: CrossValResult | None = None
+        self._crossval_dataset: DatasetDescriptor | None = None
 
     def set_trained(
         self,
@@ -67,3 +72,14 @@ class AppState:
             return ("idle", None, [])
         events = self._events.snapshot() if self._events is not None else []
         return ("trained", self._result, events)
+
+    def set_crossval(self, result: CrossValResult, dataset: DatasetDescriptor) -> None:
+        """Publish a completed cross-validation run. Sets ``_crossval_result`` last (publish-the-pointer-last)."""
+        self._crossval_dataset = dataset
+        self._crossval_result = result  # published last
+
+    def crossval_status(self) -> tuple[str, CrossValResult | None, DatasetDescriptor | None]:
+        """``("idle"|"done", last_result, dataset)`` for ``GET /v1/crossval/status``."""
+        if self._crossval_result is None:
+            return ("idle", None, None)
+        return ("done", self._crossval_result, self._crossval_dataset)
