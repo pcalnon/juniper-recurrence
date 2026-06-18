@@ -9,6 +9,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **Container image — `Dockerfile` + `.dockerignore` (OUT-4 / WS-7).** A multi-stage,
+  slim (~77 MB) image. The LMU stack is numpy-only (no torch), so the build installs the
+  app + the `[observability]` extra from PyPI with no CPU-torch lock dance. Runs as a
+  non-root `juniper` user; `ENTRYPOINT ["juniper-recurrence"]` / `CMD ["serve"]` launches
+  uvicorn on container port 8210 (the deploy compose maps host 8211 → container 8210). An
+  HTTP `HEALTHCHECK` probes `/v1/health` with a 40s `start-period` (the pure-Python stack
+  imports for ~10-15s before uvicorn binds). A new `Docker Build & Smoke Test` CI job in
+  `ci-recurrence-app.yml` builds the image and asserts `/v1/health` → 200. This makes the
+  published app deployable (the WS-7 compose integration — host 8211 — follows next).
+
 ## [0.1.1] - 2026-06-17
 
 ### Added

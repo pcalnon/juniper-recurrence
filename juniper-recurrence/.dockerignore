@@ -1,0 +1,17 @@
+# Build context hygiene for the juniper-recurrence app image (OUT-4).
+# The build only needs pyproject.toml, README.md, and juniper_recurrence/.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+tests/
+CHANGELOG.md
+.git/
+.gitignore
+*.md.bak
+dist/
+build/
