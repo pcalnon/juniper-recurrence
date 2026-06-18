@@ -103,3 +103,33 @@ jobs:
 
       - name: Validate distribution metadata
         run: twine check dist/*
+
+  docker:
+    name: Docker Build & Smoke Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: juniper-recurrence
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Build image
+        run: docker build -t juniper-recurrence:ci .
+
+      - name: Smoke test — serve + /v1/health
+        run: |
+          docker run -d --name rec-ci -p 8210:8210 juniper-recurrence:ci
+          # The app imports a heavy pure-Python stack (service-core, model-core,
+          # recurrence-model, data-client, numpy, fastapi) — ~10-15s — before
+          # uvicorn binds, so retry generously. --retry-all-errors also retries
+          # non-2xx; -f makes curl exit non-zero if /v1/health never returns 200.
+          if ! curl --retry 60 --retry-delay 1 --retry-connrefused --retry-all-errors -fsS \
+                 http://localhost:8210/v1/health; then
+            echo "::error::recurrence container did not become healthy"
+            docker logs rec-ci || true
+            docker rm -f rec-ci || true
+            exit 1
+          fi
+          echo ""
+          echo "smoke test OK: /v1/health -> 200"
+          docker rm -f rec-ci
