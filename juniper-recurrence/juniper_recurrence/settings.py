@@ -21,6 +21,7 @@ Three hardening choices, each a recorded ecosystem incident (plan §7 / §15):
 
 from __future__ import annotations
 
+import ipaddress
 import json
 from typing import Annotated, Any
 
@@ -60,6 +61,13 @@ class Settings(SettingsBase):
     default_d: int = 16
     default_theta: float | None = None
     default_ridge: float = 0.0
+
+    # --- observability: Prometheus /metrics (IP-allowlist gated) ----------------------
+    metrics_enabled: bool = True
+    # Loopback-only by default (mirrors juniper-data); Docker / Compose deployments
+    # extend this with the compose-network CIDR via JUNIPER_RECURRENCE_METRICS_TRUSTED_IPS,
+    # e.g. '["127.0.0.1","::1","172.18.0.0/16"]'. MetricsAuthMiddleware does the gating.
+    metrics_trusted_ips: list[str] = Field(default_factory=lambda: ["127.0.0.1", "::1"])
 
     # --- secret resolution (honor Docker ``_FILE`` indirection) -----------------------
     @model_validator(mode="before")
@@ -111,6 +119,22 @@ class Settings(SettingsBase):
         if isinstance(value, (list, tuple)):
             cleaned = [str(item).strip() for item in value if str(item).strip()]
             return cleaned or None
+        return value
+
+    @field_validator("metrics_trusted_ips")
+    @classmethod
+    def _validate_metrics_trusted_ips(cls, value: list[str]) -> list[str]:
+        """Reject unparseable IP / CIDR allowlist entries at construction.
+
+        Mirrors juniper-data: a typo like ``172.18.0.0/164`` fails loudly here rather
+        than silently never-matching at request time. ``MetricsAuthMiddleware`` applies
+        the same parsing, so this is an early, friendlier echo of that check.
+        """
+        for entry in value:
+            try:
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"invalid metrics_trusted_ips entry {entry!r}: {exc}") from exc
         return value
 
     def resolve_api_keys(self) -> list[str]:
