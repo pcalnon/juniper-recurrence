@@ -60,6 +60,27 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
+      # Release-convention gate: a tag-triggered publish only proceeds when a GitHub Release exists
+      # for the tag (publish by cutting a Release, never a bare `git push <tag>`). workflow_dispatch
+      # skips this as the manual escape hatch.
+      - name: Require a GitHub Release for this tag
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+              echo "GitHub Release found for $tag — proceeding."
+              exit 0
+            fi
+            echo "No GitHub Release for $tag yet — retrying in 5s (attempt $attempt/5)"
+            sleep 5
+          done
+          echo "::error::No GitHub Release exists for tag $tag. Per the release convention, publish by cutting a GitHub Release (gh release create $tag ...), not a bare tag push. Use workflow_dispatch to override."
+          exit 1
+
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.12"
