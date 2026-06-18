@@ -1,11 +1,10 @@
 """Data path: juniper-data-client → 3-D ``equities_seq`` NPZ → model kwargs (plan §8).
 
 Resolves a dataset reference to a ``dataset_id``, downloads the NPZ artifact, runs
-juniper-data-client's full-contract validator **when the installed client exposes it**
-(see the guarded import below), then maps it to the arrays ``LMURegressor`` consumes via
-the model package's ``sequence_data_from_arrays`` (reusing the canonical WS-1 key layout
-+ ``dt`` rules instead of re-deriving them — also the validation floor when the validator
-is absent).
+juniper-data-client's full-contract validator (``validate_npz_contract`` — a hard
+requirement since the ``juniper-data-client>=0.4.2`` pin), then maps it to the arrays
+``LMURegressor`` consumes via the model package's ``sequence_data_from_arrays`` (reusing
+the canonical WS-1 key layout + ``dt`` rules instead of re-deriving them).
 
 Framework-light by design: takes primitives (no FastAPI / pydantic / settings import),
 so the routers and the headless CLI ``train`` share it. ``JuniperDataClient`` and
@@ -16,18 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from juniper_data_client import JuniperDataClient
+from juniper_data_client import JuniperDataClient, validate_npz_contract
 from juniper_recurrence_model import SequenceData, sequence_data_from_arrays
-
-try:
-    # ``validate_npz_contract`` landed in juniper-data-client AFTER the published 0.4.1
-    # pin. When the installed client provides it, it runs as the authoritative
-    # full-contract gate; otherwise the model-side ``sequence_data_from_arrays`` checks
-    # (X is 3-D, the dt rules, a regression target present) are the validation floor.
-    # Bump the ``juniper-data-client`` pin once the validator publishes to make it hard.
-    from juniper_data_client import validate_npz_contract
-except ImportError:  # pragma: no cover - depends on the installed juniper-data-client version
-    validate_npz_contract = None
 
 __all__ = ["load_sequence_data"]
 
@@ -85,8 +74,7 @@ def load_sequence_data(
     try:
         resolved_id = _resolve_dataset_id(client, dataset_id=dataset_id, name=name, generator=generator, params=params)
         arrays = client.download_artifact_npz(resolved_id)
-        if validate_npz_contract is not None:
-            validate_npz_contract(arrays)  # full-contract gate when the client provides it (raises ValueError)
+        validate_npz_contract(arrays)  # full-contract gate (raises ValueError on a bad artifact)
         sequence = sequence_data_from_arrays(arrays, split)
     finally:
         client.close()

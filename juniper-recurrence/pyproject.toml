@@ -26,7 +26,7 @@ classifiers = [
 
 # Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.1.0,
 # juniper-service-core 0.1.0, juniper-recurrence-model 0.1.0, juniper-data-client
-# 0.4.1), so the app pins them directly — no editable-sibling / cross-repo-clone
+# 0.4.2), so the app pins them directly — no editable-sibling / cross-repo-clone
 # step is required (plan §10 publish-first end-state).
 dependencies = [
     "fastapi>=0.110",
@@ -37,7 +37,7 @@ dependencies = [
     "juniper-service-core>=0.1.0,<0.2.0",
     "juniper-model-core>=0.1.0,<0.2.0",
     "juniper-recurrence-model>=0.1.0,<0.2.0",
-    "juniper-data-client>=0.4.1,<0.5.0",
+    "juniper-data-client>=0.4.2,<0.5.0",
 ]
 
 [project.optional-dependencies]
