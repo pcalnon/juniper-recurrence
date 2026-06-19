@@ -26,6 +26,6 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 - **Typed exception hierarchy** (`JuniperRecurrenceClientError` + connection / timeout /
   not-found / **conflict (409)** / validation / configuration leaves). The 409 path is unique to
   the recurrence app (lock-guarded train/crossval; "no trained model yet").
-- **26 unit tests** (`responses`-mocked) covering URL normalization, every client method, auth
+- **33 unit tests** (`responses`-mocked) covering URL normalization, every client method, auth
   resolution (explicit / env / `_FILE` precedence + empty-file fallback), and the full
   error-mapping matrix (404/409/422/500/connection/malformed-JSON).
