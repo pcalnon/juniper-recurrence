@@ -53,3 +53,19 @@ def test_variable_dt_beats_fixed_dt_on_irregular():
     var = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, ds.dt)
     fixed = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, baselines.uniform_dt(ds.dt))
     assert var.eval_aggregate["rmse"] < fixed.eval_aggregate["rmse"]
+
+
+def test_noise_std_perturbs_signal_but_keeps_contract():
+    """The noise-sweep extension: noise_std>0 adds observation noise without breaking the contract."""
+    clean = datasets.irregular_sine(n_steps=400, lookback=16, seed=0)
+    noisy = datasets.irregular_sine(n_steps=400, lookback=16, noise_std=0.25, seed=0)
+    assert noisy.X.shape == clean.X.shape
+    assert np.all(noisy.dt[:, 0] == 0.0)
+    assert not np.allclose(noisy.X, clean.X)  # the signal is genuinely perturbed
+
+
+def test_dataset_registry_covers_primary_and_extensions():
+    """DATASETS spans the pre-registered primary set plus the noise + real-data extensions."""
+    assert set(datasets.PRIMARY_DATASETS) <= set(datasets.DATASETS)
+    assert "equities_seq" in datasets.DATASETS
+    assert sum("noise" in k for k in datasets.DATASETS) == 4
