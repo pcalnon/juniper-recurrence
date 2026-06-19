@@ -58,6 +58,13 @@ observability = [
     # juniper-data's observability extra).
     "juniper-observability[prometheus]>=0.4.0",
 ]
+# Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
+# juniper-data provides the synthetic generators (#187/#188). NOTE: those generators are on
+# juniper-data main but not yet in a PyPI release (0.6.0 lacks them) — until juniper-data
+# republishes, install it editable from the sibling clone to run the bench (eval design doc §7).
+bench = [
+    "juniper-data>=0.6.0",
+]
 
 [project.scripts]
 juniper-recurrence = "juniper_recurrence.main:main"
