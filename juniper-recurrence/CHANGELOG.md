@@ -21,6 +21,13 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `ci-recurrence-app.yml` builds the image and asserts `/v1/health` → 200. This makes the
   published app deployable (the WS-7 compose integration — host 8211 — follows next).
 
+### Changed
+
+- **`[bench]` extra now pins `juniper-data>=0.7.0`** (was `>=0.6.0`). juniper-data 0.7.0
+  publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189) to PyPI,
+  so the benchmark harness installs cleanly from PyPI — the editable-sibling / cross-repo-clone
+  workaround is no longer needed.
+
 ## [0.1.1] - 2026-06-17
 
 ### Added
