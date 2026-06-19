@@ -1,0 +1,165 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence-client (subdirectory of juniper-recurrence)
+# File Name:     publish-recurrence-client.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-18
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    GitHub Actions publish pipeline for the juniper-recurrence-client package.
+#    Triggered by tags matching ``juniper-recurrence-client-v*`` so it stays decoupled from
+#    the model's ``juniper-recurrence-model-v*`` and the app's ``juniper-recurrence-v*``
+#    release tags. Publishes to TestPyPI first (with install verification), then PyPI, via OIDC
+#    trusted publishing. Mirrors publish-recurrence-model.yml.
+#
+#    TRUSTED-PUBLISHER REGISTRATION (must exist before the first tag push):
+#      PyPI + TestPyPI -> add a pending publisher with:
+#        owner       = pcalnon
+#        repository  = juniper-recurrence
+#        workflow    = publish-recurrence-client.yml
+#        environment = pypi   (PyPI)   /   testpypi  (TestPyPI)
+#
+#    SECURITY (TestPyPI verify): the install-verification step resolves the published package
+#    from TestPyPI ONLY (--no-deps, single --index-url, no production-PyPI fallback) so a
+#    squatted production-PyPI package can never be resolved in its place. Runtime deps for the
+#    import smoke (requests + urllib3) are installed separately by name from the default index.
+#    TestPyPI index lag is handled by the retry loop.
+#
+#####################################################################################################################################################################################################
+
+name: Publish juniper-recurrence-client to PyPI
+
+on:
+  push:
+    tags:
+      - "juniper-recurrence-client-v*"
+  # Manual dispatch so operators can re-fire a publish against any tag.
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build and Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: juniper-recurrence-client
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      # Release-convention gate: a tag-triggered publish only proceeds when a GitHub Release
+      # exists for the tag (publish by cutting a Release, never a bare `git push <tag>`).
+      # workflow_dispatch skips this as the manual escape hatch.
+      - name: Require a GitHub Release for this tag
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+              echo "GitHub Release found for $tag — proceeding."
+              exit 0
+            fi
+            echo "No GitHub Release for $tag yet — retrying in 5s (attempt $attempt/5)"
+            sleep 5
+          done
+          echo "::error::No GitHub Release exists for tag $tag. Per the release convention, publish by cutting a GitHub Release (gh release create $tag ...), not a bare tag push. Use workflow_dispatch to override."
+          exit 1
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build sdist + wheel
+        run: python -m build --sdist --wheel
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: juniper-recurrence-client-dist
+          path: juniper-recurrence-client/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/juniper-recurrence-client
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: juniper-recurrence-client-dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          verbose: true
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          sparse-checkout: |
+            juniper-recurrence-client/juniper_recurrence_client/_version.py
+
+      - name: Verify install from TestPyPI
+        run: |
+          set -euo pipefail
+          version=$(grep -E '^__version__' juniper-recurrence-client/juniper_recurrence_client/_version.py | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Verifying juniper-recurrence-client==${version}"
+          # SECURITY: resolve the published package from TestPyPI ONLY (--no-deps, single
+          # --index-url, no production-PyPI fallback) so a squatted production-PyPI package can
+          # never be resolved in its place. TestPyPI index lag is covered by the retry loop.
+          for attempt in 1 2 3 4 5; do
+            if pip install \
+              --no-deps \
+              --index-url https://test.pypi.org/simple/ \
+              "juniper-recurrence-client==${version}"; then
+              break
+            fi
+            echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"
+            sleep 10
+          done
+          # Runtime deps for the import smoke come from the default (production) index, installed
+          # separately by name — never via an extra-index on the target resolution above.
+          pip install "requests>=2.28.0" "urllib3>=2.0.0"
+          python -c "import juniper_recurrence_client; print('TestPyPI install OK', juniper_recurrence_client.__version__)"
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/juniper-recurrence-client
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: juniper-recurrence-client-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          packages-dir: dist/
+          verbose: true
