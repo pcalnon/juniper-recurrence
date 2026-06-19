@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juniper-recurrence-client"
+dynamic = ["version"]
+description = "HTTP client for the juniper-recurrence service (the Δt-native LMU recurrence model + cross-validation API)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Paul Calnon" }]
+keywords = ["juniper", "recurrence", "lmu", "http-client", "rest", "time-series", "cross-validation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.28.0",
+    "urllib3>=2.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "responses>=0.23",
+]
+# Opt-in: the X-Request-ID propagation + the on_request hook integrate with
+# juniper-observability, but the client never requires it (the import is guarded).
+observability = [
+    "juniper-observability>=0.3.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/pcalnon/juniper-recurrence"
+Repository = "https://github.com/pcalnon/juniper-recurrence"
+Issues = "https://github.com/pcalnon/juniper-recurrence/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "juniper_recurrence_client._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["juniper_recurrence_client*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
+addopts = ["-ra", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
+
+[tool.ruff]
+line-length = 512
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# X is the standard ML design-matrix argument name (juniper-model-core's array contract);
+# pep8-naming N803's lowercase rule is a false positive on it (mirrors the model package).
+"juniper_recurrence_client/client.py" = ["N803"]
