@@ -23,10 +23,21 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Changed
 
-- **`[bench]` extra now pins `juniper-data>=0.7.0`** (was `>=0.6.0`). juniper-data 0.7.0
-  publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189) to PyPI,
-  so the benchmark harness installs cleanly from PyPI — the editable-sibling / cross-repo-clone
-  workaround is no longer needed.
+- **`[bench]` extra now pins `juniper-data>=0.8.0`** (was `>=0.6.0`). juniper-data 0.7.0
+  publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189) to PyPI and
+  0.8.0 adds the equities `regression_target` option (#195), so the benchmark harness installs
+  cleanly from PyPI — the editable-sibling / cross-repo-clone workaround is no longer needed.
+  `>=0.8.0` is required (not just `>=0.7.0`): `EquitiesParams` ignores unknown kwargs (pydantic
+  `extra='ignore'`), so an older pin would silently drop the new target and re-measure the raw
+  non-stationary close.
+- **Benchmark `equities_seq` re-bench — stationary target + regularized-readout LMU.** The
+  real-data row now uses a stationary next-day **log-return** target and adds
+  `lmu_var/fixed_d16_ridge1.0` rows for a fair comparison (the ratified ridge=0 synthetic primary
+  bands are unchanged). Finding: the published r²≈−50 equities failure was dominantly an
+  unregularized-readout artifact (ridge=0 — a model-core conformance default), not target
+  non-stationarity; with a regularized readout on the stationary target the Δt-LMU reaches the
+  efficient-market predictability ceiling (r²≈0) and beats linear ridge. See
+  juniper-recurrence#28 and the juniper-ml findings doc §3.2.
 
 ## [0.1.1] - 2026-06-17
 

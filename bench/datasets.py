@@ -69,24 +69,26 @@ def mackey_glass(*, n_steps: int = 2000, lookback: int = 32, seed: int = 0) -> D
     return Dataset("mackey_glass", "regular", _full(out, "X"), _full(out, "y"), _full(out, "dt"), _full(out, "target_dt"))
 
 
-def equities_seq(*, symbols: tuple[str, ...] = ("AAPL",), start_date: str = "2010-01-01", end_date: str = "2022-01-01", lookback: int = 32) -> Dataset:
+def equities_seq(*, symbols: tuple[str, ...] = ("AAPL",), start_date: str = "2010-01-01", end_date: str = "2022-01-01", lookback: int = 32, regression_target: str = "log_return") -> Dataset:
     """Real irregular-Δt sequences from one equity's daily history (calendar gaps = genuine Δt).
 
     Uses a **single ticker** so the concatenated window set is one chronological series (clean
-    walk-forward CV — no cross-ticker interleaving). The regression target is ``y_reg``
-    (next-day close), not the one-hot direction label. Requires the ``[equities]`` extra
-    (yfinance / pandas) and network access at generation time (Yahoo Finance + SEC EDGAR); a
-    network failure is reported by the runner, not fatal.
+    walk-forward CV — no cross-ticker interleaving). The regression target ``y_reg`` is the
+    **stationary next-day log-return** (``regression_target="log_return"``, juniper-data ≥ 0.8.0),
+    not the raw next-day close: the raw price level is non-stationary and a closed-form LMU readout
+    extrapolates it badly (a r²≈−50 artifact — see the juniper-ml findings doc §3.2 and
+    recurrence#28). Requires the ``[equities]`` extra (yfinance / pandas) and network access at
+    generation time (Yahoo Finance + SEC EDGAR); a network failure is reported by the runner, not
+    fatal.
 
-    Known gap: juniper-data 0.7.0's wheel omits the bundled ``sp500_constituents.csv`` (a
-    packaging defect — the equities generators ship without their data file), so a pip install
-    of ``juniper-data[equities]==0.7.0`` raises ``FileNotFoundError`` here and the runner SKIPs
-    this row. Until juniper-data 0.7.1 ships the CSV, generate the equities row from a
-    source / editable install of juniper-data.
+    The stationary target requires ``juniper-data>=0.8.0`` (which added ``regression_target``; the
+    bundled ``sp500_constituents.csv`` ships from 0.7.1 onward). The ``[bench]`` extra pins it — and
+    it must, because ``EquitiesParams`` ignores unknown kwargs (pydantic ``extra='ignore'``), so an
+    older pin would silently drop this argument and re-measure the raw non-stationary close.
     """
     from juniper_data.generators.equities_seq import EquitiesSeqGenerator, EquitiesSeqParams
 
-    out = EquitiesSeqGenerator.generate(EquitiesSeqParams(symbols=list(symbols), start_date=start_date, end_date=end_date, lookback=lookback, normalize_features=True, use_cache=True))
+    out = EquitiesSeqGenerator.generate(EquitiesSeqParams(symbols=list(symbols), start_date=start_date, end_date=end_date, lookback=lookback, normalize_features=True, use_cache=True, regression_target=regression_target))
     return Dataset("equities_seq", "irregular", _full(out, "X"), _full(out, "y_reg"), _full(out, "dt"), _full(out, "target_dt"))
 
 
