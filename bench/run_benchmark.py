@@ -24,6 +24,12 @@ _HEADLINE_D = 16
 _D_GRID = (8, 16, 32)
 _N_FOLDS = 5
 _EMBARGO = 2
+# Regularized-readout variant. The LMURegressor default ridge=0 (plain lstsq) is an intentional
+# juniper-model-core conformance setting ("overfit-tiny exactly") that overfits low-signal real
+# data; this variant gives a fair real-data comparison (it reaches the efficient-market ceiling on
+# equities). The ratified ridge=0 primary bands are deliberately left untouched. See
+# juniper-recurrence#28 + the juniper-ml findings doc §3.2.
+_RIDGE_VARIANT = 1.0
 
 
 def _run_cv(factory: Any, ds: datasets.Dataset, aux: dict[str, np.ndarray], folds: list) -> dict[str, dict[str, float]]:
@@ -45,6 +51,10 @@ def run_dataset(ds: datasets.Dataset) -> dict[str, Any]:
     models[f"lmu_fixed_d{_HEADLINE_D}"] = _run_cv(lambda i: LMURegressor(d=_HEADLINE_D, theta=theta), ds, aux_fixed, folds)
     models["naive_persistence"] = _run_cv(lambda i: baselines.NaivePersistence(), ds, aux_real, folds)
     models["linear_ridge"] = _run_cv(lambda i: baselines.LinearRidge(ridge=1e-3), ds, aux_real, folds)
+    # Regularized-readout LMU (ridge>0): a fair comparison on low-signal real data, where the ridge=0
+    # default overfits. Both var-Δt and fixed-Δt so the Δt contribution stays isolated (recurrence#28).
+    models[f"lmu_var_d{_HEADLINE_D}_ridge{_RIDGE_VARIANT}"] = _run_cv(lambda i: LMURegressor(d=_HEADLINE_D, theta=theta, ridge=_RIDGE_VARIANT), ds, aux_real, folds)
+    models[f"lmu_fixed_d{_HEADLINE_D}_ridge{_RIDGE_VARIANT}"] = _run_cv(lambda i: LMURegressor(d=_HEADLINE_D, theta=theta, ridge=_RIDGE_VARIANT), ds, aux_fixed, folds)
     # d-sensitivity sweep for the variable-Δt LMU (headline d already covered above)
     sweep = {f"lmu_var_d{d}": _run_cv(lambda i, d=d: LMURegressor(d=d, theta=theta), ds, aux_real, folds) for d in _D_GRID if d != _HEADLINE_D}
 
@@ -85,6 +95,15 @@ def evaluate_bands(results: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
         beats_naive = r2(name, var) > r2(name, "naive_persistence")
         matches_linear = r2(name, var) >= r2(name, "linear_ridge") or abs(r2(name, var) - r2(name, "linear_ridge")) <= (r2_std(name, var) + r2_std(name, "linear_ridge"))
         bands.append({"band": f"2 — {name}: LMU beats naive & matches/beats linear (r2)", "value": f"LMU={r2(name, var):.4f}  naive={r2(name, 'naive_persistence'):.4f}  linear={r2(name, 'linear_ridge'):.4f}", "pass": bool(beats_naive and matches_linear), "primary": name in datasets.PRIMARY_DATASETS})
+
+    # Band 2b (informational) — real-data fairness. The headline ridge=0 LMU (Band 2) is a
+    # conformance default that overfits low-signal real data; with a regularized readout the
+    # Δt-LMU matches/beats linear on the *stationary* target. See recurrence#28 + findings §3.2.
+    rkey = f"lmu_var_d{_HEADLINE_D}_ridge{_RIDGE_VARIANT}"
+    for name in results:
+        if name == "equities_seq" and rkey in results[name]["models"]:
+            vr, lr = r2(name, rkey), r2(name, "linear_ridge")
+            bands.append({"band": f"2b — {name} (regularized readout, ridge={_RIDGE_VARIANT}): Δt-LMU matches/beats linear (r2)", "value": f"LMU(ridge)={vr:.4f}  linear={lr:.4f}  [ridge0 LMU={r2(name, var):.4f}]", "pass": bool(vr >= lr), "primary": False})
 
     # Band 3 — no regular-grid penalty: var ≈ fixed on regular-Δt datasets (within 10% RMSE).
     for name, res in results.items():
