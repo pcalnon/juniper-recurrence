@@ -8,6 +8,40 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-20
+
+DP-3 readout-spectrum, **phase P1** (design-of-record
+`notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md` in juniper-ml). Makes the LMU
+regressor's only trained surface — its *readout* — a configurable spectrum, and ships the cheap
+data-ranked lever (a GCV-selected regularised linear readout). **Fully backward compatible**: an
+additive, optional API — hence a patch release (stays inside every existing `<0.2.0` consumer pin).
+
+### Added
+
+- **Readout-spec API** (`juniper_recurrence_model.readouts`): the `Readout` / `ReadoutSpec`
+  protocols, `LinearReadout`, and the immutable `LinearReadoutSpec(ridge=…)`. `LMURegressor` now
+  accepts an explicit `readout=<spec>` (a *spec*, not a live object — so a spec shared across
+  cross-validation folds can never leak one fold's fitted weights into another). New public exports:
+  `Readout`, `ReadoutSpec`, `LinearReadout`, `LinearReadoutSpec`, `RidgeParam`.
+- **GCV ridge selection** (`ridge="gcv"`): closed-form generalised-cross-validation choice of the
+  readout L2 penalty at `fit` — one SVD of the (centred) design matrix + a 1-D log-grid search, no
+  held-out split and no inner-CV refit. The selected λ is written back to `model.ridge` and persisted
+  in the serialized metadata (retraining fidelity). Resolves juniper-recurrence#28.
+
+### Changed
+
+- **`LMURegressor` delegates its readout** to the spec (the fixed Δt LMU memory rollout is unchanged).
+  `LMURegressor(d, theta, ridge=…)` remains **byte-identical** to the pre-DP-3 model (the default
+  `LinearReadoutSpec(ridge=0.0)`); `ridge` widened to `float | Literal["gcv"]`. The readout receives
+  the memory block `M` only; `LMURegressor` keeps owning `target_dt` (a linear side-channel appended
+  after any nonlinearity) and the bias column (preserves D-WS4-2). `model._coef` is now a read-only
+  forwarding property to the linear readout's coefficients (`None` before fit / for nonlinear readouts).
+- **Serializer schema 2.** `LMUSerializer` now persists the readout's own state as namespaced
+  `readout__*` arrays + a nested `meta["readout"]` descriptor (with a `kind` tag), reconstructed via a
+  readout registry on load. **Pre-DP-3 `.npz` files still load** (a top-level `coef` + no
+  `meta["readout"]` falls back to a linear readout from `meta["ridge"]`). Topology gains a nested
+  `meta["readout"]={"kind": …}`; the LMU envelope keys (esp. `meta["d"]` = memory order) stay frozen.
+
 ## [0.1.2] - 2026-06-17
 
 ### Changed

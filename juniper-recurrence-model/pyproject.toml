@@ -75,8 +75,11 @@ select = ["E", "F", "W", "B", "I", "N"]
 # mathematical / ML conventions, so they are ignored per-file — the names are correct, not renamed.
 "juniper_recurrence_model/units/lmu_varstep.py" = ["N806"]
 "juniper_recurrence_model/model.py" = ["N803", "N806"]
+# M is the LMU memory-block argument (the standard math/ML design-matrix name); N803 false-positives.
+"juniper_recurrence_model/readouts.py" = ["N803"]
 "tests/test_lmu_grid_invariance.py" = ["N806"]
 "tests/test_lmu_model.py" = ["N806"]
+"tests/test_readouts.py" = ["N806"]
 "juniper_recurrence_model/data.py" = ["N806"]
 "tests/test_sequence_data.py" = ["N806"]
 "tests/test_crossval.py" = ["N806"]

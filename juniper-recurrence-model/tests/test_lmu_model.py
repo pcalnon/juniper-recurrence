@@ -9,6 +9,7 @@ conformance suite and the R-Δt-3 / §9.1a Δt guardrails land in PR-2.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import tempfile
 
@@ -16,7 +17,7 @@ import numpy as np
 import pytest
 from juniper_model_core.validation import legal_event_order, validate_metrics, validate_topology
 
-from juniper_recurrence_model import LMURegressor, LMUSerializer, VariableStepLMUMemory
+from juniper_recurrence_model import LinearReadoutSpec, LMURegressor, LMUSerializer, VariableStepLMUMemory
 
 
 def _toy_3d(n: int = 32, n_steps: int = 8, n_features: int = 3, seed: int = 0):
@@ -291,3 +292,89 @@ def test_data_driven_theta_falls_back_to_window_length_without_dt():
     model = LMURegressor()  # theta=None and no dt supplied
     model.fit(X, y)
     assert model.theta == 7.0  # falls back to the window length T
+
+
+# ----- DP-3 P1: readout-spec refactor + GCV + backcompat -----------------------------
+
+
+def test_gcv_ridge_selects_persists_and_roundtrips():
+    """ridge='gcv' selects a penalty at fit, writes it back to model.ridge + meta, and round-trips."""
+    X, dt, rng = _toy_3d(n=200, n_steps=10, n_features=3, seed=50)
+    memory_state = VariableStepLMUMemory(12, 8.0).rollout_batch(X, dt)[:, -1].reshape(200, -1)
+    y = memory_state @ rng.normal(size=(memory_state.shape[1], 1)) + 0.1 * rng.normal(size=(200, 1))
+    model = LMURegressor(d=12, theta=8.0, ridge="gcv")
+    model.fit(X, y, dt=dt)
+    assert isinstance(model.ridge, float) and model.ridge > 0.0  # "gcv" -> the selected λ
+    before = model.predict(X, dt=dt)
+    serializer = LMUSerializer()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = str(pathlib.Path(tmp) / "m")
+        serializer.save(model, path)
+        restored = serializer.load(path)
+    assert np.array_equal(before, restored.predict(X, dt=dt))  # lossless
+    assert restored.ridge == model.ridge  # selected λ persisted for retraining fidelity
+
+
+def test_linear_readout_spec_matches_ridge_kwarg_byte_identical():
+    """LMURegressor(readout=LinearReadoutSpec(ridge=r)) is byte-identical to LMURegressor(ridge=r)."""
+    X, dt, rng = _toy_3d(n=80, n_steps=8, n_features=3, seed=51)
+    y = rng.normal(size=(80, 1))
+    via_kwarg = LMURegressor(d=10, theta=6.0, ridge=1e-2)
+    via_spec = LMURegressor(d=10, theta=6.0, readout=LinearReadoutSpec(ridge=1e-2))
+    via_kwarg.fit(X, y, dt=dt)
+    via_spec.fit(X, y, dt=dt)
+    assert np.array_equal(via_kwarg.predict(X, dt=dt), via_spec.predict(X, dt=dt))
+
+
+def test_rejects_both_readout_and_ridge():
+    """One source of truth: passing both a readout spec and a non-default ridge is rejected."""
+    with pytest.raises(ValueError):
+        LMURegressor(d=8, theta=5.0, readout=LinearReadoutSpec(ridge=0.0), ridge=0.5)
+
+
+def test_coef_property_none_before_fit_and_forwards_after():
+    X, dt, rng = _toy_3d(n=20, n_features=3, seed=52)
+    y = rng.normal(size=(X.shape[0], 1))
+    model = LMURegressor(d=8, theta=5.0)
+    assert model._coef is None  # forwarding property: unfitted -> None
+    model.fit(X, y, dt=dt)
+    assert model._coef is not None
+    assert model._coef.shape[0] == 3 * 8 + 1  # F*d + bias (no target_dt side-channel)
+
+
+def test_loads_pre_dp3_format_npz():
+    """A pre-DP-3 .npz (top-level 'coef', no meta['readout']) loads and predicts identically."""
+    X, dt, rng = _toy_3d(n=40, n_steps=8, n_features=3, seed=53)
+    y = rng.normal(size=(40, 1))
+    model = LMURegressor(d=10, theta=6.0, ridge=1e-3)
+    model.fit(X, y, dt=dt)
+    expected = model.predict(X, dt=dt)
+    old_meta = {  # mirrors the pre-DP-3 LMUSerializer.save payload (no "schema"/"readout" keys)
+        "d": model.d,
+        "theta": model.theta,
+        "ridge": model.ridge,
+        "time_unit": model.time_unit,
+        "random_seed": model.random_seed,
+        "task_type": model.task_type,
+        "in_shape": list(model._in_shape),
+        "out_shape": list(model._out_shape),
+        "n_features": model._n_features,
+        "uses_target_dt": model._uses_target_dt,
+        "metrics": model._metrics,
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = str(pathlib.Path(tmp) / "old")
+        np.savez(path, coef=model._coef, meta=json.dumps(old_meta))
+        restored = LMUSerializer().load(path)
+    assert np.array_equal(expected, restored.predict(X, dt=dt))
+    assert restored.ridge == 1e-3
+
+
+def test_topology_carries_nested_readout_descriptor():
+    X, dt, rng = _toy_3d(seed=54)
+    y = rng.normal(size=(X.shape[0], 1))
+    model = LMURegressor(d=8, theta=5.0)
+    model.fit(X, y, dt=dt)
+    topology = model.describe_topology()
+    assert topology["meta"]["readout"]["kind"] == "linear"
+    assert topology["meta"]["d"] == 8  # the LMU envelope key stays frozen (memory order)
