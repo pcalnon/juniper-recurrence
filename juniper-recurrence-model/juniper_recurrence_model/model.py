@@ -304,7 +304,7 @@ class LMUSerializer(ModelSerializer):
                 # Pre-DP-3 format: a top-level "coef" array, ridge in meta, implicit linear readout.
                 readout = LinearReadout.from_state({"coef": data["coef"]}, {"kind": "linear", "ridge": meta.get("ridge", 0.0)})
             else:
-                arrays = {key[len(_READOUT_ARRAY_PREFIX):]: data[key] for key in data.files if key.startswith(_READOUT_ARRAY_PREFIX)}
+                arrays = {key[len(_READOUT_ARRAY_PREFIX) :]: data[key] for key in data.files if key.startswith(_READOUT_ARRAY_PREFIX)}
                 readout = build_readout_from_state(arrays, readout_descriptor)
         model = LMURegressor(d=meta["d"], theta=meta["theta"], time_unit=meta["time_unit"], random_seed=meta["random_seed"])
         model._readout = readout

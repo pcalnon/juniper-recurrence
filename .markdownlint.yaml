@@ -1,0 +1,20 @@
+---
+# markdownlint configuration for juniper-ml
+# Rule reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# MD029/ol-prefix: Allow any ordered list prefix style
+ol-prefix: false
+
+# MD013/line-length: Match Juniper ecosystem 512-char line length
+line-length:
+  line_length: 512
+
+# MD046/code-block-style: Allow consistent code block style
+code-block-style: consistent
+
+# MD036/emphasis-style: Disable emphasis-as-heading check
+emphasis-style: false
+
+# MD024/no-duplicate-heading: Allow duplicate headings under different parents
+no-duplicate-heading:
+  siblings_only: true

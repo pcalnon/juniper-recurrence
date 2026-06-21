@@ -60,27 +60,43 @@ def main() -> None:
         def close(self) -> None:
             pass
 
-    with mock.patch("juniper_recurrence.data.JuniperDataClient", _FakeClient), mock.patch("juniper_recurrence.data.validate_npz_contract", lambda a, **k: "sequence"):
+    with (
+        mock.patch("juniper_recurrence.data.JuniperDataClient", _FakeClient),
+        mock.patch(
+            "juniper_recurrence.data.validate_npz_contract", lambda a, **k: "sequence"
+        ),
+    ):
         from juniper_recurrence.app import build_app
         from juniper_recurrence.settings import Settings
 
         client = TestClient(build_app(Settings()), raise_server_exceptions=False)
 
-        r = client.post("/v1/train", json={"dataset": {"name": "irregular_sine"}, "d": 16})
+        r = client.post(
+            "/v1/train", json={"dataset": {"name": "irregular_sine"}, "d": 16}
+        )
         assert r.status_code == 200, f"/v1/train -> {r.status_code}: {r.text}"
         metrics = r.json().get("final_metrics", {})
-        print(f"/v1/train      r2={metrics.get('r2'):.4f}  rmse={metrics.get('rmse'):.4f}")
-        assert metrics.get("r2", 0.0) >= 0.9, f"train r2 {metrics.get('r2')} unexpectedly low"
+        print(
+            f"/v1/train      r2={metrics.get('r2'):.4f}  rmse={metrics.get('rmse'):.4f}"
+        )
+        assert metrics.get("r2", 0.0) >= 0.9, (
+            f"train r2 {metrics.get('r2')} unexpectedly low"
+        )
 
         rp = client.post("/v1/predict", json={"dataset": {"name": "irregular_sine"}})
         assert rp.status_code == 200, f"/v1/predict -> {rp.status_code}: {rp.text}"
         print(f"/v1/predict    shape={rp.json().get('shape')}")
 
-        rc = client.post("/v1/crossval", json={"dataset": {"name": "irregular_sine"}, "n_folds": 3, "d": 16})
+        rc = client.post(
+            "/v1/crossval",
+            json={"dataset": {"name": "irregular_sine"}, "n_folds": 3, "d": 16},
+        )
         assert rc.status_code == 200, f"/v1/crossval -> {rc.status_code}: {rc.text}"
         print(f"/v1/crossval   n_folds={rc.json().get('n_folds')}  (HTTP 200)")
 
-    print("\nI2 e2e PASS — the deployed app trains + predicts + cross-validates on irregular-Δt data.")
+    print(
+        "\nI2 e2e PASS — the deployed app trains + predicts + cross-validates on irregular-Δt data."
+    )
 
 
 if __name__ == "__main__":
