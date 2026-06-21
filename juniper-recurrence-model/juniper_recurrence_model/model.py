@@ -3,24 +3,28 @@
 This is the WS-4 model layer: a standalone, fixed-order, irregular-Δt-native
 Legendre Memory Unit **regressor** that satisfies ``juniper_model_core.TrainableModel``.
 It wraps the fixed :class:`~juniper_recurrence_model.units.VariableStepLMUMemory` cell
-with the only trained surface — a closed-form least-squares **readout**.
+with the only trained surface — a **readout** drawn from the DP-3 readout spectrum.
 
 Design (ratified decisions D-WS4-1…3, plan
-``notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.md`` in juniper-ml):
+``notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.md``; readout spectrum
+``notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md``, both in juniper-ml):
 
 * **D-WS4-1 — per-feature identity read-in.** Each of the ``F`` input features drives its
   own order-``d`` memory through the *same* fixed ``A``/``B``/θ (no trained projection); the
   per-window memory state is the concatenation ``M ∈ ℝ^{F·d}``. Only the readout is trained.
 * **D-WS4-2 — ``target_dt`` as a readout feature.** When supplied, the irregular forecast
-  horizon is concatenated to the readout design matrix.
+  horizon is concatenated to the readout design matrix as a **linear side-channel** — appended
+  *after* any readout nonlinearity; the readout itself only ever sees the memory block ``M``.
 * **D-WS4-3 — standalone.** No cascor cascade head; this regressor has its own readout.
 
-Because the memory matrices are fixed (never differentiated) and the readout is linear, the
-whole model is a closed-form ``lstsq`` solve over an LMU-memory feature map — **numpy-only,
-no autodiff framework**. This is the structural twin of ``juniper_model_core``'s
-``ReferenceLinearModel`` with its ``_flatten(X)`` feature map replaced by a dt-aware
-LMU-memory rollout. (A trained projection read-in / nonlinear readout — the point at which
-torch would enter — is a deferred increment.)
+The readout is configured by an **immutable spec** (:mod:`juniper_recurrence_model.readouts`) and
+materialised into a fresh fitted instance inside :meth:`LMURegressor.fit`, so a spec shared across
+cross-validation folds never leaks one fold's fitted weights into another. The default
+:class:`~juniper_recurrence_model.readouts.LinearReadoutSpec` (``ridge=0.0``) is the closed-form
+``lstsq`` solve over the LMU-memory feature map — numpy-only, no autodiff — the structural twin of
+``juniper_model_core``'s ``ReferenceLinearModel`` with its ``_flatten(X)`` feature map replaced by a
+dt-aware LMU-memory rollout. (A torch-backed nonlinear readout — the point at which torch enters —
+is a deferred increment, gated behind a ``[torch]`` extra.)
 """
 
 from __future__ import annotations
@@ -32,9 +36,13 @@ from typing import Any
 import numpy as np
 from juniper_model_core import ModelSerializer, TaskType, Topology, TrainableModel, TrainingEvent, TrainResult
 
+from juniper_recurrence_model.readouts import LinearReadout, LinearReadoutSpec, ReadoutSpec, RidgeParam, build_readout_from_state
 from juniper_recurrence_model.units.lmu_varstep import VariableStepLMUMemory
 
 __all__ = ["LMURegressor", "LMUSerializer"]
+
+#: npz key prefix under which a readout's fitted arrays are namespaced (DP-3 serializer schema 2).
+_READOUT_ARRAY_PREFIX = "readout__"
 
 
 def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
@@ -49,7 +57,7 @@ def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, flo
 
 
 class LMURegressor(TrainableModel):
-    """Fixed-order Δt-native LMU regressor (per-feature identity read-in + linear readout).
+    """Fixed-order Δt-native LMU regressor (per-feature identity read-in + spectrum readout).
 
     Parameters
     ----------
@@ -60,31 +68,55 @@ class LMURegressor(TrainableModel):
         ``None`` (default) resolves it data-drivenly at ``fit``: the median per-window total
         elapsed time ``median(sum(dt, axis=1))``, falling back to the window length ``T`` when
         ``dt`` is absent or non-positive.
+    readout:
+        An immutable readout **spec** (see :mod:`juniper_recurrence_model.readouts`). ``None``
+        (default) builds a :class:`~juniper_recurrence_model.readouts.LinearReadoutSpec` from
+        ``ridge`` — so ``LMURegressor(d, theta, ridge=…)`` is byte-identical to the pre-DP-3 model.
+        Passing both a non-default ``ridge`` and a ``readout`` is rejected (one source of truth).
     ridge:
-        L2 penalty on the readout (the bias column is never penalised). ``0.0`` (default)
-        uses a plain min-norm least-squares solve — which lets the readout memorise a tiny
-        set exactly (the overfit-tiny guarantee) and mirrors the reference model.
+        Convenience for the default linear readout's L2 penalty (the bias column is never
+        penalised). ``0.0`` (default) is the plain min-norm least-squares solve. A positive float
+        is the regularised normal-equation solve. ``"gcv"`` selects the penalty by closed-form
+        generalised cross-validation at ``fit`` (the selected λ is written back to ``self.ridge``).
+        Ignored when an explicit ``readout`` spec is supplied.
     time_unit:
         Declared real-time unit of ``dt`` / ``theta`` (carried in the topology meta).
     random_seed:
-        Stored for the contract; the closed-form fit is deterministic regardless.
+        Carried for the contract and used to seed any data-independent readout randomness (e.g.
+        the RFF projection). The closed-form linear fit is deterministic regardless.
     """
 
-    def __init__(self, d: int = 16, theta: float | None = None, *, ridge: float = 0.0, time_unit: str = "steps", random_seed: int | None = 0) -> None:
+    def __init__(self, d: int = 16, theta: float | None = None, *, readout: ReadoutSpec | None = None, ridge: RidgeParam = 0.0, time_unit: str = "steps", random_seed: int | None = 0) -> None:
+        if readout is not None and ridge != 0.0:
+            raise ValueError("pass either a `readout` spec or a `ridge` value, not both; `ridge` configures the default linear readout")
         self.task_type: TaskType = "regression"
         self.random_seed = random_seed
         self.d = int(d)
         self.theta: float | None = None if theta is None else float(theta)
-        self.ridge = float(ridge)
+        self.ridge: RidgeParam = ridge
         self.time_unit = str(time_unit)
+        # The readout is configured by an immutable spec and materialised fresh in fit().
+        self._readout_spec: ReadoutSpec = readout if readout is not None else LinearReadoutSpec(ridge=ridge)
+        self._readout: Any = None
         # When theta is data-driven (None) the fixed memory is built in fit(); see fit().
         self._memory = None if self.theta is None else VariableStepLMUMemory(self.d, self.theta)
-        self._coef: np.ndarray | None = None
         self._in_shape: tuple[int, ...] = ()
         self._out_shape: tuple[int, ...] = ()
         self._n_features: int | None = None
         self._uses_target_dt: bool = False
         self._metrics: dict[str, float] = {}
+
+    @property
+    def _coef(self) -> np.ndarray | None:
+        """The linear readout's coefficients (``[M | target_dt? | 1]`` layout), or ``None``.
+
+        Read-only forwarding property kept for backward compatibility (the serializer's
+        unfitted check now consults ``readout.is_fitted``; this surfaces the coefficient vector
+        that ``test_lmu_model`` and downstream callers historically read as ``model._coef``).
+        ``None`` before fit and for nonlinear readouts (whose trained weights are not a single
+        linear coefficient vector).
+        """
+        return None if self._readout is None else self._readout.coef
 
     # ----- feature map (shared by fit and predict) -----------------------------------
     @staticmethod
@@ -100,7 +132,8 @@ class LMURegressor(TrainableModel):
             return np.where(has_true, last_true, n_steps - 1)
         return np.full(n, n_steps - 1, dtype=int)
 
-    def _features(self, X: np.ndarray, dt: np.ndarray | None, target_dt: np.ndarray | None, readout_mask: np.ndarray | None, seq_lengths: np.ndarray | None) -> np.ndarray:
+    def _memory_block(self, X: np.ndarray, dt: np.ndarray | None, readout_mask: np.ndarray | None, seq_lengths: np.ndarray | None) -> np.ndarray:
+        """Roll the fixed LMU memory over ``X`` and gather the readout-step state ``M`` (n, F·d)."""
         X = np.asarray(X, dtype=float)
         if X.ndim != 3:
             raise ValueError(f"X must be 3-D (n, T, F); got shape {X.shape}")
@@ -112,13 +145,14 @@ class LMURegressor(TrainableModel):
             dt[:, 1:] = 1.0  # uniform unit-spacing fallback (bare predict(X) — no timing supplied)
         trajectory = self._memory.rollout_batch(X, dt)  # (n, T, F, d)
         idx = self._readout_index(n, n_steps, readout_mask, seq_lengths)
-        memory_state = trajectory[np.arange(n), idx].reshape(n, n_features * self.d)  # (n, F*d)
-        columns = [memory_state]
-        if self._uses_target_dt:
-            horizon = np.zeros(n) if target_dt is None else np.asarray(target_dt, dtype=float).reshape(n)
-            columns.append(horizon[:, None])
-        columns.append(np.ones((n, 1)))  # bias
-        return np.concatenate(columns, axis=1)
+        return trajectory[np.arange(n), idx].reshape(n, n_features * self.d)  # (n, F*d)
+
+    def _side_channel(self, target_dt: np.ndarray | None, n: int) -> np.ndarray:
+        """The linear side-channel appended to the readout design: the ``target_dt`` column, or ``(n, 0)``."""
+        if not self._uses_target_dt:
+            return np.empty((n, 0))
+        horizon = np.zeros(n) if target_dt is None else np.asarray(target_dt, dtype=float).reshape(n)
+        return horizon[:, None]
 
     # ----- TrainableModel contract ---------------------------------------------------
     def fit(self, X: np.ndarray, y: np.ndarray, *, X_val: np.ndarray | None = None, y_val: np.ndarray | None = None, on_event: Any = None, **kw: Any) -> TrainResult:
@@ -149,16 +183,15 @@ class LMURegressor(TrainableModel):
             on_event(TrainingEvent("training_start", {"n_samples": int(n)}, seq))
             seq += 1
 
-        design = self._features(X, kw.get("dt"), kw.get("target_dt"), kw.get("readout_mask"), kw.get("seq_lengths"))
-        if self.ridge > 0.0:
-            gram = design.T @ design
-            penalty = self.ridge * np.eye(gram.shape[0])
-            penalty[-1, -1] = 0.0  # never regularise the bias column
-            coef = np.linalg.solve(gram + penalty, design.T @ y)
-        else:
-            coef, *_ = np.linalg.lstsq(design, y, rcond=None)
-        self._coef = coef
-        self._metrics = _regression_metrics(y, design @ coef)
+        memory_block = self._memory_block(X, kw.get("dt"), kw.get("readout_mask"), kw.get("seq_lengths"))
+        side_channel = self._side_channel(kw.get("target_dt"), n)
+        self._readout = self._readout_spec.make()
+        self._readout.fit(memory_block, side_channel, y, random_seed=self.random_seed)
+        if self._readout.kind == "linear":
+            # Propagate a GCV-selected λ (or the fixed penalty) to the envelope so meta["ridge"]
+            # records it for retraining fidelity (the lossless test can't catch its omission).
+            self.ridge = self._readout.ridge
+        self._metrics = _regression_metrics(y, self._readout.predict(memory_block, side_channel))
 
         if on_event is not None:
             on_event(TrainingEvent("epoch_end", {"epoch": 0, "metrics": dict(self._metrics)}, seq))
@@ -175,16 +208,19 @@ class LMURegressor(TrainableModel):
         callers pass ``dt`` (and ``target_dt`` when the model was fit with one) to engage the
         Δt path. Never returns an ``argmax`` (RK-6 — collapsing to labels is classification-only).
         """
-        if self._coef is None:
+        if self._readout is None or not self._readout.is_fitted:
             raise RuntimeError("model is not fitted")
         X = np.asarray(X, dtype=float)
-        design = self._features(X, dt, target_dt, readout_mask, seq_lengths)
-        return (design @ self._coef).reshape((X.shape[0], *self._out_shape))
+        n = X.shape[0]
+        memory_block = self._memory_block(X, dt, readout_mask, seq_lengths)
+        side_channel = self._side_channel(target_dt, n)
+        return self._readout.predict(memory_block, side_channel).reshape((n, *self._out_shape))
 
     def metrics(self) -> dict[str, float]:
         return dict(self._metrics)
 
     def describe_topology(self) -> Topology:
+        readout_kind = self._readout.kind if self._readout is not None else self._readout_spec.kind
         return {
             "model_type": "lmu",
             "nodes": [
@@ -204,6 +240,9 @@ class LMURegressor(TrainableModel):
                 "d": self.d,
                 "time_unit": self.time_unit,
                 "n_features": self._n_features,
+                # DP-3: nested readout descriptor (the LMU envelope keys above stay frozen — esp.
+                # meta["d"] = memory order, asserted ==4 by the recurrence app's test_routes).
+                "readout": {"kind": readout_kind},
             },
         }
 
@@ -219,20 +258,28 @@ class LMURegressor(TrainableModel):
 class LMUSerializer(ModelSerializer):
     """Lossless ``.npz`` + JSON serializer for :class:`LMURegressor`.
 
-    Persists the trained readout coefficients plus the hyperparameters; the fixed memory
-    eigendecomposition is recomputed from ``d``/θ on load (deterministic), so reloaded
-    predictions are bit-identical (the conformance kit's lossless-round-trip assertion).
+    Persists the LMU envelope (``d``/θ/etc.) plus the readout's own fitted state (via the
+    readout's ``save_state``), namespaced under ``readout__*`` arrays with a JSON descriptor in
+    ``meta["readout"]``. The fixed memory eigendecomposition is recomputed from ``d``/θ on load
+    (deterministic), so a linear readout's reloaded predictions are bit-identical (the conformance
+    kit's lossless-round-trip assertion).
+
+    Backward compatibility: a pre-DP-3 file has a top-level ``coef`` array and no
+    ``meta["readout"]``; :meth:`load` detects that and reconstructs a linear readout from
+    ``meta["ridge"]`` + ``coef``.
     """
 
     def save(self, model: TrainableModel, path: str | os.PathLike[str]) -> None:
         if not isinstance(model, LMURegressor):
             raise TypeError("LMUSerializer only serializes LMURegressor")
-        if model._coef is None:
+        if model._readout is None or not model._readout.is_fitted:
             raise RuntimeError("cannot serialize an unfitted model")
+        arrays, readout_descriptor = model._readout.save_state()
         meta = {
+            "schema": 2,
             "d": model.d,
             "theta": model.theta,
-            "ridge": model.ridge,
+            "ridge": model.ridge if not isinstance(model.ridge, str) else 0.0,
             "time_unit": model.time_unit,
             "random_seed": model.random_seed,
             "task_type": model.task_type,
@@ -241,18 +288,29 @@ class LMUSerializer(ModelSerializer):
             "n_features": model._n_features,
             "uses_target_dt": model._uses_target_dt,
             "metrics": model._metrics,
+            "readout": readout_descriptor,
         }
-        np.savez(os.fspath(path), coef=model._coef, meta=json.dumps(meta))
+        namespaced = {f"{_READOUT_ARRAY_PREFIX}{key}": value for key, value in arrays.items()}
+        np.savez(os.fspath(path), meta=json.dumps(meta), **namespaced)
 
     def load(self, path: str | os.PathLike[str]) -> LMURegressor:
         resolved = os.fspath(path)
         if not resolved.endswith(".npz"):
             resolved = resolved + ".npz"
         with np.load(resolved, allow_pickle=False) as data:
-            coef = data["coef"]
             meta = json.loads(str(data["meta"]))
-        model = LMURegressor(d=meta["d"], theta=meta["theta"], ridge=meta["ridge"], time_unit=meta["time_unit"], random_seed=meta["random_seed"])
-        model._coef = coef
+            readout_descriptor = meta.get("readout")
+            if readout_descriptor is None:
+                # Pre-DP-3 format: a top-level "coef" array, ridge in meta, implicit linear readout.
+                readout = LinearReadout.from_state({"coef": data["coef"]}, {"kind": "linear", "ridge": meta.get("ridge", 0.0)})
+            else:
+                arrays = {key[len(_READOUT_ARRAY_PREFIX):]: data[key] for key in data.files if key.startswith(_READOUT_ARRAY_PREFIX)}
+                readout = build_readout_from_state(arrays, readout_descriptor)
+        model = LMURegressor(d=meta["d"], theta=meta["theta"], time_unit=meta["time_unit"], random_seed=meta["random_seed"])
+        model._readout = readout
+        if isinstance(readout, LinearReadout):
+            model.ridge = readout.ridge
+            model._readout_spec = LinearReadoutSpec(ridge=readout.ridge)
         model._in_shape = tuple(meta["in_shape"])
         model._out_shape = tuple(meta["out_shape"])
         model._n_features = meta["n_features"]

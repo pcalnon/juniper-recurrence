@@ -13,12 +13,18 @@ the WS-4 build plan ``notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.m
 from juniper_recurrence_model._version import __version__
 from juniper_recurrence_model.data import SequenceData, load_sequence_npz, sequence_data_from_arrays
 from juniper_recurrence_model.model import LMURegressor, LMUSerializer
+from juniper_recurrence_model.readouts import LinearReadout, LinearReadoutSpec, Readout, ReadoutSpec, RidgeParam
 from juniper_recurrence_model.units import VariableStepLMUMemory, lmu_matrices
 
 __all__ = [
     "__version__",
     "LMURegressor",
     "LMUSerializer",
+    "Readout",
+    "ReadoutSpec",
+    "LinearReadout",
+    "LinearReadoutSpec",
+    "RidgeParam",
     "SequenceData",
     "load_sequence_npz",
     "sequence_data_from_arrays",
