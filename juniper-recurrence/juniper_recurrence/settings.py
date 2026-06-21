@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from juniper_service_core import SettingsBase, get_secret
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -60,7 +60,7 @@ class Settings(SettingsBase):
     # --- LMU hyperparameter defaults (consumed by the PR-2 training path) -------------
     default_d: int = 16
     default_theta: float | None = None
-    default_ridge: float = 0.0
+    default_ridge: float | Literal["gcv"] = 0.0
 
     # --- observability: Prometheus /metrics (IP-allowlist gated) ----------------------
     metrics_enabled: bool = True

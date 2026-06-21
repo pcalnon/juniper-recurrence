@@ -20,8 +20,17 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   imports for ~10-15s before uvicorn binds). A new `Docker Build & Smoke Test` CI job in
   `ci-recurrence-app.yml` builds the image and asserts `/v1/health` → 200. This makes the
   published app deployable (the WS-7 compose integration — host 8211 — follows next).
+- **`ridge="gcv"` at the API + CLI edge (DP-3 P1).** `POST /v1/train` / `POST /v1/crossval`
+  (and `juniper-recurrence train --ridge gcv`) now accept `ridge="gcv"` in addition to a
+  non-negative float — requesting the model's closed-form generalised-cross-validation selection
+  of the readout L2 penalty. `default_ridge` widens to `float | Literal["gcv"]` (default `0.0`,
+  unchanged); floats still validate `>= 0`.
 
 ### Changed
+
+- **`juniper-recurrence-model` pin floor → `>=0.1.3`** (was `>=0.1.2`; ceiling unchanged at
+  `<0.2.0`). 0.1.3 ships the DP-3 readout spectrum that accepts `ridge="gcv"`, which the widened
+  API requires at runtime. Publish-first: 0.1.3 must reach PyPI before this app change installs.
 
 - **`[bench]` extra now pins `juniper-data>=0.8.0`** (was `>=0.6.0`). juniper-data 0.7.0
   publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189) to PyPI and

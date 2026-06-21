@@ -13,7 +13,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional, Union
 from urllib.parse import urlparse
 
 import requests
@@ -290,7 +290,7 @@ class JuniperRecurrenceClient:
         split: str = "train",
         d: Optional[int] = None,
         theta: Optional[float] = None,
-        ridge: Optional[float] = None,
+        ridge: Optional[Union[float, Literal["gcv"]]] = None,
     ) -> dict[str, Any]:
         """``POST /v1/train`` — synchronously fit the LMU regressor on a dataset split.
 
@@ -360,7 +360,7 @@ class JuniperRecurrenceClient:
         min_train: Optional[int] = None,
         d: Optional[int] = None,
         theta: Optional[float] = None,
-        ridge: Optional[float] = None,
+        ridge: Optional[Union[float, Literal["gcv"]]] = None,
     ) -> dict[str, Any]:
         """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the ``_full`` split.
 

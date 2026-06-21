@@ -56,6 +56,22 @@ def test_crossval_passes_hyperparams() -> None:
 
 
 @responses.activate
+def test_train_forwards_gcv_ridge() -> None:
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client().train(name="equities", ridge="gcv")
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["ridge"] == "gcv"
+
+
+@responses.activate
+def test_crossval_forwards_gcv_ridge() -> None:
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 2, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client().crossval(generator="equities_seq", n_folds=2, ridge="gcv")
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["ridge"] == "gcv"
+
+
+@responses.activate
 def test_wait_for_ready_polls_until_ready() -> None:
     responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"status": "starting"}, status=200)
     responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"status": "ready"}, status=200)
