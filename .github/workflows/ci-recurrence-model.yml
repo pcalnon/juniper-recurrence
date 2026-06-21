@@ -37,6 +37,25 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: juniper-recurrence-model
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install --upgrade "pip>=26.1.1" ruff
+
+      - name: Ruff lint
+        run: ruff check .
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
