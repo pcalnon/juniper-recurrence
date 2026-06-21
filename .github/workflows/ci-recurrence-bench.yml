@@ -1,7 +1,7 @@
 ---
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Application:   bench harness (juniper-recurrence repo root)
+# Application:   juniper-recurrence (repo root, bench/ harness — Δt-thesis benchmark suite)
 # File Name:     ci-recurrence-bench.yml
 # Author:        Paul Calnon
 #
