@@ -8,6 +8,36 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-21
+
+DP-3 readout-spectrum, **phase P2a** — the numpy **nonlinear** readout (Rung 2a). Additive +
+backward-compatible (the default readout is unchanged), hence a patch release.
+
+### Added
+
+- **`RFFReadout` / `RFFReadoutSpec` (Rung 2a)** — a numpy nonlinear readout:
+  `standardize(M) → random Fourier features → ridge`. `φ(M) = √(2/D)·cos(standardize(M)·W + b)`
+  with `W ~ 𝒩(0, γ²I)`, `b ~ U[0, 2π)` sampled once at `fit` from the model's `random_seed`
+  (data-independent, fixed across folds — cross-fold safe via the immutable spec). The design matrix
+  is `[ φ(standardize(M)) | target_dt | 1 ]`: the RFF map applies to the memory block only;
+  `target_dt` and the bias stay linear (D-WS4-2). Use via `LMURegressor(readout=RFFReadoutSpec(…))`.
+  New public exports: `RFFReadout`, `RFFReadoutSpec`.
+- **Bandwidth selection** — `γ` via the median heuristic on standardized `M` (`gamma="median"`,
+  default; ridge/GCV cannot select `γ`), or a fixed float. The readout penalty is **GCV-selected by
+  default** (`ridge="gcv"`); ridge is mandatory for this rung (`γ`/`D` are high-variance).
+- **Mandatory per-column standardization of `M`** (train-fold-only; zero-variance columns guarded to
+  std=1 so predictions stay finite) — keeps the isotropic `W` from being dominated by the
+  high-energy low-order Legendre columns (≈25× RMS spread).
+
+### Changed
+
+- **Serializer registry now includes `"rff"`.** `RFFReadout` persists `W`, `b`, the standardization
+  stats, and the solved coefficients as float64 `readout__*` arrays + a `meta["readout"]` descriptor
+  (`kind`, `gamma`, `ridge`, `n_features_out`). Bit-exact lossless serialization for the
+  `cos`-of-matmul path is **gated by an RFF conformance subclass** (in-process; no cross-machine
+  claim). `D` is capped to the fold size (`p/n` guard; ridge handles the remainder). `model._coef` is
+  `None` for the (nonlinear) RFF readout, as for any non-linear rung.
+
 ## [0.1.3] - 2026-06-20
 
 DP-3 readout-spectrum, **phase P1** (design-of-record
