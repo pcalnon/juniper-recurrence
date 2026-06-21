@@ -23,7 +23,7 @@ name: CI — juniper-recurrence-app
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
     paths:
       - "juniper-recurrence/**"
       - ".github/workflows/ci-recurrence-app.yml"
@@ -133,3 +133,24 @@ jobs:
           echo ""
           echo "smoke test OK: /v1/health -> 200"
           docker rm -f rec-ci
+
+  required-checks:
+    name: Required checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, test, build, docker]
+    steps:
+      - name: Verify required jobs succeeded
+        run: |
+          echo "Lint:   ${{ needs.lint.result }}"
+          echo "Test:   ${{ needs.test.result }}"
+          echo "Build:  ${{ needs.build.result }}"
+          echo "Docker: ${{ needs.docker.result }}"
+          if [[ "${{ needs.lint.result }}" != "success" \
+             || "${{ needs.test.result }}" != "success" \
+             || "${{ needs.build.result }}" != "success" \
+             || "${{ needs.docker.result }}" != "success" ]]; then
+            echo "::error::one or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All required checks passed."
