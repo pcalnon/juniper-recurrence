@@ -14,7 +14,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from juniper_recurrence_model.readouts import READOUT_REGISTRY, LinearReadout, LinearReadoutSpec, build_readout_from_state
+from juniper_recurrence_model.readouts import READOUT_REGISTRY, LinearReadout, LinearReadoutSpec, RFFReadout, RFFReadoutSpec, build_readout_from_state
 
 
 def _block(n: int = 80, p: int = 12, k: int = 0, seed: int = 0):
@@ -148,3 +148,129 @@ def test_build_readout_from_state_registry_roundtrip():
 def test_build_readout_from_state_unknown_kind_raises():
     with pytest.raises(ValueError):
         build_readout_from_state({"coef": np.zeros((2, 1))}, {"kind": "nope"})
+
+
+# ----- Rung 2a: RFF nonlinear readout (P2) -------------------------------------------
+
+
+def test_rff_spec_frozen_and_makes_readout():
+    spec = RFFReadoutSpec(n_features_out=64, gamma="median", ridge="gcv")
+    ro = spec.make()
+    assert isinstance(ro, RFFReadout) and ro.kind == "rff" and ro.n_features_out == 64
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        spec.n_features_out = 1  # type: ignore[misc]
+
+
+def test_rff_unfitted_state():
+    ro = RFFReadout(n_features_out=20)
+    assert ro.is_fitted is False and ro.coef is None  # nonlinear -> coef stays None
+    with pytest.raises(RuntimeError):
+        ro.predict(*_block(p=4)[:2])
+    with pytest.raises(RuntimeError):
+        ro.save_state()
+
+
+def test_rff_fit_predict_finite_and_coef_none():
+    M, extra, rng = _block(n=120, p=10, k=1, seed=10)
+    y = rng.normal(size=(120, 1))
+    ro = RFFReadout(n_features_out=64, ridge="gcv")
+    ro.fit(M, extra, y, random_seed=0)
+    pred = ro.predict(M, extra)
+    assert pred.shape == (120, 1)
+    assert np.all(np.isfinite(pred))  # NaN would fail the array_equal serialization contract
+    assert ro.coef is None and ro.is_fitted is True
+
+
+def test_rff_captures_nonlinear_product_a_linear_readout_cannot():
+    """Capacity: a bilinear target y = M0·M1 is unreachable by a linear readout; RFF approximates it."""
+    rng = np.random.default_rng(11)
+    n, p = 400, 8
+    M = rng.normal(size=(n, p))
+    extra = np.empty((n, 0))
+    y = (M[:, 0] * M[:, 1])[:, None] + 0.05 * rng.normal(size=(n, 1))
+
+    def _r2(ro):
+        pred = ro.predict(M, extra)
+        ss_res = float(np.sum((y - pred) ** 2))
+        ss_tot = float(np.sum((y - y.mean()) ** 2))
+        return 1.0 - ss_res / ss_tot
+
+    lin = LinearReadout(ridge="gcv")
+    lin.fit(M, extra, y)
+    rff = RFFReadout(n_features_out=300, ridge="gcv")
+    rff.fit(M, extra, y, random_seed=0)
+    r2_lin, r2_rff = _r2(lin), _r2(rff)
+    assert r2_lin < 0.25, f"linear readout should fail the bilinear target; got r2={r2_lin}"
+    assert r2_rff > 0.6, f"RFF readout should capture the bilinear target; got r2={r2_rff}"
+    assert r2_rff > r2_lin + 0.35
+
+
+def test_rff_handles_zero_variance_column():
+    rng = np.random.default_rng(12)
+    M = rng.normal(size=(60, 5))
+    M[:, 2] = 3.0  # a constant memory column -> std 0 -> would be 0/0 NaN without the guard
+    extra = np.empty((60, 0))
+    y = rng.normal(size=(60, 1))
+    ro = RFFReadout(n_features_out=32, ridge="gcv")
+    ro.fit(M, extra, y, random_seed=0)
+    assert np.all(np.isfinite(ro.predict(M, extra)))
+
+
+def test_rff_deterministic_from_seed():
+    M, extra, rng = _block(n=80, p=10, k=1, seed=20)
+    y = rng.normal(size=(80, 1))
+    a = RFFReadout(n_features_out=48)
+    a.fit(M, extra, y, random_seed=7)
+    b = RFFReadout(n_features_out=48)
+    b.fit(M, extra, y, random_seed=7)
+    c = RFFReadout(n_features_out=48)
+    c.fit(M, extra, y, random_seed=8)
+    assert np.array_equal(a.predict(M, extra), b.predict(M, extra))  # same seed -> identical (cross-fold safe)
+    assert not np.array_equal(a.predict(M, extra), c.predict(M, extra))  # different seed -> different W,b
+
+
+def test_rff_save_state_roundtrip_lossless():
+    M, extra, rng = _block(n=70, p=10, k=1, seed=21)
+    y = rng.normal(size=(70, 1))
+    ro = RFFReadout(n_features_out=40, ridge="gcv")
+    ro.fit(M, extra, y, random_seed=3)
+    arrays, descriptor = ro.save_state()
+    assert descriptor["kind"] == "rff" and descriptor["n_features_out"] == 40 and "gamma" in descriptor
+    restored = RFFReadout.from_state(arrays, descriptor)
+    assert np.array_equal(ro.predict(M, extra), restored.predict(M, extra))  # bit-exact
+    rebuilt = build_readout_from_state(arrays, descriptor)  # registry path
+    assert isinstance(rebuilt, RFFReadout)
+    assert np.array_equal(ro.predict(M, extra), rebuilt.predict(M, extra))
+
+
+def test_rff_d_capped_to_fold_size():
+    M, extra, rng = _block(n=30, p=8, seed=22)
+    y = rng.normal(size=(30, 1))
+    ro = RFFReadout(n_features_out=256)  # 256 > n -> capped to n
+    ro.fit(M, extra, y, random_seed=0)
+    _, descriptor = ro.save_state()
+    assert descriptor["n_features_out"] == 30
+
+
+def test_rff_invalid_ridge_string_raises():
+    M, extra, rng = _block(seed=24)
+    y = rng.normal(size=(M.shape[0], 1))
+    with pytest.raises(ValueError):
+        RFFReadout(ridge="bogus").fit(M, extra, y, random_seed=0)  # type: ignore[arg-type]
+
+
+def test_rff_fixed_gamma_is_used_and_persisted():
+    M, extra, rng = _block(n=50, p=6, seed=25)
+    y = rng.normal(size=(50, 1))
+    ro = RFFReadout(n_features_out=32, gamma=0.5, ridge=1.0)
+    ro.fit(M, extra, y, random_seed=0)
+    _, descriptor = ro.save_state()
+    assert descriptor["gamma"] == 0.5  # explicit gamma bypasses the median heuristic
+
+
+def test_rff_ridge_zero_uses_lstsq():
+    M, extra, rng = _block(n=80, p=8, seed=26)
+    y = rng.normal(size=(80, 1))
+    ro = RFFReadout(n_features_out=32, gamma=0.5, ridge=0.0)  # unregularised RFF -> min-norm lstsq
+    ro.fit(M, extra, y, random_seed=0)
+    assert np.all(np.isfinite(ro.predict(M, extra)))

@@ -62,6 +62,33 @@ python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 
+[tool.coverage.run]
+source = ["juniper_recurrence_client"]
+source_pkgs = ["juniper_recurrence_client"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+branch = true
+
+[tool.coverage.report]
+# fail_under mirrors the CI gate (ci-recurrence-client.yml runs --cov-fail-under=90) so a local
+# ``pytest --cov=juniper_recurrence_client --cov-report=term-missing`` enforces the same bar.
+# branch=true makes both local and CI measure branch coverage (measured 94% branch-inclusive when
+# added, 2026-06-21). Deliberately NOT wired into addopts so subset / single-test runs stay un-gated.
+fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+show_missing = true
+precision = 2
+
 [tool.ruff]
 line-length = 512
 target-version = "py312"

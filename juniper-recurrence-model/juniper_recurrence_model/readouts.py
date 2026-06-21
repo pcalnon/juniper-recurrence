@@ -39,6 +39,8 @@ __all__ = [
     "ReadoutSpec",
     "LinearReadout",
     "LinearReadoutSpec",
+    "RFFReadout",
+    "RFFReadoutSpec",
     "READOUT_REGISTRY",
     "build_readout_from_state",
 ]
@@ -214,9 +216,144 @@ class LinearReadoutSpec:
         return LinearReadout(ridge=self.ridge)
 
 
+# --- Rung 2a: random Fourier features (numpy nonlinear readout) -----------------------
+
+
+def _standardize_fit(M: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per-column mean/std of ``M`` (train-fold-only). Zero-variance columns get std=1 (no NaN)."""
+    mean = M.mean(axis=0)
+    std = M.std(axis=0)
+    std = np.where(std > 0.0, std, 1.0)  # guard: a constant column would otherwise yield 0/0 -> NaN
+    return mean, std
+
+
+def _median_gamma(mz: np.ndarray, rng: np.random.Generator, max_rows: int = 256) -> float:
+    """RBF bandwidth via the median heuristic on standardized ``M``: ``γ = 1 / median‖mzᵢ − mzⱼ‖``.
+
+    ``W ~ 𝒩(0, γ²I)`` approximates an RBF kernel with length-scale ``ℓ = 1/γ``; ridge/GCV cannot
+    select ``γ`` (it shapes the feature map, not the penalty), so it gets its own data-driven choice.
+    """
+    n = mz.shape[0]
+    sub = mz[rng.choice(n, size=max_rows, replace=False)] if n > max_rows else mz
+    sq = np.sum(sub**2, axis=1)
+    d2 = np.maximum(sq[:, None] + sq[None, :] - 2.0 * (sub @ sub.T), 0.0)  # ||a-b||^2, clipped >= 0
+    pair = np.sqrt(d2[np.triu_indices(sub.shape[0], k=1)])
+    pair = pair[pair > 0.0]
+    ell = float(np.median(pair)) if pair.size else 1.0
+    return 1.0 / ell if ell > 0.0 else 1.0
+
+
+class RFFReadout:
+    """Rung 2a — a numpy nonlinear readout: ``standardize(M) → random Fourier features → ridge``.
+
+    ``φ(M) = √(2/D)·cos(standardize(M)·W + b)`` with ``W ~ 𝒩(0, γ²I)`` and ``b ~ U[0, 2π)`` sampled
+    once at ``fit`` from the model's ``random_seed`` (data-independent, fixed across folds). The
+    design matrix is ``[ φ(standardize(M)) | extra | 1 ]`` — the RFF map applies to the **memory
+    block only**; the linear side-channel ``extra`` (``target_dt``) and the bias stay linear
+    (D-WS4-2). Mandatory **per-column standardization** of ``M`` keeps the isotropic ``W`` from being
+    dominated by the high-energy low-order Legendre columns (≈25× RMS spread). Ridge is mandatory for
+    this rung (``γ``/``D`` are high-variance); the penalty is GCV-selected by default.
+
+    Losslessness (the bit-exact serialization contract) is non-trivial here — ``cos`` of a
+    recomputed-from-``d``/θ memory matmul amplifies ULP drift — so it is **gated by an RFF
+    conformance subclass**, not assumed. ``W``/``b``/stats/``β`` are persisted as float64; in-process
+    save→load is bit-exact (no cross-machine claim). A zero-variance column guard keeps predictions
+    finite (a NaN would fail ``np.array_equal``).
+    """
+
+    kind: ClassVar[str] = "rff"
+
+    def __init__(self, n_features_out: int = 256, gamma: float | Literal["median"] = "median", ridge: RidgeParam = "gcv") -> None:
+        self.n_features_out = int(n_features_out)
+        self.gamma: float | Literal["median"] = gamma
+        self.ridge: RidgeParam = ridge
+        self._W: np.ndarray | None = None
+        self._b: np.ndarray | None = None
+        self._mean: np.ndarray | None = None
+        self._std: np.ndarray | None = None
+        self._beta: np.ndarray | None = None
+
+    @property
+    def is_fitted(self) -> bool:
+        return self._beta is not None
+
+    @property
+    def coef(self) -> np.ndarray | None:
+        return None  # nonlinear: no single linear coefficient vector -> model._coef is None
+
+    def _phi(self, M: np.ndarray) -> np.ndarray:
+        mz = (M - self._mean) / self._std
+        d_out = self._W.shape[1]
+        return np.sqrt(2.0 / d_out) * np.cos(mz @ self._W + self._b)
+
+    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, random_seed: int | None = None) -> None:
+        rng = np.random.default_rng(random_seed)
+        n, p = M.shape
+        self._mean, self._std = _standardize_fit(M)
+        mz = (M - self._mean) / self._std
+        gamma = _median_gamma(mz, rng) if self.gamma == "median" else float(self.gamma)
+        self.gamma = gamma  # write back the resolved bandwidth (persisted for retraining fidelity)
+        d_out = min(self.n_features_out, n)  # cap D to the fold size (p/n guard; ridge handles the rest)
+        self._W = rng.normal(0.0, gamma, size=(p, d_out))
+        self._b = rng.uniform(0.0, 2.0 * np.pi, size=d_out)
+        phi = np.sqrt(2.0 / d_out) * np.cos(mz @ self._W + self._b)
+        if isinstance(self.ridge, str):
+            if self.ridge != "gcv":
+                raise ValueError(f"unknown ridge mode {self.ridge!r}; expected a float or 'gcv'")
+            self._beta, self.ridge = _gcv_select(np.concatenate([phi, extra], axis=1), y)
+        elif self.ridge > 0.0:
+            self._beta = _ridge_solve(_assemble_design(phi, extra), y, float(self.ridge))
+        else:
+            self._beta, *_ = np.linalg.lstsq(_assemble_design(phi, extra), y, rcond=None)
+
+    def predict(self, M: np.ndarray, extra: np.ndarray) -> np.ndarray:
+        if self._beta is None:
+            raise RuntimeError("readout is not fitted")
+        return _assemble_design(self._phi(M), extra) @ self._beta
+
+    def save_state(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        if self._beta is None:
+            raise RuntimeError("cannot serialize an unfitted readout")
+        arrays = {"W": self._W, "b": self._b, "mean": self._mean, "std": self._std, "beta": self._beta}
+        descriptor = {
+            "kind": self.kind,
+            "gamma": float(self.gamma),
+            "ridge": self.ridge if isinstance(self.ridge, str) else float(self.ridge),
+            "n_features_out": int(self._W.shape[1]),
+        }
+        return arrays, descriptor
+
+    @classmethod
+    def from_state(cls, arrays: dict[str, np.ndarray], descriptor: dict[str, Any]) -> RFFReadout:
+        readout = cls(
+            n_features_out=int(descriptor.get("n_features_out", arrays["W"].shape[1])),
+            gamma=float(descriptor.get("gamma", 1.0)),
+            ridge=descriptor.get("ridge", "gcv"),
+        )
+        readout._W = arrays["W"]
+        readout._b = arrays["b"]
+        readout._mean = arrays["mean"]
+        readout._std = arrays["std"]
+        readout._beta = arrays["beta"]
+        return readout
+
+
+@dataclass(frozen=True)
+class RFFReadoutSpec:
+    """Immutable spec for :class:`RFFReadout` (Rung 2a). ``gamma="median"`` uses the median heuristic."""
+
+    n_features_out: int = 256
+    gamma: float | Literal["median"] = "median"
+    ridge: RidgeParam = "gcv"
+    kind: ClassVar[str] = "rff"
+
+    def make(self) -> RFFReadout:
+        return RFFReadout(n_features_out=self.n_features_out, gamma=self.gamma, ridge=self.ridge)
+
+
 #: Maps a persisted readout ``kind`` tag to its live class (each exposes a ``from_state`` classmethod).
-#: P2 registers ``"rff"``; P3 registers ``"mlp"`` (lazily, behind the ``[torch]`` extra).
-READOUT_REGISTRY: dict[str, Any] = {LinearReadout.kind: LinearReadout}
+#: P3 registers ``"mlp"`` (lazily, behind the ``[torch]`` extra).
+READOUT_REGISTRY: dict[str, Any] = {LinearReadout.kind: LinearReadout, RFFReadout.kind: RFFReadout}
 
 
 def build_readout_from_state(arrays: dict[str, np.ndarray], descriptor: dict[str, Any]) -> Readout:
