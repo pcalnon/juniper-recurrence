@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
 from fastapi.testclient import TestClient
 
 import juniper_recurrence
@@ -241,3 +242,31 @@ def test_no_argmax_call_in_routers():
     routers_dir = pathlib.Path(juniper_recurrence.__file__).parent / "routers"
     for module in routers_dir.glob("*.py"):
         assert "argmax(" not in module.read_text(), f"argmax() call in {module.name} violates RK-6"
+
+
+# --- DP-3 P1: ridge="gcv" at the API edge ---------------------------------------------
+
+
+def test_train_with_gcv_ridge(fake_data):
+    """ridge='gcv' flows through /v1/train to the model's closed-form GCV selection (DP-3 P1)."""
+    client = _client(api_keys=None)
+    resp = client.post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}, "d": 4, "ridge": "gcv"})
+    assert resp.status_code == 200, resp.text
+    topology = client.get("/v1/model").json()["topology"]
+    assert topology["meta"]["readout"]["kind"] == "linear"
+
+
+def test_train_request_schema_accepts_gcv_rejects_negative():
+    """The ridge field accepts a non-negative float, 'gcv', or None — not a negative or other string."""
+    from pydantic import ValidationError
+
+    from juniper_recurrence.schemas import CrossValRequest, TrainRequest
+
+    ref = {"dataset_id": "ds-1"}
+    assert TrainRequest(dataset=ref, ridge="gcv").ridge == "gcv"
+    assert TrainRequest(dataset=ref, ridge=0.5).ridge == 0.5
+    assert TrainRequest(dataset=ref).ridge is None
+    assert CrossValRequest(dataset=ref, n_folds=2, ridge="gcv").ridge == "gcv"
+    for bad in (-1.0, "bogus"):
+        with pytest.raises(ValidationError):
+            TrainRequest(dataset=ref, ridge=bad)

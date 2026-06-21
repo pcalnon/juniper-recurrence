@@ -64,3 +64,29 @@ def test_cli_train_requires_ref(capsys):
     rc = cli.main(["train"])
     assert rc == 2
     assert "requires one of" in capsys.readouterr().err
+
+
+def test_cli_ridge_arg_parses_gcv_and_float():
+    """--ridge accepts the literal 'gcv' or a float (DP-3 P1)."""
+    assert cli._ridge_arg("gcv") == "gcv"
+    assert cli._ridge_arg("0.25") == 0.25
+
+
+def test_cli_train_with_gcv_ridge(monkeypatch, synthetic_npz_arrays, capsys):
+    """`train --ridge gcv` fits with a GCV-selected ridge end-to-end (DP-3 P1)."""
+    sequence = sequence_data_from_arrays(synthetic_npz_arrays, "train")
+    descriptor = {
+        "dataset_id": "ds-1",
+        "name": None,
+        "split": "train",
+        "n_windows": 12,
+        "lookback": 5,
+        "n_features": 2,
+        "output_dim": 1,
+        "has_target_dt": True,
+        "has_seq_lengths": True,
+    }
+    monkeypatch.setattr("juniper_recurrence.data.load_sequence_data", lambda **kwargs: (sequence, descriptor))
+    rc = cli.main(["train", "--dataset", "ds-1", "--d", "4", "--ridge", "gcv"])
+    assert rc == 0
+    assert "Metrics:" in capsys.readouterr().out

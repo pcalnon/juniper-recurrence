@@ -7,7 +7,7 @@ the regression set (``mse`` / ``rmse`` / ``mae`` / ``r2`` / ``loss``) — never 
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -26,6 +26,11 @@ __all__ = [
     "CrossValResponse",
     "CrossValStatusResponse",
 ]
+
+# DP-3 (P1): ``ridge`` accepts a non-negative float, the literal ``"gcv"`` (closed-form GCV
+# selection of the readout penalty, performed in the model), or ``None`` (fall back to
+# ``settings.default_ridge``). The ``ge=0`` bound applies only to the float member of the union.
+RidgeField = Annotated[float, Field(ge=0)] | Literal["gcv"] | None
 
 
 class DatasetRef(BaseModel):
@@ -75,7 +80,7 @@ class TrainRequest(BaseModel):
     dataset: DatasetRef
     d: int | None = Field(default=None, ge=1)
     theta: float | None = Field(default=None, gt=0)
-    ridge: float | None = Field(default=None, ge=0)
+    ridge: RidgeField = None
 
 
 class TrainResponse(BaseModel):
@@ -155,7 +160,7 @@ class CrossValRequest(BaseModel):
     min_train: int | None = Field(default=None, ge=1)
     d: int | None = Field(default=None, ge=1)
     theta: float | None = Field(default=None, gt=0)
-    ridge: float | None = Field(default=None, ge=0)
+    ridge: RidgeField = None
 
 
 class CrossValFoldModel(BaseModel):

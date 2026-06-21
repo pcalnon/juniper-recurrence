@@ -17,6 +17,13 @@ from collections.abc import Sequence
 from juniper_recurrence._version import __version__
 
 
+def _ridge_arg(value: str) -> float | str:
+    """Parse the ``--ridge`` CLI value: the literal ``"gcv"`` or a non-negative float (DP-3 P1)."""
+    if value == "gcv":
+        return "gcv"
+    return float(value)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``juniper-recurrence`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -37,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--split", default="train", help="Split to train on (train/test/full; default: train).")
     train.add_argument("--d", type=int, default=None, help="LMU memory order (default: settings.default_d).")
     train.add_argument("--theta", type=float, default=None, help="LMU window length θ (default: data-driven).")
-    train.add_argument("--ridge", type=float, default=None, help="Readout L2 penalty (default: settings.default_ridge).")
+    train.add_argument("--ridge", type=_ridge_arg, default=None, help="Readout L2 penalty: a float or 'gcv' for closed-form GCV selection (default: settings.default_ridge).")
     train.add_argument("--out", default=None, help="Path to save the trained model (.npz) via LMUSerializer.")
 
     return parser

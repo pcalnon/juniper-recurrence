@@ -30,6 +30,12 @@ def test_defaults():
     assert settings.default_ridge == 0.0
 
 
+def test_default_ridge_accepts_gcv():
+    """default_ridge widens to float | Literal['gcv'] (DP-3 P1); the 0.0 default is unchanged."""
+    assert Settings(default_ridge="gcv").default_ridge == "gcv"
+    assert Settings().default_ridge == 0.0
+
+
 def test_env_prefix_honored(monkeypatch):
     monkeypatch.setenv("JUNIPER_RECURRENCE_PORT", "8888")
     monkeypatch.setenv("JUNIPER_RECURRENCE_HOST", "127.0.0.1")

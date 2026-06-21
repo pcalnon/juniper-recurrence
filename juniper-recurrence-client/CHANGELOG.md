@@ -8,6 +8,13 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Added
+
+- **`ridge="gcv"` accepted by `train()` / `crossval()` (DP-3 P1).** The `ridge` parameter widens
+  from `Optional[float]` to `Optional[Union[float, Literal["gcv"]]]`, so callers can request the
+  service's closed-form GCV selection of the readout penalty. The value is forwarded verbatim in
+  the request body (no client-side validation change).
+
 ## [0.1.0] - 2026-06-18
 
 ### Added
