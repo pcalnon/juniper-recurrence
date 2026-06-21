@@ -22,7 +22,7 @@ name: CI — juniper-recurrence-model
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
     paths:
       - "juniper-recurrence-model/**"
       - ".github/workflows/ci-recurrence-model.yml"
@@ -102,3 +102,22 @@ jobs:
 
       - name: Validate distribution metadata
         run: twine check dist/*
+
+  required-checks:
+    name: Required checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, test, build]
+    steps:
+      - name: Verify required jobs succeeded
+        run: |
+          echo "Lint:  ${{ needs.lint.result }}"
+          echo "Test:  ${{ needs.test.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          if [[ "${{ needs.lint.result }}" != "success" \
+             || "${{ needs.test.result }}" != "success" \
+             || "${{ needs.build.result }}" != "success" ]]; then
+            echo "::error::one or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All required checks passed."

@@ -23,7 +23,7 @@ name: CI — juniper-recurrence-client
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
     paths:
       - "juniper-recurrence-client/**"
       - ".github/workflows/ci-recurrence-client.yml"
@@ -87,3 +87,20 @@ jobs:
 
       - name: Validate distribution metadata
         run: twine check dist/*
+
+  required-checks:
+    name: Required checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test, build]
+    steps:
+      - name: Verify required jobs succeeded
+        run: |
+          echo "Test:  ${{ needs.test.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          if [[ "${{ needs.test.result }}" != "success" \
+             || "${{ needs.build.result }}" != "success" ]]; then
+            echo "::error::one or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All required checks passed."
