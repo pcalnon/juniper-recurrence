@@ -1,0 +1,78 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (bench/ harness — Δt-thesis benchmark suite)
+# File Name:     ci-recurrence-bench.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-21
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    CI pipeline for the bench/ harness (the Δt-thesis benchmark suite). bench/ is a
+#    sibling of the juniper-recurrence/ app package and is NOT a published dist, so it
+#    has no pyproject of its own — its deps are the app's runtime deps plus the app's
+#    ``[bench]`` extra. The app CI (ci-recurrence-app.yml) runs with
+#    ``working-directory: juniper-recurrence`` and ``testpaths=["tests"]``, which makes
+#    the sibling bench/ unreachable; bench/test_bench_smoke.py therefore ran in no CI
+#    lane (audit finding TST-1). This workflow closes that gap: it installs the app with
+#    its ``[test,bench]`` extras and runs ``pytest bench/`` FROM THE REPO ROOT so that
+#    ``from bench import ...`` resolves. Path-scoped to bench/ + the app package (bench
+#    imports the app's deps) + this workflow.
+#
+#    Note: rows requiring ``juniper-data[equities]`` (e.g. ``equities_seq``) may SKIP —
+#    bench/test_bench_smoke.py ``importorskip``s ``juniper_data`` and the equities extra
+#    is undeclared (separate backlog item DEP-3). A clean skip is acceptable here.
+#
+#####################################################################################################################################################################################################
+
+name: CI — juniper-recurrence-bench
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bench/**"
+      - "juniper-recurrence/**"
+      - ".github/workflows/ci-recurrence-bench.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bench/**"
+      - "juniper-recurrence/**"
+      - ".github/workflows/ci-recurrence-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Bench smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # bench/ has no pyproject of its own; its imports (bench.datasets ->
+      # juniper_data, bench.baselines, juniper_recurrence_model, juniper_model_core)
+      # resolve through the app's runtime deps + the app's [bench] extra. [test] pulls
+      # pytest. Installed from the app subdir but RUN from the repo root (next step).
+      - name: Install app + test + bench extras
+        run: pip install --upgrade "pip>=26.1.1" && pip install -e "juniper-recurrence/.[test,bench]"
+
+      # Run from the repo root (NOT working-directory: juniper-recurrence) so that
+      # ``from bench import baselines, datasets`` resolves — this is the crux of TST-1.
+      # The autoload-SIGSEGV guard (-p no:dash -p no:playwright) is passed explicitly
+      # because the app's pyproject [tool.pytest.ini_options] is not on sys.path here.
+      - name: Run bench smoke tests
+        run: python -m pytest bench/ -v -p no:dash -p no:playwright
