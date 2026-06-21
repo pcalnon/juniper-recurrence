@@ -126,24 +126,24 @@ def _gcv_select(features: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]
     fc = features - feat_mean
     yc = y - y_mean
     u, s, vt = np.linalg.svd(fc, full_matrices=False)  # fc = u @ diag(s) @ vt
-    g = u.T @ yc                       # (rank, out): projection of yc onto the left singular vectors
+    g = u.T @ yc  # (rank, out): projection of yc onto the left singular vectors
     s2 = s**2
-    yc_energy = float(np.sum(yc**2))   # ||yc||_F^2
+    yc_energy = float(np.sum(yc**2))  # ||yc||_F^2
     resid_perp = yc_energy - float(np.sum(g**2))  # energy orthogonal to range(U) (>= 0); λ-independent
     best_lam = float(_GCV_GRID[0])
     best_gcv = np.inf
     for lam in _GCV_GRID:
         tr_h = 1.0 + float(np.sum(s2 / (s2 + lam)))  # +1 for the unpenalised intercept
-        shrink = (lam / (s2 + lam)) ** 2             # (1 - f_i)^2 per singular component
+        shrink = (lam / (s2 + lam)) ** 2  # (1 - f_i)^2 per singular component
         rss = float(np.sum(shrink[:, None] * (g**2))) + resid_perp
         denom = (n - tr_h) ** 2
         gcv = (n * rss / denom) if denom > 0 else np.inf
         if gcv < best_gcv:
             best_gcv = gcv
             best_lam = float(lam)
-    filt = s / (s2 + best_lam)                        # s_i/(s_i^2+λ)
-    coef_feat = vt.T @ (filt[:, None] * g)            # (p, out)
-    coef_bias = y_mean - feat_mean @ coef_feat        # (out,)
+    filt = s / (s2 + best_lam)  # s_i/(s_i^2+λ)
+    coef_feat = vt.T @ (filt[:, None] * g)  # (p, out)
+    coef_bias = y_mean - feat_mean @ coef_feat  # (out,)
     return np.concatenate([coef_feat, coef_bias[None, :]], axis=0), best_lam
 
 

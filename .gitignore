@@ -19,6 +19,9 @@ htmlcov/
 .tox/
 .nox/
 
+# Linter caches
+.ruff_cache/
+
 # Virtual environments
 .venv/
 venv/

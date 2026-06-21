@@ -40,7 +40,13 @@ def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, flo
     ss_res = float(np.sum(err**2))
     ss_tot = float(np.sum((yt - yt.mean(axis=0)) ** 2))
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-    return {"mse": mse, "rmse": mse**0.5, "mae": float(np.mean(np.abs(err))), "r2": r2, "loss": mse}
+    return {
+        "mse": mse,
+        "rmse": mse**0.5,
+        "mae": float(np.mean(np.abs(err))),
+        "r2": r2,
+        "loss": mse,
+    }
 
 
 class _BaselineModel(TrainableModel):
@@ -88,13 +94,27 @@ class NaivePersistence(_BaselineModel):
 
     _model_type = "naive_persistence"
 
-    def fit(self, X: np.ndarray, y: np.ndarray, *, X_val: Any = None, y_val: Any = None, on_event: Any = None, **kw: Any) -> TrainResult:
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        X_val: Any = None,
+        y_val: Any = None,
+        on_event: Any = None,
+        **kw: Any,
+    ) -> TrainResult:
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
         self._in = X.shape[1:]
         self._out = y.shape[1:] if y.ndim > 1 else (1,)
         self._metrics = _regression_metrics(y, self.predict(X))
-        return TrainResult(final_metrics=self._metrics, n_epochs=1, history=[], stopped_reason="converged")
+        return TrainResult(
+            final_metrics=self._metrics,
+            n_epochs=1,
+            history=[],
+            stopped_reason="converged",
+        )
 
     def predict(self, X: np.ndarray, **kw: Any) -> np.ndarray:
         return self._last_step(X)[:, 0:1]  # (n, 1) — last observed signal value
@@ -119,7 +139,16 @@ class LinearRidge(_BaselineModel):
         cols.append(np.ones((n, 1)))  # bias
         return np.concatenate(cols, axis=1)
 
-    def fit(self, X: np.ndarray, y: np.ndarray, *, X_val: Any = None, y_val: Any = None, on_event: Any = None, **kw: Any) -> TrainResult:
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        X_val: Any = None,
+        y_val: Any = None,
+        on_event: Any = None,
+        **kw: Any,
+    ) -> TrainResult:
         X = np.asarray(X, dtype=float)
         Y = np.asarray(y, dtype=float)
         Y2 = Y if Y.ndim > 1 else Y.reshape(-1, 1)
@@ -131,9 +160,16 @@ class LinearRidge(_BaselineModel):
         reg[-1, -1] = 0.0  # never penalise the bias column
         self._coef = np.linalg.solve(design.T @ design + reg, design.T @ Y2)
         self._metrics = _regression_metrics(Y2, design @ self._coef)
-        return TrainResult(final_metrics=self._metrics, n_epochs=1, history=[], stopped_reason="converged")
+        return TrainResult(
+            final_metrics=self._metrics,
+            n_epochs=1,
+            history=[],
+            stopped_reason="converged",
+        )
 
     def predict(self, X: np.ndarray, **kw: Any) -> np.ndarray:
         if self._coef is None:
             raise RuntimeError("LinearRidge.predict called before fit")
-        return self._design(np.asarray(X, dtype=float), kw.get("target_dt")) @ self._coef
+        return (
+            self._design(np.asarray(X, dtype=float), kw.get("target_dt")) @ self._coef
+        )

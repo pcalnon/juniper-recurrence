@@ -1,0 +1,192 @@
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperRecurrence
+# Application:   juniper-recurrence
+# File Name:     .pre-commit-config.yaml
+# Author:        Paul Calnon
+# Version:       0.1.0
+#
+# Date Created:  2026-06-21
+# Last Modified: 2026-06-21
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Pre-commit hooks configuration for the juniper-recurrence monorepo
+#    (app `juniper-recurrence/`, model `juniper-recurrence-model/`, client
+#    `juniper-recurrence-client/`, and the `bench/` harness).
+#    Runs code-quality, formatting, and security checks locally before commit
+#    (mirrors the per-package CI ruff lanes; closes audit finding PC-1).
+#
+# Setup:
+#    pip install pre-commit
+#    pre-commit install
+#    pre-commit run --all-files
+#
+# References:
+#    - https://pre-commit.com/
+#    - juniper-ml notes/JUNIPER_RECURRENCE_PRECOMMIT_TESTING_CI_AUDIT_2026-06-21.md (§8)
+#####################################################################################################################################################################################################
+
+# Minimum pre-commit version required
+minimum_pre_commit_version: "3.2.0"
+
+# Default settings for all hooks
+default_language_version:
+  python: python3
+
+# Install both pre-commit and pre-push hook types so the pre-push stage can
+# self-wire (closes PC-6).
+default_install_hook_types: [pre-commit, pre-push]
+
+# Exclude patterns (files/directories to skip)
+exclude: |
+  (?x)^(
+      \.git/|
+      \.venv/|
+      venv/|
+      __pycache__/|
+      \.pytest_cache/|
+      \.mypy_cache/|
+      \.ruff_cache/|
+      \.benchmarks/|
+      .*\.egg-info/|
+      bench/results/|
+      data/|
+      .*\.npz
+  )
+
+repos:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # General file checks
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-json
+        name: Check JSON syntax
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=1000]
+      - id: check-ast
+        name: Check Python AST
+      - id: debug-statements
+        name: Check for debug statements
+      - id: detect-private-key
+        name: Detect private keys
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Python Linting & Formatting - Ruff
+  # Replaces: black, isort, flake8, flake8-bugbear, flake8-comprehensions,
+  #           flake8-simplify, pyupgrade
+  # Configuration: [tool.ruff] in each sub-package pyproject.toml
+  # Scope is the 4-way monorepo source surface: app + model + client + bench
+  # (the bench scope closes the lint half of the bench-gated gap, TST-1).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.2
+    hooks:
+      - id: ruff
+        name: Lint with Ruff
+        args: [--fix]
+        files: ^(juniper-recurrence/juniper_recurrence|juniper-recurrence-model/juniper_recurrence_model|juniper-recurrence-client/juniper_recurrence_client|bench)/.*\.py$
+      - id: ruff-format
+        name: Format with Ruff
+        files: ^(juniper-recurrence/juniper_recurrence|juniper-recurrence-model/juniper_recurrence_model|juniper-recurrence-client/juniper_recurrence_client|bench)/.*\.py$
+      # ─────────────────────────────────────────────────────────────────────
+      # Async-route audit (BUG-JD-10 sync-in-async class).
+      # See juniper-ml notes/ASYNC_ROUTE_AUDIT_HOOK_MIGRATION_PLAN.md.
+      # Scoped to the FastAPI app source only (closes PC-6 async).
+      # ─────────────────────────────────────────────────────────────────────
+      - id: ruff
+        alias: ruff-async-audit
+        name: Async-route audit (BUG-JD-10 class)
+        args: [--select, ASYNC]
+        files: ^juniper-recurrence/juniper_recurrence/.*\.py$
+        stages: [pre-commit, manual]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Security Scanning - Bandit
+  # Scoped to the three importable source packages (app + model + client),
+  # excluding their tests/ subtrees (closes PC-3).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        name: Security scan with Bandit
+        args:
+          - -q
+          - --skip=B101,B311
+        files: ^(juniper-recurrence/juniper_recurrence|juniper-recurrence-model/juniper_recurrence_model|juniper-recurrence-client/juniper_recurrence_client)/.*\.py$
+        exclude: /tests/
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Markdown Linting - markdownlint
+  # Config in .markdownlint.yaml (line-length 512). Closes PC-5 (md).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        name: Lint Markdown files
+        args:
+          - --config=./.markdownlint.yaml
+          - --fix
+        files: \.(md|markdown)$
+        exclude: ^(CHANGELOG\.md|notes/)
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # YAML Linting - yamllint
+  # Covers the .github/workflows/*.yml CI definitions (closes PC-5 yaml).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: Lint YAML files
+        args: [--format, parsable]
+        types: [yaml]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Shell Script Linting - shellcheck
+  # No-ops cleanly today (zero shell scripts); forward-coverage (closes PC-6).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: Lint shell scripts
+        args:
+          - --severity=warning
+        files: \.(sh|bash)$
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SOPS: Block unencrypted .env files from being committed
+  # Closes PC-2 (the API-key-handling service had no secret-scan gate).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: local
+    hooks:
+      - id: no-unencrypted-env
+        name: Block unencrypted .env files
+        entry: bash -c "echo \"ERROR Unencrypted .env file detected. Use sops to encrypt.\" && exit 1"
+        language: system
+        files: ^\.env(\.secrets)?$
+        types: [file]
+
+# CI configuration (for pre-commit.ci service, if used)
+ci:
+  autofix_prs: false
+  autoupdate_schedule: monthly

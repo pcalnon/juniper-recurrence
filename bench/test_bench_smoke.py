@@ -36,7 +36,9 @@ def test_irregular_sine_contract():
 
 def _cv(factory, ds, dt):
     folds = walk_forward_folds(ds.X.shape[0], n_folds=3, embargo=2)
-    return cross_validate(factory, ds.X, ds.y, folds, aux={"dt": dt, "target_dt": ds.target_dt})
+    return cross_validate(
+        factory, ds.X, ds.y, folds, aux={"dt": dt, "target_dt": ds.target_dt}
+    )
 
 
 def test_lmu_beats_naive_on_irregular():
@@ -51,7 +53,9 @@ def test_variable_dt_beats_fixed_dt_on_irregular():
     ds = datasets.irregular_sine(n_steps=400, lookback=16, seed=0)
     theta = float(np.median(ds.dt.sum(axis=1)))
     var = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, ds.dt)
-    fixed = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, baselines.uniform_dt(ds.dt))
+    fixed = _cv(
+        lambda i: LMURegressor(d=16, theta=theta), ds, baselines.uniform_dt(ds.dt)
+    )
     assert var.eval_aggregate["rmse"] < fixed.eval_aggregate["rmse"]
 
 

@@ -37,10 +37,7 @@ def _to_response(result: CrossValResult, dataset: DatasetDescriptor) -> CrossVal
     return CrossValResponse(
         task_type=result.task_type,
         n_folds=len(result.folds),
-        folds=[
-            CrossValFoldModel(fold=fold.fold, train_metrics=fold.train_metrics, eval_metrics=fold.eval_metrics, n_epochs=fold.n_epochs)
-            for fold in result.folds
-        ],
+        folds=[CrossValFoldModel(fold=fold.fold, train_metrics=fold.train_metrics, eval_metrics=fold.eval_metrics, n_epochs=fold.n_epochs) for fold in result.folds],
         eval_aggregate=result.eval_aggregate,
         eval_std=result.eval_std,
         dataset=dataset,

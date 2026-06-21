@@ -22,7 +22,15 @@ from functools import partial
 
 import numpy as np
 
-__all__ = ["Dataset", "irregular_sine", "multi_sine", "mackey_glass", "equities_seq", "DATASETS", "PRIMARY_DATASETS"]
+__all__ = [
+    "Dataset",
+    "irregular_sine",
+    "multi_sine",
+    "mackey_glass",
+    "equities_seq",
+    "DATASETS",
+    "PRIMARY_DATASETS",
+]
 
 
 @dataclass(frozen=True)
@@ -41,35 +49,98 @@ def _full(out: dict[str, np.ndarray], key: str) -> np.ndarray:
     return np.asarray(out[f"{key}_full"])
 
 
-def irregular_sine(*, n_steps: int = 2000, lookback: int = 32, jitter: float = 0.6, noise_std: float = 0.0, seed: int = 0, name: str = "irregular_sine") -> Dataset:
+def irregular_sine(
+    *,
+    n_steps: int = 2000,
+    lookback: int = 32,
+    jitter: float = 0.6,
+    noise_std: float = 0.0,
+    seed: int = 0,
+    name: str = "irregular_sine",
+) -> Dataset:
     """Irregular-Δt superimposed sinusoids — the thesis dataset (timing varies window-to-window).
 
     ``noise_std`` adds Gaussian observation noise (0 = the exact closed-form signal); the
     robustness sweep raises it to check the Δt advantage survives a noisy signal.
     """
-    from juniper_data.generators.irregular_sine import IrregularSineGenerator, IrregularSineParams
+    from juniper_data.generators.irregular_sine import (
+        IrregularSineGenerator,
+        IrregularSineParams,
+    )
 
-    out = IrregularSineGenerator.generate(IrregularSineParams(n_steps=n_steps, lookback=lookback, jitter=jitter, noise_std=noise_std, seed=seed))
-    return Dataset(name, "irregular", _full(out, "X"), _full(out, "y"), _full(out, "dt"), _full(out, "target_dt"))
+    out = IrregularSineGenerator.generate(
+        IrregularSineParams(
+            n_steps=n_steps,
+            lookback=lookback,
+            jitter=jitter,
+            noise_std=noise_std,
+            seed=seed,
+        )
+    )
+    return Dataset(
+        name,
+        "irregular",
+        _full(out, "X"),
+        _full(out, "y"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
 
 
-def multi_sine(*, n_steps: int = 2000, lookback: int = 32, noise_std: float = 0.0, seed: int = 0, name: str = "multi_sine") -> Dataset:
+def multi_sine(
+    *,
+    n_steps: int = 2000,
+    lookback: int = 32,
+    noise_std: float = 0.0,
+    seed: int = 0,
+    name: str = "multi_sine",
+) -> Dataset:
     """Regular-Δt superimposed sinusoids — the control (Δt-awareness must not hurt here)."""
     from juniper_data.generators.multi_sine import MultiSineGenerator, MultiSineParams
 
-    out = MultiSineGenerator.generate(MultiSineParams(n_steps=n_steps, lookback=lookback, noise_std=noise_std, seed=seed))
-    return Dataset(name, "regular", _full(out, "X"), _full(out, "y"), _full(out, "dt"), _full(out, "target_dt"))
+    out = MultiSineGenerator.generate(
+        MultiSineParams(
+            n_steps=n_steps, lookback=lookback, noise_std=noise_std, seed=seed
+        )
+    )
+    return Dataset(
+        name,
+        "regular",
+        _full(out, "X"),
+        _full(out, "y"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
 
 
 def mackey_glass(*, n_steps: int = 2000, lookback: int = 32, seed: int = 0) -> Dataset:
     """Regular-Δt Mackey-Glass chaotic series — a harder regular-Δt sanity check."""
-    from juniper_data.generators.mackey_glass import MackeyGlassGenerator, MackeyGlassParams
+    from juniper_data.generators.mackey_glass import (
+        MackeyGlassGenerator,
+        MackeyGlassParams,
+    )
 
-    out = MackeyGlassGenerator.generate(MackeyGlassParams(n_steps=n_steps, lookback=lookback, seed=seed))
-    return Dataset("mackey_glass", "regular", _full(out, "X"), _full(out, "y"), _full(out, "dt"), _full(out, "target_dt"))
+    out = MackeyGlassGenerator.generate(
+        MackeyGlassParams(n_steps=n_steps, lookback=lookback, seed=seed)
+    )
+    return Dataset(
+        "mackey_glass",
+        "regular",
+        _full(out, "X"),
+        _full(out, "y"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
 
 
-def equities_seq(*, symbols: tuple[str, ...] = ("AAPL",), start_date: str = "2010-01-01", end_date: str = "2022-01-01", lookback: int = 32, regression_target: str = "log_return") -> Dataset:
+def equities_seq(
+    *,
+    symbols: tuple[str, ...] = ("AAPL",),
+    start_date: str = "2010-01-01",
+    end_date: str = "2022-01-01",
+    lookback: int = 32,
+    regression_target: str = "log_return",
+) -> Dataset:
     """Real irregular-Δt sequences from one equity's daily history (calendar gaps = genuine Δt).
 
     Uses a **single ticker** so the concatenated window set is one chronological series (clean
@@ -86,10 +157,30 @@ def equities_seq(*, symbols: tuple[str, ...] = ("AAPL",), start_date: str = "201
     it must, because ``EquitiesParams`` ignores unknown kwargs (pydantic ``extra='ignore'``), so an
     older pin would silently drop this argument and re-measure the raw non-stationary close.
     """
-    from juniper_data.generators.equities_seq import EquitiesSeqGenerator, EquitiesSeqParams
+    from juniper_data.generators.equities_seq import (
+        EquitiesSeqGenerator,
+        EquitiesSeqParams,
+    )
 
-    out = EquitiesSeqGenerator.generate(EquitiesSeqParams(symbols=list(symbols), start_date=start_date, end_date=end_date, lookback=lookback, normalize_features=True, use_cache=True, regression_target=regression_target))
-    return Dataset("equities_seq", "irregular", _full(out, "X"), _full(out, "y_reg"), _full(out, "dt"), _full(out, "target_dt"))
+    out = EquitiesSeqGenerator.generate(
+        EquitiesSeqParams(
+            symbols=list(symbols),
+            start_date=start_date,
+            end_date=end_date,
+            lookback=lookback,
+            normalize_features=True,
+            use_cache=True,
+            regression_target=regression_target,
+        )
+    )
+    return Dataset(
+        "equities_seq",
+        "irregular",
+        _full(out, "X"),
+        _full(out, "y_reg"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
 
 
 #: The three pre-registered datasets the ratified OQ-14 bands are scored against (DP-5 guardrail).
@@ -101,11 +192,19 @@ PRIMARY_DATASETS = ("irregular_sine", "multi_sine", "mackey_glass")
 #: they are not scored against the ratified bands (which were pre-registered for the primary set).
 DATASETS = {
     "irregular_sine": irregular_sine,
-    "irregular_sine_noise0.10": partial(irregular_sine, noise_std=0.10, name="irregular_sine_noise0.10"),
-    "irregular_sine_noise0.25": partial(irregular_sine, noise_std=0.25, name="irregular_sine_noise0.25"),
+    "irregular_sine_noise0.10": partial(
+        irregular_sine, noise_std=0.10, name="irregular_sine_noise0.10"
+    ),
+    "irregular_sine_noise0.25": partial(
+        irregular_sine, noise_std=0.25, name="irregular_sine_noise0.25"
+    ),
     "multi_sine": multi_sine,
-    "multi_sine_noise0.10": partial(multi_sine, noise_std=0.10, name="multi_sine_noise0.10"),
-    "multi_sine_noise0.25": partial(multi_sine, noise_std=0.25, name="multi_sine_noise0.25"),
+    "multi_sine_noise0.10": partial(
+        multi_sine, noise_std=0.10, name="multi_sine_noise0.10"
+    ),
+    "multi_sine_noise0.25": partial(
+        multi_sine, noise_std=0.25, name="multi_sine_noise0.25"
+    ),
     "mackey_glass": mackey_glass,
     "equities_seq": equities_seq,
 }

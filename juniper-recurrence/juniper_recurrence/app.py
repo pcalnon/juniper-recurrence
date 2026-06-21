@@ -83,10 +83,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 set_build_info,
             )
         except ImportError:
-            logger.warning(
-                "metrics_enabled is true but juniper-observability is not installed; "
-                "/metrics will not be mounted (install the [observability] extra)."
-            )
+            logger.warning("metrics_enabled is true but juniper-observability is not installed; /metrics will not be mounted (install the [observability] extra).")
         else:
             application.add_middleware(PrometheusMiddleware, service_name=settings.service_name)
             # Prometheus metric names are underscore-only; the build-info namespace is the
