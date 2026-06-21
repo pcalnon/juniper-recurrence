@@ -62,6 +62,32 @@ python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 
+# Coverage config (audit B3 item 7 / TST-2). Previously the only gate was
+# ``--cov-fail-under=90`` baked into ci-recurrence-model.yml — invisible and
+# unenforceable in a local ``pytest`` run, and statement-only because
+# ``branch = true`` was never set. ``fail_under`` is kept at the CI's 90
+# PROVISIONALLY; branch coverage is stricter than the prior statement-only
+# measure, so if CI drops below 90 that surfaces real branch-coverage debt to
+# tune (do not lower pre-emptively). ``--cov`` is intentionally NOT added to
+# addopts so subset runs (``pytest tests/test_foo.py``) still work without a
+# coverage gate.
+[tool.coverage.run]
+source_pkgs = ["juniper_recurrence_model"]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
 [tool.ruff]
 line-length = 512
 target-version = "py312"
