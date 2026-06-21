@@ -1,0 +1,75 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   bench harness (juniper-recurrence repo root)
+# File Name:     ci-recurrence-bench.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-21
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    CI pipeline for the bench/ evaluation harness (the Δt-proof benchmark smoke
+#    suite). The harness is a standalone, unpublished directory at the repo root
+#    (import name `bench`), so it is gated by its own path-scoped workflow rather
+#    than a sub-package CI. The job installs the app's [test,bench] extras — which
+#    resolve juniper-recurrence-model, juniper-model-core[crossval], and the
+#    juniper-data generators from PyPI — then runs the suite from the checkout root
+#    so `import bench` resolves. Closes audit finding TST-1: bench/test_bench_smoke.py
+#    (6 tests guarding the Δt thesis) previously ran in no CI lane, because the app
+#    CI runs in working-directory juniper-recurrence/ with testpaths=["tests"] and
+#    bench/ is a sibling of that directory.
+#
+#####################################################################################################################################################################################################
+
+name: CI — bench harness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bench/**"
+      - ".github/workflows/ci-recurrence-bench.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bench/**"
+      - ".github/workflows/ci-recurrence-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Bench smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # bench/ is imported from the checkout root (not installed); its runtime deps
+      # come from the app's [bench] extra (juniper-data generators) plus the app's
+      # own pins (juniper-recurrence-model, juniper-model-core[crossval]) and [test]
+      # (pytest). Installing the app from its subdirectory resolves all of these from
+      # PyPI; the harness code itself stays at the repo root.
+      - name: Install app extras for the bench harness
+        run: |
+          pip install --upgrade "pip>=26.1.1"
+          pip install "./juniper-recurrence[test,bench]"
+
+      # Run from the repo root (python -m puts the cwd on sys.path so `import bench`
+      # resolves); -p no:dash/playwright is the ecosystem-standard autoload-SIGSEGV
+      # guard. test_bench_smoke.py importorskips juniper_data, which the [bench]
+      # extra provides, so the suite actually executes rather than skipping.
+      - name: Run bench smoke suite
+        run: python -m pytest bench/ -ra -p no:dash -p no:playwright
