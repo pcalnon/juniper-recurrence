@@ -4,7 +4,7 @@
 **Application**: juniper-recurrence (FastAPI + CLI service)
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.1.0
+**Version**: 0.1.1
 
 FastAPI + CLI service that wraps the Δt-native Legendre Memory Unit regressor
 ([`juniper-recurrence-model`](https://github.com/pcalnon/juniper-recurrence)) on the

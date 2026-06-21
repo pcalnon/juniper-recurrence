@@ -89,7 +89,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = ["-ra", "-q", "--strict-markers", "--strict-config"]
+# Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
+addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 
 [tool.ruff]
 line-length = 512
