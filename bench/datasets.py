@@ -27,6 +27,7 @@ __all__ = [
     "irregular_sine",
     "multi_sine",
     "mackey_glass",
+    "delay_product",
     "equities_seq",
     "DATASETS",
     "PRIMARY_DATASETS",
@@ -133,6 +134,54 @@ def mackey_glass(*, n_steps: int = 2000, lookback: int = 32, seed: int = 0) -> D
     )
 
 
+def delay_product(
+    *,
+    n_steps: int = 2000,
+    lookback: int = 32,
+    lag1: int = 2,
+    lag2: int = 8,
+    jitter: float = 0.6,
+    noise_std: float = 0.0,
+    seed: int = 0,
+    name: str = "delay_product",
+) -> Dataset:
+    """Irregular-Δt signal with a BILINEAR delay-product target ``y = x(t−τ₁)·x(t−τ₂)`` — the DP-3
+    capacity dataset (design §8a).
+
+    The two delayed values sit inside the lookback (``lag1`` / ``lag2`` steps back from the window
+    end), so the target is a *quadratic form* in the (linear) LMU memory state: a linear readout
+    provably cannot fit it (r² ≪ 1) while the nonlinear RFF readout can — a measurable
+    nonlinear ≫ linear r² gap, in contrast to the *tie* the two readouts reach on the near-linear
+    synthetics. This is the instrument that demonstrates nonlinear-readout *capacity* rather than
+    merely confirming the linear ceiling. Requires ``juniper-data>=0.9.0`` (the ``[bench]`` extra
+    pins it; ``delay_product`` does not exist before 0.9.0).
+    """
+    from juniper_data.generators.delay_product import (
+        DelayProductGenerator,
+        DelayProductParams,
+    )
+
+    out = DelayProductGenerator.generate(
+        DelayProductParams(
+            n_steps=n_steps,
+            lookback=lookback,
+            lag1=lag1,
+            lag2=lag2,
+            jitter=jitter,
+            noise_std=noise_std,
+            seed=seed,
+        )
+    )
+    return Dataset(
+        name,
+        "irregular",
+        _full(out, "X"),
+        _full(out, "y"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
+
+
 def equities_seq(
     *,
     symbols: tuple[str, ...] = ("AAPL",),
@@ -186,10 +235,12 @@ def equities_seq(
 #: The three pre-registered datasets the ratified OQ-14 bands are scored against (DP-5 guardrail).
 PRIMARY_DATASETS = ("irregular_sine", "multi_sine", "mackey_glass")
 
-#: name -> generator factory. The primary set plus the two extensions (noise sweep + real data).
-#: Noise variants probe whether the Δt advantage survives observation noise; ``equities_seq`` is
-#: the real-data irregular-Δt sanity check. Extension results are reported as informational —
-#: they are not scored against the ratified bands (which were pre-registered for the primary set).
+#: name -> generator factory. The primary set plus the extensions (noise sweep + the delay_product
+#: capacity dataset + real data). Noise variants probe whether the Δt advantage survives observation
+#: noise; ``delay_product`` is the DP-3 capacity dataset (a bilinear target only a nonlinear readout
+#: can fit — design §8a); ``equities_seq`` is the real-data irregular-Δt sanity check. Extension
+#: results are reported as informational — not scored against the ratified bands (pre-registered for
+#: the primary set).
 DATASETS = {
     "irregular_sine": irregular_sine,
     "irregular_sine_noise0.10": partial(
@@ -206,5 +257,6 @@ DATASETS = {
         multi_sine, noise_std=0.25, name="multi_sine_noise0.25"
     ),
     "mackey_glass": mackey_glass,
+    "delay_product": delay_product,
     "equities_seq": equities_seq,
 }

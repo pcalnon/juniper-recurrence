@@ -60,13 +60,15 @@ observability = [
     "juniper-observability[prometheus]>=0.4.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
-# juniper-data>=0.8.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189) and the
-# equities `regression_target` option (#195) on PyPI, so the bench installs cleanly from PyPI — no
-# editable-sibling / cross-repo-clone step. >=0.8.0 is REQUIRED (not just >=0.7.0): EquitiesParams
-# ignores unknown kwargs (pydantic extra='ignore'), so an older pin would silently drop the
-# stationary log-return target and re-measure the raw non-stationary close.
+# juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
+# equities `regression_target` option (#195), and the `delay_product` DP-3 capacity generator
+# (#203 — the bilinear y=x(t−τ₁)·x(t−τ₂) target) on PyPI, so the bench installs cleanly from PyPI —
+# no editable-sibling / cross-repo-clone step. >=0.9.0 is REQUIRED: the bench imports
+# juniper_data.generators.delay_product, absent before 0.9.0 (an older pin would ImportError); and
+# Equities/Synthetic params ignore unknown kwargs (pydantic extra='ignore'), so an older pin would
+# also silently drop newer params (e.g. the stationary log-return target).
 bench = [
-    "juniper-data>=0.8.0",
+    "juniper-data>=0.9.0",
 ]
 
 [project.scripts]

@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 from juniper_model_core.crossval import cross_validate, walk_forward_folds
-from juniper_recurrence_model import LMURegressor
+from juniper_recurrence_model import LMURegressor, RFFReadoutSpec
 
 from bench import baselines, datasets
 
@@ -79,6 +79,17 @@ def run_dataset(ds: datasets.Dataset) -> dict[str, Any]:
         lambda i: LMURegressor(d=_HEADLINE_D, theta=theta, ridge=_RIDGE_VARIANT),
         ds,
         aux_fixed,
+        folds,
+    )
+    # Nonlinear RFF readout (DP-3 Rung 2a): standardize(M) → random Fourier features → GCV ridge.
+    # On the near-linear datasets it ties the linear readout at the ceiling; on the delay_product
+    # capacity dataset (a bilinear target the linear readout provably can't fit) it shows a clear
+    # nonlinear≫linear r² gap (design §8a). Variable-Δt only — readout capacity is orthogonal to the
+    # Δt thesis, so one row isolates it without doubling the table.
+    models[f"lmu_var_d{_HEADLINE_D}_rff"] = _run_cv(
+        lambda i: LMURegressor(d=_HEADLINE_D, theta=theta, readout=RFFReadoutSpec()),
+        ds,
+        aux_real,
         folds,
     )
     # d-sensitivity sweep for the variable-Δt LMU (headline d already covered above)
@@ -179,6 +190,27 @@ def evaluate_bands(results: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
                     "primary": name == "multi_sine",
                 }
             )
+
+    # Band 4 (informational) — DP-3 readout capacity: the nonlinear RFF readout vs the linear readout
+    # on the same Δt-aware LMU. On the delay_product capacity dataset (a bilinear target the linear
+    # readout provably can't fit) expect a clear nonlinear≫linear gap; on the near-linear datasets
+    # expect a tie. Informational only — never pre-registered against the ratified bands. Design §8a.
+    rff_key = f"lmu_var_d{_HEADLINE_D}_rff"
+    for name in results:
+        if rff_key not in results[name]["models"]:
+            continue
+        rff_r2, lin_r2 = r2(name, rff_key), r2(name, var)
+        is_capacity = name == "delay_product"
+        bands.append(
+            {
+                "band": f"4 — {name}: RFF readout vs linear readout ({'capacity gap' if is_capacity else 'tie'})",
+                "value": f"rff={rff_r2:.4f}  linear={lin_r2:.4f}  gap={rff_r2 - lin_r2:+.4f}",
+                "pass": (rff_r2 - lin_r2) >= 0.10
+                if is_capacity
+                else abs(rff_r2 - lin_r2) <= 0.10,
+                "primary": False,
+            }
+        )
 
     return bands
 
