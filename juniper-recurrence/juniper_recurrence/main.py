@@ -99,15 +99,19 @@ def _train(args: argparse.Namespace) -> int:
     d = args.d if args.d is not None else settings.default_d
     theta = args.theta if args.theta is not None else settings.default_theta
 
-    model = build_lmu_regressor(
-        d=d,
-        theta=theta,
-        readout=args.readout,
-        ridge=args.ridge,
-        rff_features=args.rff_features,
-        rff_gamma=args.rff_gamma,
-        default_ridge=settings.default_ridge,
-    )
+    try:
+        model = build_lmu_regressor(
+            d=d,
+            theta=theta,
+            readout=args.readout,
+            ridge=args.ridge,
+            rff_features=args.rff_features,
+            rff_gamma=args.rff_gamma,
+            default_ridge=settings.default_ridge,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     result = model.fit(sequence.X, sequence.y, **sequence.fit_kwargs())
 
     print(f"Trained LMURegressor on dataset {descriptor['dataset_id']} (split={descriptor['split']}, windows={descriptor['n_windows']}, F={descriptor['n_features']}).")
