@@ -11,6 +11,15 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **HTTP readout enum — select the DP-3 readout over `/v1/train` and `/v1/crossval` (P2c).** The
+  train + crossval request bodies (and the `train` CLI) accept `readout: "linear" | "rff"` plus the
+  RFF params `rff_features` / `rff_gamma`; the service constructs the matching immutable readout spec
+  (`LinearReadoutSpec` / `RFFReadoutSpec`) and passes it to `LMURegressor`. `readout` defaults to the
+  back-compat linear readout (which uses `ridge`); `"rff"` selects the numpy nonlinear
+  random-Fourier-feature readout (Rung 2a). `rff_features` / `rff_gamma` are rejected unless
+  `readout="rff"`. Floor-bumps the model pin to `juniper-recurrence-model>=0.1.4` (the release that
+  ships `RFFReadoutSpec`). See the DP-3 design §6 / §8a.
+
 - **Container image — `Dockerfile` + `.dockerignore` (OUT-4 / WS-7).** A multi-stage,
   slim (~77 MB) image. The LMU stack is numpy-only (no torch), so the build installs the
   app + the `[observability]` extra from PyPI with no CPU-torch lock dance. Runs as a

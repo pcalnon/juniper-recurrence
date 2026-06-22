@@ -24,6 +24,13 @@ def _ridge_arg(value: str) -> float | str:
     return float(value)
 
 
+def _gamma_arg(value: str) -> float | str:
+    """Parse the ``--rff-gamma`` CLI value: the literal ``"median"`` or a positive float (DP-3 P2c)."""
+    if value == "median":
+        return "median"
+    return float(value)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``juniper-recurrence`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -45,6 +52,9 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--d", type=int, default=None, help="LMU memory order (default: settings.default_d).")
     train.add_argument("--theta", type=float, default=None, help="LMU window length θ (default: data-driven).")
     train.add_argument("--ridge", type=_ridge_arg, default=None, help="Readout L2 penalty: a float or 'gcv' for closed-form GCV selection (default: settings.default_ridge).")
+    train.add_argument("--readout", choices=("linear", "rff"), default=None, help="Readout rung: 'linear' (default) or 'rff' (nonlinear random Fourier features; DP-3 P2c).")
+    train.add_argument("--rff-features", type=int, default=None, help="RFF feature count D when --readout=rff (default: 256).")
+    train.add_argument("--rff-gamma", type=_gamma_arg, default=None, help="RFF bandwidth γ when --readout=rff: a positive float or 'median' (default: 'median').")
     train.add_argument("--out", default=None, help="Path to save the trained model (.npz) via LMUSerializer.")
 
     return parser
@@ -66,8 +76,9 @@ def _serve(args: argparse.Namespace) -> int:
 
 def _train(args: argparse.Namespace) -> int:
     """Headless train: load a 3-D NPZ, fit ``LMURegressor``, print metrics, persist."""
-    from juniper_recurrence_model import LMURegressor, LMUSerializer
+    from juniper_recurrence_model import LMUSerializer
 
+    from juniper_recurrence._readout import build_lmu_regressor
     from juniper_recurrence.data import load_sequence_data
     from juniper_recurrence.settings import Settings
 
@@ -87,9 +98,16 @@ def _train(args: argparse.Namespace) -> int:
 
     d = args.d if args.d is not None else settings.default_d
     theta = args.theta if args.theta is not None else settings.default_theta
-    ridge = args.ridge if args.ridge is not None else settings.default_ridge
 
-    model = LMURegressor(d=d, theta=theta, ridge=ridge)
+    model = build_lmu_regressor(
+        d=d,
+        theta=theta,
+        readout=args.readout,
+        ridge=args.ridge,
+        rff_features=args.rff_features,
+        rff_gamma=args.rff_gamma,
+        default_ridge=settings.default_ridge,
+    )
     result = model.fit(sequence.X, sequence.y, **sequence.fit_kwargs())
 
     print(f"Trained LMURegressor on dataset {descriptor['dataset_id']} (split={descriptor['split']}, windows={descriptor['n_windows']}, F={descriptor['n_features']}).")

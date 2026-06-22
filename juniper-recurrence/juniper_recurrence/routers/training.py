@@ -16,9 +16,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
-from juniper_recurrence_model import LMURegressor
 from juniper_service_core import TrainingLifecycle
 
+from juniper_recurrence._readout import build_lmu_regressor
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.events import EventSink
 from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
@@ -54,10 +54,17 @@ def train(
 
         d = req.d if req.d is not None else settings.default_d
         theta = req.theta if req.theta is not None else settings.default_theta
-        ridge = req.ridge if req.ridge is not None else settings.default_ridge
 
         sink = EventSink()
-        model = LMURegressor(d=d, theta=theta, ridge=ridge)
+        model = build_lmu_regressor(
+            d=d,
+            theta=theta,
+            readout=req.readout,
+            ridge=req.ridge,
+            rff_features=req.rff_features,
+            rff_gamma=req.rff_gamma,
+            default_ridge=settings.default_ridge,
+        )
         lifecycle = TrainingLifecycle(model, on_event=sink)
         result = lifecycle.run(sequence.X, sequence.y, **sequence.fit_kwargs())
 
