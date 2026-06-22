@@ -94,9 +94,15 @@ repos:
   # Configuration: [tool.ruff] in each sub-package pyproject.toml
   # Scope is the 4-way monorepo source surface: app + model + client + bench
   # (the bench scope closes the lint half of the bench-gated gap, TST-1).
+  # NOTE: the three pyproject.toml use ``line-length = 512``. Ruff capped
+  # ``line-length`` at 320 through 0.15.12 and raised the cap to 512 in
+  # 0.15.13, so the pin MUST be >= v0.15.13 or the hook errors at config
+  # parse time (TOML parse error: "line-length must be between 1 and 320").
+  # The per-package CI lanes ``pip install ruff`` unpinned (newest), which is
+  # why they stayed green; v0.15.18 tracks that behaviour for the hook.
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.2
+    rev: v0.15.18
     hooks:
       - id: ruff
         name: Lint with Ruff

@@ -1,0 +1,57 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (monorepo-wide: app, model, client, bench)
+# File Name:     ci-pre-commit.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-21
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    Repo-wide pre-commit gate. Runs ``pre-commit run --all-files`` on every push
+#    to and pull request against ``main``, enforcing the .pre-commit-config.yaml
+#    hook suite (ruff lint/format, ruff async-audit, bandit, markdownlint,
+#    yamllint, shellcheck, the general file checks, and the unencrypted-.env
+#    block). Standalone and intentionally NOT path-scoped — unlike the per-package
+#    ci-recurrence-*.yml lanes, this gate covers the whole monorepo so a hook
+#    failure in any package is caught. Closes audit finding PC-1 (the
+#    .pre-commit-config.yaml shipped in #34 but was never enforced in CI).
+#
+#####################################################################################################################################################################################################
+
+name: CI — pre-commit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: Pre-commit (all-files)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install pre-commit
+        run: |
+          python -m pip install --upgrade "pip>=26.1.1"
+          pip install pre-commit
+
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files --show-diff-on-failure
