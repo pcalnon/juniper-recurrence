@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from juniper_model_core.crossval import cross_validate, walk_forward_folds
-from juniper_recurrence_model import LMURegressor
+from juniper_recurrence_model import LMURegressor, RFFReadoutSpec
 
 from bench import baselines, datasets
 
@@ -59,6 +59,19 @@ def test_variable_dt_beats_fixed_dt_on_irregular():
     assert var.eval_aggregate["rmse"] < fixed.eval_aggregate["rmse"]
 
 
+def test_delay_product_capacity_gap_rff_beats_linear():
+    """DP-3 §8a capacity signature: on the delay_product dataset the nonlinear RFF readout fits the
+    bilinear target the linear readout provably cannot, so RFF r² >> linear r² (a measured gap ≈ 0.7
+    at this config). The same RFF readout merely ties the linear one on the near-linear synthetics."""
+    ds = datasets.delay_product(n_steps=800, lookback=24, lag1=2, lag2=8, seed=0)
+    theta = float(np.median(ds.dt.sum(axis=1)))
+    linear = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, ds.dt)
+    rff = _cv(
+        lambda i: LMURegressor(d=16, theta=theta, readout=RFFReadoutSpec()), ds, ds.dt
+    )
+    assert rff.eval_aggregate["r2"] > linear.eval_aggregate["r2"] + 0.2
+
+
 def test_noise_std_perturbs_signal_but_keeps_contract():
     """The noise-sweep extension: noise_std>0 adds observation noise without breaking the contract."""
     clean = datasets.irregular_sine(n_steps=400, lookback=16, seed=0)
@@ -69,7 +82,8 @@ def test_noise_std_perturbs_signal_but_keeps_contract():
 
 
 def test_dataset_registry_covers_primary_and_extensions():
-    """DATASETS spans the pre-registered primary set plus the noise + real-data extensions."""
+    """DATASETS spans the pre-registered primary set plus the noise / capacity / real-data extensions."""
     assert set(datasets.PRIMARY_DATASETS) <= set(datasets.DATASETS)
     assert "equities_seq" in datasets.DATASETS
+    assert "delay_product" in datasets.DATASETS
     assert sum("noise" in k for k in datasets.DATASETS) == 4
