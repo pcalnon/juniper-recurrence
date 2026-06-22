@@ -21,8 +21,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
 from juniper_model_core.crossval import CrossValResult, cross_validate, walk_forward_folds
-from juniper_recurrence_model import LMURegressor
 
+from juniper_recurrence._readout import build_lmu_regressor
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
 from juniper_recurrence.schemas import CrossValFoldModel, CrossValRequest, CrossValResponse, CrossValStatusResponse, DatasetDescriptor
@@ -69,7 +69,6 @@ def crossval(
 
         d = req.d if req.d is not None else settings.default_d
         theta = req.theta if req.theta is not None else settings.default_theta
-        ridge = req.ridge if req.ridge is not None else settings.default_ridge
 
         try:
             folds = walk_forward_folds(
@@ -83,7 +82,15 @@ def crossval(
             raise HTTPException(422, f"invalid cross-validation configuration: {exc}") from exc
 
         result = cross_validate(
-            lambda _fold: LMURegressor(d=d, theta=theta, ridge=ridge),
+            lambda _fold: build_lmu_regressor(
+                d=d,
+                theta=theta,
+                readout=req.readout,
+                ridge=req.ridge,
+                rff_features=req.rff_features,
+                rff_gamma=req.rff_gamma,
+                default_ridge=settings.default_ridge,
+            ),
             sequence.X,
             sequence.y,
             folds,

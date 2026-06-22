@@ -291,6 +291,9 @@ class JuniperRecurrenceClient:
         d: Optional[int] = None,
         theta: Optional[float] = None,
         ridge: Optional[Union[float, Literal["gcv"]]] = None,
+        readout: Optional[Literal["linear", "rff"]] = None,
+        rff_features: Optional[int] = None,
+        rff_gamma: Optional[Union[float, Literal["median"]]] = None,
     ) -> dict[str, Any]:
         """``POST /v1/train`` — synchronously fit the LMU regressor on a dataset split.
 
@@ -305,6 +308,12 @@ class JuniperRecurrenceClient:
             body["theta"] = theta
         if ridge is not None:
             body["ridge"] = ridge
+        if readout is not None:
+            body["readout"] = readout
+        if rff_features is not None:
+            body["rff_features"] = rff_features
+        if rff_gamma is not None:
+            body["rff_gamma"] = rff_gamma
         return self._parse_json(self._request("POST", ENDPOINT_TRAIN, json=body))
 
     def training_status(self) -> dict[str, Any]:
@@ -361,6 +370,9 @@ class JuniperRecurrenceClient:
         d: Optional[int] = None,
         theta: Optional[float] = None,
         ridge: Optional[Union[float, Literal["gcv"]]] = None,
+        readout: Optional[Literal["linear", "rff"]] = None,
+        rff_features: Optional[int] = None,
+        rff_gamma: Optional[Union[float, Literal["median"]]] = None,
     ) -> dict[str, Any]:
         """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the ``_full`` split.
 
@@ -381,6 +393,12 @@ class JuniperRecurrenceClient:
             body["theta"] = theta
         if ridge is not None:
             body["ridge"] = ridge
+        if readout is not None:
+            body["readout"] = readout
+        if rff_features is not None:
+            body["rff_features"] = rff_features
+        if rff_gamma is not None:
+            body["rff_gamma"] = rff_gamma
         return self._parse_json(self._request("POST", ENDPOINT_CROSSVAL, json=body))
 
     def crossval_status(self) -> dict[str, Any]:

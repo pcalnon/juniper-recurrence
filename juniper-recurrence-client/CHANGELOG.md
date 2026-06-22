@@ -10,6 +10,12 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Added
 
+- **`readout` selection forwarded by `train()` / `crossval()` (DP-3 P2c).** Both methods gain
+  `readout: Optional[Literal["linear", "rff"]]`, `rff_features: Optional[int]`, and
+  `rff_gamma: Optional[Union[float, Literal["median"]]]`, forwarded verbatim in the request body so
+  callers can select the service's nonlinear RFF readout (Rung 2a). Backward compatible — all optional;
+  unset ⇒ an unchanged request body.
+
 - **`ridge="gcv"` accepted by `train()` / `crossval()` (DP-3 P1).** The `ridge` parameter widens
   from `Optional[float]` to `Optional[Union[float, Literal["gcv"]]]`, so callers can request the
   service's closed-form GCV selection of the readout penalty. The value is forwarded verbatim in

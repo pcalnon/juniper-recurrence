@@ -82,6 +82,25 @@ def test_crossval_happy_path(fake_full_data):
     assert body["dataset"]["n_windows"] == 20
 
 
+def test_crossval_readout_rff(fake_full_data):
+    # DP-3 P2c: the RFF nonlinear readout is reachable over /v1/crossval.
+    resp = _client(api_keys=None).post(
+        "/v1/crossval",
+        json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4, "readout": "rff", "rff_features": 32},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["n_folds"] == 3
+
+
+def test_crossval_rff_params_without_readout_422(fake_full_data):
+    # rff_* params are rejected by the request schema unless readout="rff".
+    resp = _client(api_keys=None).post(
+        "/v1/crossval",
+        json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "rff_gamma": 0.5},
+    )
+    assert resp.status_code == 422
+
+
 def test_crossval_status_idle_then_persisted(fake_full_data):
     client = _client(api_keys=None)
     idle = client.get("/v1/crossval/status").json()

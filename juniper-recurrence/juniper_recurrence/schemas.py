@@ -32,6 +32,23 @@ __all__ = [
 # ``settings.default_ridge``). The ``ge=0`` bound applies only to the float member of the union.
 RidgeField = Annotated[float, Field(ge=0)] | Literal["gcv"] | None
 
+# DP-3 (P2c): the readout *spectrum* exposed as a tagged enum at the HTTP edge. ``None`` ⇒ the
+# back-compat linear readout (which uses ``ridge``); ``"rff"`` selects the nonlinear
+# random-Fourier-feature readout (Rung 2a), configured by ``rff_features`` / ``rff_gamma`` (the
+# ``ridge`` penalty is shared and, for RFF, defaults to closed-form GCV). The Python model is
+# configured by an immutable readout *spec*; this enum is its edge surface (design §6 / Appendix A).
+ReadoutKind = Literal["linear", "rff"]
+
+# RFF bandwidth γ: a positive float, or the median heuristic (``"median"``); ``None`` ⇒ the model
+# default ("median"). The ``gt=0`` bound applies only to the float member of the union.
+GammaField = Annotated[float, Field(gt=0)] | Literal["median"] | None
+
+
+def _validate_rff_fields(readout: ReadoutKind | None, rff_features: int | None, rff_gamma: Any) -> None:
+    """Reject the RFF-only params when the readout is not ``"rff"`` (no silent no-op at the edge)."""
+    if readout != "rff" and (rff_features is not None or rff_gamma is not None):
+        raise ValueError("rff_features / rff_gamma are only valid when readout='rff'")
+
 
 class DatasetRef(BaseModel):
     """Reference to a 3-D sequence dataset to fetch via juniper-data-client.
@@ -81,6 +98,14 @@ class TrainRequest(BaseModel):
     d: int | None = Field(default=None, ge=1)
     theta: float | None = Field(default=None, gt=0)
     ridge: RidgeField = None
+    readout: ReadoutKind | None = None
+    rff_features: int | None = Field(default=None, ge=1)
+    rff_gamma: GammaField = None
+
+    @model_validator(mode="after")
+    def _check_readout(self) -> TrainRequest:
+        _validate_rff_fields(self.readout, self.rff_features, self.rff_gamma)
+        return self
 
 
 class TrainResponse(BaseModel):
@@ -161,6 +186,14 @@ class CrossValRequest(BaseModel):
     d: int | None = Field(default=None, ge=1)
     theta: float | None = Field(default=None, gt=0)
     ridge: RidgeField = None
+    readout: ReadoutKind | None = None
+    rff_features: int | None = Field(default=None, ge=1)
+    rff_gamma: GammaField = None
+
+    @model_validator(mode="after")
+    def _check_readout(self) -> CrossValRequest:
+        _validate_rff_fields(self.readout, self.rff_features, self.rff_gamma)
+        return self
 
 
 class CrossValFoldModel(BaseModel):
