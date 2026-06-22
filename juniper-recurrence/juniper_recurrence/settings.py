@@ -40,9 +40,10 @@ class Settings(SettingsBase):
     # --- service identity / bind (override SettingsBase defaults) ---------------------
     service_name: str = "juniper-recurrence"
     # Container default binds all interfaces; for a local ``serve`` set
-    # ``JUNIPER_RECURRENCE_HOST=127.0.0.1`` (design §6.8). No flake8-bandit S-rule
-    # is enabled for this package, so no inline suppression is needed.
-    host: str = "0.0.0.0"
+    # ``JUNIPER_RECURRENCE_HOST=127.0.0.1`` (design §6.8). The bind-all is
+    # intentional for the containerised service, so the bandit pre-commit hook's
+    # B104 (hardcoded_bind_all_interfaces) finding is suppressed inline here.
+    host: str = "0.0.0.0"  # nosec B104 — intentional container bind-all (design §6.8)
     port: int = 8210  # container port; deploy maps host 8211 -> ctr 8210 (design §6.8)
 
     # --- API-key auth + rate limiting -------------------------------------------------

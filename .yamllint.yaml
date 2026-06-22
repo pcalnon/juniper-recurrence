@@ -1,0 +1,36 @@
+---
+# yamllint configuration for the juniper-recurrence monorepo.
+#
+# Aligns this repo with the canonical Juniper-ecosystem yamllint ruleset
+# (juniper-ml / juniper-data / juniper-cascor / juniper-canopy ...), trimmed
+# to this repo's actual layout (no Helm charts, no generated conda/pip
+# snapshots here).
+#
+# yamllint auto-discovers this file from the repo root, so the pre-commit
+# yamllint hook (which passes only ``--format parsable``) and a developer's
+# editor see the same rules.
+#
+# Rules:
+#   - extends: relaxed (sane base: relaxes `truthy`, `comments`, and
+#     `document-start` strictness; the GitHub-Actions ``on:`` keys and the
+#     end-of-line comments across the 9 workflows would otherwise trip the
+#     strict default preset — this is the whole point of the relaxed base).
+#   - line-length: max 512 (matches the ecosystem AGENTS.md convention for
+#     ruff/markdownlint), level: warning (informational; does not fail the
+#     hook, which does not pass ``--strict``).
+
+extends: relaxed
+
+rules:
+  line-length:
+    max: 512
+    level: warning
+
+ignore: |
+  .venv/
+  venv/
+  __pycache__/
+  .pytest_cache/
+  .mypy_cache/
+  .ruff_cache/
+  .benchmarks/
