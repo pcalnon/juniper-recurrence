@@ -45,6 +45,25 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: juniper-recurrence-client
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install --upgrade "pip>=26.1.1" ruff
+
+      - name: Ruff lint
+        run: ruff check .
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -64,9 +83,6 @@ jobs:
 
       - name: Install package + test extras
         run: pip install --upgrade "pip>=26.1.1" && pip install -e ".[test]"
-
-      - name: Lint (ruff)
-        run: pip install ruff && ruff check .
 
       - name: Run unit tests with coverage
         run: |
@@ -110,13 +126,15 @@ jobs:
     name: Required checks
     runs-on: ubuntu-latest
     if: always()
-    needs: [test, build]
+    needs: [lint, test, build]
     steps:
       - name: Verify required jobs succeeded
         run: |
+          echo "Lint:  ${{ needs.lint.result }}"
           echo "Test:  ${{ needs.test.result }}"
           echo "Build: ${{ needs.build.result }}"
-          if [[ "${{ needs.test.result }}" != "success" \
+          if [[ "${{ needs.lint.result }}" != "success" \
+             || "${{ needs.test.result }}" != "success" \
              || "${{ needs.build.result }}" != "success" ]]; then
             echo "::error::one or more required jobs did not succeed"
             exit 1

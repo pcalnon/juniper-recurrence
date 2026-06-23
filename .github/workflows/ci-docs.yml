@@ -1,0 +1,59 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (repo-wide documentation gate)
+# File Name:     ci-docs.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-23
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    Repo-wide documentation link validation. Runs juniper-check-doc-links (the
+#    PyPI juniper-doc-tools console script) on every push to / PR against main,
+#    with --cross-repo skip (internal links only). Standalone and intentionally
+#    NOT path-scoped — like ci-pre-commit.yml — so a broken internal doc link is
+#    caught regardless of which package changed. Closes audit finding CI-7
+#    (relevant given the earlier stale-doc findings).
+#
+#####################################################################################################################################################################################################
+
+name: CI — docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Cancel superseded in-flight runs of THIS workflow on the same ref. Keyed on
+  # github.workflow so each CI lane has its own group (lanes never cancel each
+  # other); the publish workflows are deliberately excluded.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs-links:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install juniper-doc-tools
+        run: |
+          python -m pip install --upgrade "pip>=26.1.1"
+          pip install "juniper-doc-tools>=0.1.0,<0.2.0"
+
+      - name: Validate documentation links
+        run: juniper-check-doc-links --cross-repo skip
