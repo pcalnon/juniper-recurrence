@@ -10,6 +10,7 @@ See the design of record ``notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-0
 the WS-4 build plan ``notes/JUNIPER_RECURRENCE_WS4_MODEL_BUILD_PLAN_2026-06-15.md`` (juniper-ml).
 """
 
+from juniper_recurrence_model._readout_mlp import MLPReadout, MLPReadoutSpec
 from juniper_recurrence_model._version import __version__
 from juniper_recurrence_model.data import SequenceData, load_sequence_npz, sequence_data_from_arrays
 from juniper_recurrence_model.model import LMURegressor, LMUSerializer
@@ -26,6 +27,8 @@ __all__ = [
     "LinearReadoutSpec",
     "RFFReadout",
     "RFFReadoutSpec",
+    "MLPReadout",
+    "MLPReadoutSpec",
     "RidgeParam",
     "SequenceData",
     "load_sequence_npz",

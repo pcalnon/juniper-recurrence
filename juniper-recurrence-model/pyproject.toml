@@ -45,6 +45,12 @@ test = [
     # through juniper_model_core.crossval (model-core 0.2.0); pull the crossval-capable version.
     "juniper-model-core[crossval]>=0.2.0",
 ]
+# Rung 2b (DP-3 P3) — the optional torch MLP readout. CPU-only suffices; the >=2.10.0 floor is the
+# ecosystem security floor (CVE-2025-3001) and ships cp314 wheels (no Python-3.14 gap). A plain
+# dependency never activates another package's extras, so the recurrence app/client stay torch-free.
+torch = [
+    "torch>=2.10.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/pcalnon/juniper-recurrence"
@@ -72,6 +78,8 @@ source_pkgs = ["juniper_recurrence_model"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
+    # Rung 2b torch readout — exercised only by the optional [torch] CI job, never the base no-torch run.
+    "*/_readout_mlp.py",
 ]
 branch = true
 
@@ -109,6 +117,9 @@ select = ["E", "F", "W", "B", "I", "N"]
 "juniper_recurrence_model/model.py" = ["N803", "N806"]
 # M (memory block), W/b (RFF projection), mz (standardized M) are standard math/ML names; N803/N806 false-positive.
 "juniper_recurrence_model/readouts.py" = ["N803", "N806"]
+# Rung 2b torch readout + its tests: M (memory block) / M_val (validation block) are the standard ML names.
+"juniper_recurrence_model/_readout_mlp.py" = ["N803", "N806"]
+"tests/test_readouts_mlp.py" = ["N806"]
 "tests/test_lmu_grid_invariance.py" = ["N806"]
 "tests/test_lmu_model.py" = ["N806"]
 "tests/test_readouts.py" = ["N806"]
