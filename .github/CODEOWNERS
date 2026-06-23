@@ -12,8 +12,9 @@
 #
 # Description:
 #    GitHub CODEOWNERS file — defines code ownership for automatic review requests.
-#    This repository hosts two distributions: the model core (juniper-recurrence-model)
-#    and the FastAPI/CLI application (juniper-recurrence).
+#    This repository hosts three distributions — the model core (juniper-recurrence-model),
+#    the HTTP client (juniper-recurrence-client), and the FastAPI/CLI application
+#    (juniper-recurrence) — plus the bench/ evaluation harness.
 #####################################################################################################################################################################################################
 
 # Default owner for everything in the repository
@@ -27,3 +28,9 @@
 
 # Application package (juniper-recurrence distribution)
 /juniper-recurrence/ @pcalnon
+
+# Client package (juniper-recurrence-client distribution)
+/juniper-recurrence-client/ @pcalnon
+
+# Benchmark / evaluation harness (unpublished, repo-root)
+/bench/ @pcalnon
