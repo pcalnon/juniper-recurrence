@@ -33,6 +33,13 @@ on:
       - ".github/workflows/ci-recurrence-model.yml"
   workflow_dispatch:
 
+concurrency:
+  # Cancel superseded in-flight runs of THIS workflow on the same ref. Keyed on
+  # github.workflow so each path-scoped CI lane has its own group (lanes never
+  # cancel each other); the publish workflows are deliberately excluded.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

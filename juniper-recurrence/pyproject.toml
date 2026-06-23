@@ -58,7 +58,7 @@ observability = [
     # [prometheus] pulls prometheus-client — juniper-observability keeps it optional,
     # so the bare package would ModuleNotFoundError at /metrics scrape time (mirrors
     # juniper-data's observability extra).
-    "juniper-observability[prometheus]>=0.4.0",
+    "juniper-observability[prometheus]>=0.4.0,<0.5.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
@@ -69,7 +69,16 @@ observability = [
 # Equities/Synthetic params ignore unknown kwargs (pydantic extra='ignore'), so an older pin would
 # also silently drop newer params (e.g. the stationary log-return target).
 bench = [
-    "juniper-data>=0.9.0",
+    "juniper-data>=0.9.0,<0.10.0",
+]
+# Equities real-data bench row (bench.datasets.equities_seq). The [equities] extra pulls
+# yfinance / pandas and needs network at generation time, so it is kept separate from
+# [bench]: the offline synthetic bench (and its CI lane) stay network-free, while a
+# developer who wants the real-data row installs `.[bench,bench-equities]`. Without it the
+# equities row SKIPs gracefully (run_benchmark.py catches the ImportError). Same
+# juniper-data floor/cap as [bench].
+bench-equities = [
+    "juniper-data[equities]>=0.9.0,<0.10.0",
 ]
 
 [project.scripts]
@@ -94,6 +103,14 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
+# Warnings-as-errors gate (TST-5): any warning fails the suite so dependency deprecations
+# surface early instead of rotting silently. The single targeted ignore is FastAPI's TestClient
+# re-export of starlette's httpx->httpx2 transition warning (fires at import in every route test);
+# third-party + transitional. Verified green under this exact policy (89 tests, 2026-06-23).
+filterwarnings = [
+    "error",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["juniper_recurrence"]
