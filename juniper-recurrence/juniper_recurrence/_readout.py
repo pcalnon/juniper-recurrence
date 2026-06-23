@@ -54,15 +54,21 @@ def build_lmu_regressor(
         readout: ``None`` / ``"linear"`` for the linear readout, ``"rff"`` for the RFF readout.
         ridge: explicit ridge penalty (float or ``"gcv"``); ``None`` ⇒ the rung default
             (``default_ridge`` for linear, GCV for RFF).
-        rff_features: RFF feature count ``D`` (``None`` ⇒ 256); ignored for the linear readout.
-        rff_gamma: RFF bandwidth γ (float or ``"median"``; ``None`` ⇒ ``"median"``); ignored for linear.
+        rff_features: RFF feature count ``D`` (``None`` ⇒ 256); rejected unless ``readout="rff"``.
+        rff_gamma: RFF bandwidth γ (float or ``"median"``; ``None`` ⇒ ``"median"``); rejected unless ``readout="rff"``.
         default_ridge: the service's configured linear-readout ridge default.
 
     Raises:
-        ValueError: if ``readout`` is not one of ``None`` / ``"linear"`` / ``"rff"``.
+        ValueError: if ``readout`` is not one of ``None`` / ``"linear"`` / ``"rff"``, or if
+            ``rff_features`` / ``rff_gamma`` are supplied without ``readout="rff"``.
     """
     kind = readout or "linear"
     if kind == "linear":
+        # The RFF-only knobs must not be silently dropped on the linear readout. The HTTP edge
+        # rejects them at the schema layer; enforcing it here covers the CLI (and any other caller)
+        # from the single shared translation point, so every surface behaves identically.
+        if rff_features is not None or rff_gamma is not None:
+            raise ValueError("rff_features / rff_gamma are only valid when readout='rff'")
         resolved_ridge = ridge if ridge is not None else default_ridge
         return LMURegressor(d=d, theta=theta, ridge=resolved_ridge)
     if kind == "rff":

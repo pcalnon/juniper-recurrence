@@ -9,6 +9,13 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLI `--rff-features` / `--rff-gamma` are now rejected without `--readout rff`** (P2c follow-up).
+  The rule was enforced at the HTTP edge (422) but the `train` CLI silently dropped the RFF-only knobs
+  on the linear readout. The check now lives in the shared `build_lmu_regressor`, so the CLI and HTTP
+  behave identically (the CLI exits 2 with an error message).
+
 ### Added
 
 - **HTTP readout enum — select the DP-3 readout over `/v1/train` and `/v1/crossval` (P2c).** The

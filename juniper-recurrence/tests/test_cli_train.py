@@ -116,3 +116,26 @@ def test_cli_train_with_rff_readout(monkeypatch, synthetic_npz_arrays, capsys):
     rc = cli.main(["train", "--dataset", "ds-1", "--d", "4", "--readout", "rff", "--rff-features", "32", "--rff-gamma", "median"])
     assert rc == 0
     assert "Metrics:" in capsys.readouterr().out
+
+
+def test_cli_train_rejects_rff_params_without_rff_readout(monkeypatch, synthetic_npz_arrays, capsys):
+    """`train --rff-features` without `--readout rff` exits 2 with an error (not silently ignored).
+
+    Mirrors the HTTP edge's 422 — the consistency fix routes both surfaces through build_lmu_regressor.
+    """
+    sequence = sequence_data_from_arrays(synthetic_npz_arrays, "train")
+    descriptor = {
+        "dataset_id": "ds-1",
+        "name": None,
+        "split": "train",
+        "n_windows": 12,
+        "lookback": 5,
+        "n_features": 2,
+        "output_dim": 1,
+        "has_target_dt": True,
+        "has_seq_lengths": True,
+    }
+    monkeypatch.setattr("juniper_recurrence.data.load_sequence_data", lambda **kwargs: (sequence, descriptor))
+    rc = cli.main(["train", "--dataset", "ds-1", "--rff-features", "64"])
+    assert rc == 2
+    assert "rff_features / rff_gamma are only valid when readout='rff'" in capsys.readouterr().err

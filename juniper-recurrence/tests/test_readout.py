@@ -62,6 +62,15 @@ def test_build_lmu_regressor_rff_explicit_params_construct() -> None:
     assert type(model).__name__ == "LMURegressor"
 
 
+def test_build_lmu_regressor_rejects_rff_params_without_rff_readout() -> None:
+    # The shared helper rejects the RFF-only knobs on the linear readout (so the CLI behaves like the
+    # HTTP edge) rather than silently dropping them.
+    with pytest.raises(ValueError, match="rff_features / rff_gamma"):
+        build_lmu_regressor(d=4, theta=None, readout=None, ridge=None, rff_features=64, rff_gamma=None, default_ridge=0.0)
+    with pytest.raises(ValueError, match="rff_features / rff_gamma"):
+        build_lmu_regressor(d=4, theta=None, readout="linear", ridge=None, rff_features=None, rff_gamma=0.5, default_ridge=0.0)
+
+
 # --- request-schema validation ----------------------------------------------------------
 
 
