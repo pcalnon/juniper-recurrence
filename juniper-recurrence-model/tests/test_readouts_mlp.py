@@ -3,9 +3,9 @@
 Covers the unit contract (fit/predict, within-machine determinism, the bit-exact save→load
 round-trip, validation-driven early stopping) and a model-core conformance subclass driving the
 MLP readout through the full ``TrainableModel`` contract via ``LMURegressor`` + ``LMUSerializer``.
-In A1 the model does not yet plumb its own ``X_val``/``y_val`` to the readout (that is A2), so the
-end-to-end paths exercise the readout via the existing generic serializer; early stopping is
-unit-tested by passing validation arrays to the readout directly.
+Early stopping is unit-tested by passing validation arrays to the readout directly, and — since A2 —
+end-to-end through ``LMURegressor.fit(X, y, X_val=…, y_val=…)``, asserting the readout's epoch and
+stop diagnostics surface on ``TrainResult`` (``n_epochs`` / ``stopped_reason``).
 """
 
 from __future__ import annotations
@@ -75,6 +75,31 @@ def test_mlp_validation_early_stop() -> None:
     full.fit(M, extra, y, random_seed=0)  # no validation -> trains the full budget
     assert full.n_epochs_ == 100
     assert 1 <= early.n_epochs_ < full.n_epochs_  # validation early-stop curtails training
+    assert early.stopped_reason_ == "early_stopping"
+    assert full.stopped_reason_ == "max_epochs"
+
+
+def test_mlp_via_lmuregressor_val_early_stop() -> None:
+    """A2 plumbing end-to-end: LMURegressor feeds X_val/y_val into the MLP readout, and the
+    readout's epoch / stop diagnostics surface through TrainResult. Noise validation targets make
+    patience fire (n_epochs < max_epochs, stopped_reason "early_stopping"); the same fit with no
+    validation runs the full budget ("max_epochs")."""
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((24, 6, 3))
+    y = (X[:, -1, 0] + 0.1 * X[:, -1, 1] ** 2)[:, None]
+    X_val = rng.standard_normal((12, 6, 3))
+    y_val = rng.standard_normal((12, 1))  # noise validation -> overfitting lifts val loss, patience fires
+    # lr 1e-2 (not the 1e-3 default) lets the small net overfit within the budget, so early stopping
+    # reliably fires well before max_epochs (verified stable across seeds: stops at epoch ~4-6).
+    spec = MLPReadoutSpec(hidden=32, lr=1e-2, max_epochs=200, patience=3)
+
+    res_val = LMURegressor(d=8, theta=6.0, readout=spec).fit(X, y, X_val=X_val, y_val=y_val)
+    assert res_val.stopped_reason == "early_stopping"
+    assert 1 <= res_val.n_epochs < 200
+
+    res_full = LMURegressor(d=8, theta=6.0, readout=spec).fit(X, y)  # no validation -> full budget
+    assert res_full.n_epochs == 200
+    assert res_full.stopped_reason == "max_epochs"
 
 
 def test_mlp_via_lmuregressor_end_to_end(tmp_path) -> None:

@@ -8,6 +8,48 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-06-23
+
+DP-3 readout-spectrum, **phase P3** — the optional **torch MLP readout (Rung 2b)** plus the
+`LMURegressor` validation plumbing that feeds it. Additive + backward compatible (the default readout
+and the closed-form rungs are unchanged), hence a patch release. Ratified GO 2026-06-23
+(`notes/JUNIPER_DECISIONS_RATIFIED_2026-06-23.md` D5, in juniper-ml) as capability insurance for future
+complex / hybrid datasets — the current dataset catalog does not itself require it.
+
+### Added
+
+- **`MLPReadout` / `MLPReadoutSpec` (Rung 2b)** — an optional torch MLP readout behind a new `[torch]`
+  extra (`torch>=2.10.0`, the ecosystem CVE-2025-3001 security floor; ships cp314 wheels). Architecture:
+  `standardize(M) → GELU trunk (h→h) → linear head over [trunk | extra]`, with internal target
+  standardization. Training is **CPU-only, single-threaded, float32, `use_deterministic_algorithms(True)`**,
+  so an in-process save→load→predict round-trip is bit-exact within a machine (no cross-machine claim).
+  State persists as **named numpy arrays** (never `torch.save`; the serializer loads with
+  `allow_pickle=False`). `torch` is imported **lazily**, so the base package stays numpy-only and
+  torch-free — the module is exercised by a separate optional `test-torch` CI job and omitted from the
+  base coverage gate. New public exports: `MLPReadout`, `MLPReadoutSpec`. Use via
+  `LMURegressor(readout=MLPReadoutSpec(…))`.
+- **`Readout.fit` validation arguments** — the `Readout` protocol's `fit` gained optional
+  `M_val` / `extra_val` / `y_val` keywords. The closed-form linear and RFF rungs accept and ignore them;
+  the MLP rung uses them for **validation-driven early stopping** (relative `min_delta`, `patience`),
+  keeping the best-validation weights.
+
+### Changed
+
+- **`LMURegressor.fit` plumbs `X_val` / `y_val` through to the readout.** When validation data is supplied
+  (directly, or by the crossval / conformance harness), `fit` builds a held-out feature block and passes
+  it to `readout.fit`. Optional `*_val` timing kwargs (`dt_val`, `target_dt_val`, `readout_mask_val`,
+  `seq_lengths_val`) make the val block Δt-faithful; absent (the conformance / crossval convention) it
+  falls back to the uniform-grid construction — adequate as an early-stop signal.
+- **`TrainResult` reports the readout's true training diagnostics.** `n_epochs` reflects the readout's
+  trained-epoch count (`getattr(readout, "n_epochs_", 1)`) and `stopped_reason` reflects how it stopped
+  (`"early_stopping"` / `"max_epochs"` for the MLP). Closed-form readouts expose neither, so they read as
+  the canonical single-solve `1` / `"converged"` — preserving the crossval `n_epochs == 1` invariant.
+  When validation data is present, the `epoch_end` / `training_end` events carry a `val_metrics` payload.
+- **Serializer registry now includes `"mlp"`** (lazily registered, so the base import never pulls in
+  torch). The MLP persists its layer weights/biases + standardization stats as float32 `readout__*`
+  arrays + a `meta["readout"]` descriptor; bit-exact lossless serialization is gated by an `MLPReadout`
+  conformance subclass. `model._coef` is `None` for the (nonlinear) MLP readout, as for any nonlinear rung.
+
 ## [0.1.4] - 2026-06-21
 
 DP-3 readout-spectrum, **phase P2a** — the numpy **nonlinear** readout (Rung 2a). Additive +
