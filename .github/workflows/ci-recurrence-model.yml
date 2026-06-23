@@ -121,6 +121,29 @@ jobs:
           /tmp/rec-model-smoke/bin/pip install --quiet dist/juniper_recurrence_model-*.whl
           /tmp/rec-model-smoke/bin/python -c "import juniper_recurrence_model as m; print('import OK', m.__version__); assert m.LMURegressor is not None"
 
+  test-torch:
+    name: Test — torch MLP readout (Rung 2b; optional [torch] extra)
+    runs-on: ubuntu-latest
+    # Optional / non-gating (deliberately NOT in required-checks): the torch wheel adds ~1-3 GB, so it
+    # is kept off the 3.12/3.13/3.14 base matrix and out of the required gate. It exercises the
+    # importorskip-gated Rung 2b tests, which skip in the base no-torch job. Promote into
+    # required-checks if torch-readout regressions should block merges.
+    defaults:
+      run:
+        working-directory: juniper-recurrence-model
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install package + test + torch extras
+        run: pip install --upgrade "pip>=26.1.1" && pip install -e ".[test,torch]"
+
+      - name: Run the Rung 2b (torch) readout tests
+        run: python -m pytest tests/test_readouts_mlp.py -ra -p no:dash -p no:playwright
+
   required-checks:
     name: Required checks
     runs-on: ubuntu-latest

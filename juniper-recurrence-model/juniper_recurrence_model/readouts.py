@@ -65,8 +65,12 @@ class Readout(Protocol):
 
     kind: ClassVar[str]
 
-    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, random_seed: int | None = None) -> None:
-        """Fit the readout to memory block ``M`` (n, F·d), linear side-channel ``extra`` (n, k), target ``y`` (n, out)."""
+    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, M_val: np.ndarray | None = None, extra_val: np.ndarray | None = None, y_val: np.ndarray | None = None, random_seed: int | None = None) -> None:
+        """Fit the readout to ``M`` (n, F·d), linear side-channel ``extra`` (n, k), target ``y`` (n, out).
+
+        Optional ``M_val``/``extra_val``/``y_val`` give a validation split for early-stopping rungs
+        (the closed-form linear/RFF rungs accept and ignore them; the torch MLP rung uses them).
+        """
         ...
 
     def predict(self, M: np.ndarray, extra: np.ndarray) -> np.ndarray:
@@ -175,7 +179,7 @@ class LinearReadout:
     def _design(self, M: np.ndarray, extra: np.ndarray) -> np.ndarray:
         return _assemble_design(M, extra)
 
-    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, random_seed: int | None = None) -> None:
+    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, M_val: np.ndarray | None = None, extra_val: np.ndarray | None = None, y_val: np.ndarray | None = None, random_seed: int | None = None) -> None:
         if isinstance(self.ridge, str):
             if self.ridge != "gcv":
                 raise ValueError(f"unknown ridge mode {self.ridge!r}; expected a float or 'gcv'")
@@ -286,7 +290,7 @@ class RFFReadout:
         d_out = self._W.shape[1]
         return np.sqrt(2.0 / d_out) * np.cos(mz @ self._W + self._b)
 
-    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, random_seed: int | None = None) -> None:
+    def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, M_val: np.ndarray | None = None, extra_val: np.ndarray | None = None, y_val: np.ndarray | None = None, random_seed: int | None = None) -> None:
         rng = np.random.default_rng(random_seed)
         n, p = M.shape
         self._mean, self._std = _standardize_fit(M)
@@ -359,6 +363,11 @@ READOUT_REGISTRY: dict[str, Any] = {LinearReadout.kind: LinearReadout, RFFReadou
 def build_readout_from_state(arrays: dict[str, np.ndarray], descriptor: dict[str, Any]) -> Readout:
     """Reconstruct a fitted readout from persisted arrays + its JSON descriptor (the ``kind`` tag)."""
     kind = descriptor.get("kind")
+    if kind == "mlp" and "mlp" not in READOUT_REGISTRY:
+        # Rung 2b lives in a torch-gated module; register it lazily so the base import stays torch-free.
+        from juniper_recurrence_model._readout_mlp import MLPReadout
+
+        READOUT_REGISTRY["mlp"] = MLPReadout
     try:
         readout_cls = READOUT_REGISTRY[kind]
     except KeyError:
