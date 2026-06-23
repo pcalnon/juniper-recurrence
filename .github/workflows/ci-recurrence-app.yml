@@ -111,6 +111,18 @@ jobs:
       - name: Validate distribution metadata
         run: twine check dist/*
 
+      - name: Smoke-test the built wheel (clean-venv import)
+        run: |
+          set -euo pipefail
+          # F13/CI-5: install the BUILT WHEEL into a throwaway venv and import it — incl. the
+          # FastAPI app factory — so a missing module / package-data / MANIFEST gap is caught
+          # here. The editable install + ``twine check`` never import the shipped artifact.
+          # Mirrors juniper-ml ci-model-core.yml.
+          python -m venv /tmp/rec-app-smoke
+          /tmp/rec-app-smoke/bin/pip install --quiet --upgrade pip
+          /tmp/rec-app-smoke/bin/pip install --quiet dist/juniper_recurrence-*.whl
+          /tmp/rec-app-smoke/bin/python -c "import juniper_recurrence as m; from juniper_recurrence.app import build_app; print('import OK', m.__version__); assert build_app is not None"
+
   docker:
     name: Docker Build & Smoke Test
     runs-on: ubuntu-latest
