@@ -16,6 +16,8 @@ pip install -e ".[test]"                        # local development
 `requests`-only at the core; `pip install juniper-recurrence-client[observability]` adds the
 optional `juniper-observability` integration (X-Request-ID propagation + the `on_request` hook).
 
+> **Port:** `8211` is the juniper-recurrence service's default host port; under Docker it maps to the container's `8210` (see the app README). Point the client at whichever `host:port` the service is published on.
+
 ## Quick start
 
 ```python
