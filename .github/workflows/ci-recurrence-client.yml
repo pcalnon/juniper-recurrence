@@ -88,6 +88,17 @@ jobs:
       - name: Validate distribution metadata
         run: twine check dist/*
 
+      - name: Smoke-test the built wheel (clean-venv import)
+        run: |
+          set -euo pipefail
+          # F13/CI-5: install the BUILT WHEEL into a throwaway venv and import it, so a missing
+          # module / package-data / MANIFEST gap is caught here — the editable install +
+          # ``twine check`` never import the shipped artifact. Mirrors juniper-ml ci-model-core.yml.
+          python -m venv /tmp/rec-client-smoke
+          /tmp/rec-client-smoke/bin/pip install --quiet --upgrade pip
+          /tmp/rec-client-smoke/bin/pip install --quiet dist/juniper_recurrence_client-*.whl
+          /tmp/rec-client-smoke/bin/python -c "import juniper_recurrence_client as m; print('import OK', m.__version__); assert m.JuniperRecurrenceClient is not None"
+
   required-checks:
     name: Required checks
     runs-on: ubuntu-latest
