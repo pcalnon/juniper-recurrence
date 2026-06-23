@@ -8,19 +8,19 @@ dynamic = ["version"]
 description = "Δt-native Legendre Memory Unit (Approach-C) and recurrent model core for the juniper-recurrence application"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Paul Calnon" }]
 keywords = ["juniper", "recurrence", "lmu", "legendre", "state-space", "time-series", "irregular-dt"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
 ]
 
 # numpy-only: the LMU memory is a fixed linear recurrence (the A/B matrices are
@@ -56,6 +56,9 @@ version = { attr = "juniper_recurrence_model._version.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["juniper_recurrence_model*"]
+
+[tool.setuptools.package-data]
+juniper_recurrence_model = ["py.typed"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
