@@ -60,7 +60,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
-addopts = ["-ra", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
+addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 
 [tool.coverage.run]
 source = ["juniper_recurrence_client"]

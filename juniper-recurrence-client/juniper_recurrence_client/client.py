@@ -54,6 +54,7 @@ from juniper_recurrence_client.constants import (
 )
 from juniper_recurrence_client.exceptions import (
     JuniperRecurrenceClientError,
+    JuniperRecurrenceConfigurationError,
     JuniperRecurrenceConflictError,
     JuniperRecurrenceConnectionError,
     JuniperRecurrenceNotFoundError,
@@ -169,11 +170,18 @@ class JuniperRecurrenceClient:
             self.session.headers[API_KEY_HEADER_NAME] = resolved_api_key
 
     def _normalize_url(self, url: str) -> str:
-        """Normalize the base URL: ensure a scheme, drop a trailing slash and any ``/v1`` suffix."""
+        """Normalize the base URL: ensure a scheme, drop a trailing slash and any ``/v1`` suffix.
+
+        Raises :class:`JuniperRecurrenceConfigurationError` when ``base_url`` carries no host
+        (an empty string or a bare scheme) — a misconfiguration that would otherwise normalize to
+        a broken, hostless URL and fail opaquely on the first request.
+        """
         url = url.strip()
         if not url.startswith(URL_SCHEME_PREFIXES):
             url = f"{DEFAULT_URL_SCHEME_PREFIX}{url}"
         parsed = urlparse(url)
+        if not parsed.netloc:
+            raise JuniperRecurrenceConfigurationError(f"base_url must include a host; got {url!r}")
         normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if normalized.endswith(API_VERSION_PATH_SUFFIX):
             normalized = normalized[: -len(API_VERSION_PATH_SUFFIX)]
