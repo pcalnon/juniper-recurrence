@@ -75,6 +75,7 @@ class MLPReadout:
         self.max_epochs = int(max_epochs)
         self.patience = int(patience)
         self.n_epochs_: int = 0  # epochs actually trained (LMURegressor reads this for TrainResult.n_epochs — A2)
+        self.stopped_reason_: str = "max_epochs"  # -> "early_stopping" once val-patience fires; LMURegressor surfaces it as TrainResult.stopped_reason (A2)
         self._arrays: dict[str, np.ndarray] | None = None  # the fitted layer weights/biases (float32)
         self._dims: tuple[int, int, int] | None = None  # (p, k, out)
         self._mean: np.ndarray | None = None
@@ -140,6 +141,7 @@ class MLPReadout:
         best_arrays: dict[str, np.ndarray] | None = None
         best_val = float("inf")
         stale = 0
+        self.stopped_reason_ = "max_epochs"  # reset for re-fit; flips to "early_stopping" if patience fires below
         for epoch in range(self.max_epochs):
             net.train()
             opt.zero_grad()
@@ -156,6 +158,7 @@ class MLPReadout:
             else:
                 stale += 1
                 if stale >= self.patience:
+                    self.stopped_reason_ = "early_stopping"
                     break
         net.eval()
         self._arrays = best_arrays if best_arrays is not None else self._extract(net)

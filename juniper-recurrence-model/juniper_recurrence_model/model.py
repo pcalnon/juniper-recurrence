@@ -186,18 +186,48 @@ class LMURegressor(TrainableModel):
         memory_block = self._memory_block(X, kw.get("dt"), kw.get("readout_mask"), kw.get("seq_lengths"))
         side_channel = self._side_channel(kw.get("target_dt"), n)
         self._readout = self._readout_spec.make()
-        self._readout.fit(memory_block, side_channel, y, random_seed=self.random_seed)
+
+        # DP-3 A2 — validation plumbing. When the caller (or the crossval / conformance harness)
+        # supplies X_val/y_val, build a held-out feature block and hand it to the readout so an
+        # early-stopping rung (the Rung 2b MLP) can use it; the closed-form linear/RFF rungs accept
+        # and ignore it. Optional ``*_val`` timing kwargs (dt_val / target_dt_val / readout_mask_val /
+        # seq_lengths_val) make the val block Δt-faithful; when they are absent (the conformance and
+        # crossval convention) it falls back to the uniform-grid construction — adequate as an overfit
+        # signal, since the readout uses the block only to decide when to stop.
+        val_block = val_side = y_val_arr = None
+        if X_val is not None and y_val is not None:
+            y_val_arr = np.asarray(y_val, dtype=float)
+            if y_val_arr.ndim == 1:
+                y_val_arr = y_val_arr[:, None]
+            n_val = np.asarray(X_val).shape[0]
+            val_block = self._memory_block(np.asarray(X_val, dtype=float), kw.get("dt_val"), kw.get("readout_mask_val"), kw.get("seq_lengths_val"))
+            val_side = self._side_channel(kw.get("target_dt_val"), n_val)
+
+        self._readout.fit(memory_block, side_channel, y, M_val=val_block, extra_val=val_side, y_val=y_val_arr, random_seed=self.random_seed)
         if self._readout.kind == "linear":
             # Propagate a GCV-selected λ (or the fixed penalty) to the envelope so meta["ridge"]
             # records it for retraining fidelity (the lossless test can't catch its omission).
             self.ridge = self._readout.ridge
         self._metrics = _regression_metrics(y, self._readout.predict(memory_block, side_channel))
+        # Validation metrics (advisory, surfaced on the training events) plus the readout's epoch /
+        # stop diagnostics. Closed-form readouts expose neither ``n_epochs_`` nor ``stopped_reason_``,
+        # so they read as the canonical single-solve "1 / converged" — preserving test_crossval's
+        # ``n_epochs == 1`` invariant; the Rung 2b MLP reports its true trained-epoch count and whether
+        # validation early-stopping fired.
+        val_metrics = None if val_block is None else _regression_metrics(y_val_arr, self._readout.predict(val_block, val_side))
+        n_epochs = max(1, int(getattr(self._readout, "n_epochs_", 1)))
+        stopped_reason = str(getattr(self._readout, "stopped_reason_", "converged"))
 
         if on_event is not None:
-            on_event(TrainingEvent("epoch_end", {"epoch": 0, "metrics": dict(self._metrics)}, seq))
+            epoch_payload: dict[str, Any] = {"epoch": n_epochs - 1, "metrics": dict(self._metrics)}
+            end_payload: dict[str, Any] = {"metrics": dict(self._metrics)}
+            if val_metrics is not None:
+                epoch_payload["val_metrics"] = dict(val_metrics)
+                end_payload["val_metrics"] = dict(val_metrics)
+            on_event(TrainingEvent("epoch_end", epoch_payload, seq))
             seq += 1
-            on_event(TrainingEvent("training_end", {"metrics": dict(self._metrics)}, seq))
-        return TrainResult(final_metrics=dict(self._metrics), n_epochs=1, history=[dict(self._metrics)], stopped_reason="converged")
+            on_event(TrainingEvent("training_end", end_payload, seq))
+        return TrainResult(final_metrics=dict(self._metrics), n_epochs=n_epochs, history=[dict(self._metrics)], stopped_reason=stopped_reason)
 
     def predict(self, X: np.ndarray, *, dt: np.ndarray | None = None, target_dt: np.ndarray | None = None, readout_mask: np.ndarray | None = None, seq_lengths: np.ndarray | None = None) -> np.ndarray:
         """Continuous predictions for ``X``.

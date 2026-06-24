@@ -77,6 +77,54 @@ def test_fit_emits_legal_event_order():
     assert [e.type for e in events] == ["training_start", "epoch_end", "training_end"]
 
 
+def test_fit_without_val_reports_single_epoch_and_no_val_metrics():
+    """The closed-form linear readout reads as a single converged solve, and with no validation data
+    the events carry no ``val_metrics`` — the DP-3 A2 readback is opt-in on X_val/y_val."""
+    X, dt, rng = _toy_3d(seed=5)
+    y = rng.normal(size=(X.shape[0], 1))
+    events: list = []
+    result = LMURegressor(d=10, theta=6.0).fit(X, y, dt=dt, on_event=events.append)
+    assert result.n_epochs == 1
+    assert result.stopped_reason == "converged"
+    assert all("val_metrics" not in e.payload for e in events)
+
+
+def test_fit_with_val_emits_val_metrics_and_keeps_single_epoch_for_linear():
+    """X_val/y_val flow through fit: the events gain a ``val_metrics`` payload with the regression
+    keys, while the closed-form linear readout still reports n_epochs == 1 / "converged" (the
+    crossval invariant). y_val is passed 1-D here to exercise the reshape branch."""
+    X, dt, rng = _toy_3d(n=48, seed=6)
+    y = rng.normal(size=(X.shape[0], 1))
+    x_val, dt_val, rng_val = _toy_3d(n=16, seed=7)
+    y_val = rng_val.normal(size=x_val.shape[0])  # 1-D validation targets
+    events: list = []
+    result = LMURegressor(d=10, theta=6.0).fit(X, y, dt=dt, X_val=x_val, y_val=y_val, dt_val=dt_val, on_event=events.append)
+    assert result.n_epochs == 1
+    assert result.stopped_reason == "converged"
+    end = next(e for e in events if e.type == "training_end")
+    assert set(end.payload["val_metrics"]) == {"mse", "rmse", "mae", "r2", "loss"}
+    assert "val_metrics" in next(e for e in events if e.type == "epoch_end").payload
+
+
+def test_fit_val_block_consumes_val_timing():
+    """The optional ``dt_val`` kwarg makes the validation block Δt-faithful: the real val gaps yield
+    different val_metrics than the uniform-grid fallback, proving the kwarg is consumed, not dropped.
+    y_val is passed 2-D here to cover the non-reshape branch."""
+    X, dt, rng = _toy_3d(n=48, seed=8)
+    y = rng.normal(size=(X.shape[0], 1))
+    x_val, dt_val, rng_val = _toy_3d(n=16, seed=9)
+    y_val = rng_val.normal(size=(x_val.shape[0], 1))  # 2-D validation targets
+
+    def _val_mse(**val_kwargs):
+        events: list = []
+        LMURegressor(d=10, theta=6.0).fit(X, y, dt=dt, X_val=x_val, y_val=y_val, on_event=events.append, **val_kwargs)
+        return next(e for e in events if e.type == "training_end").payload["val_metrics"]["mse"]
+
+    with_timing = _val_mse(dt_val=dt_val)
+    uniform_fallback = _val_mse()  # no dt_val -> uniform-grid val block
+    assert not np.isclose(with_timing, uniform_fallback)
+
+
 def test_determinism():
     X, dt, rng = _toy_3d(n=40, n_steps=8, n_features=3, seed=3)
     y = rng.normal(size=(40, 1))
