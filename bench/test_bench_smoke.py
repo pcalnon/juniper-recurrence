@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from juniper_model_core.crossval import cross_validate, walk_forward_folds
-from juniper_recurrence_model import LMURegressor, RFFReadoutSpec
+from juniper_recurrence_model import LMURegressor, MLPReadoutSpec, RFFReadoutSpec
 
 from bench import baselines, datasets
 
@@ -70,6 +70,21 @@ def test_delay_product_capacity_gap_rff_beats_linear():
         lambda i: LMURegressor(d=16, theta=theta, readout=RFFReadoutSpec()), ds, ds.dt
     )
     assert rff.eval_aggregate["r2"] > linear.eval_aggregate["r2"] + 0.2
+
+
+def test_delay_product_capacity_gap_mlp_beats_linear():
+    """DP-3 Rung 2b capacity: the torch MLP readout (default spec, full-budget — no early stopping in
+    CV) fits the bilinear delay_product target the linear readout provably cannot, so MLP r² >> linear
+    r² (measured gap ≈ 0.7). Requires the optional [torch] extra (`.[bench,bench-torch]`); skipped
+    without it, so the torch-free bench CI lane is unaffected."""
+    pytest.importorskip("torch")
+    ds = datasets.delay_product(n_steps=800, lookback=24, lag1=2, lag2=8, seed=0)
+    theta = float(np.median(ds.dt.sum(axis=1)))
+    linear = _cv(lambda i: LMURegressor(d=16, theta=theta), ds, ds.dt)
+    mlp = _cv(
+        lambda i: LMURegressor(d=16, theta=theta, readout=MLPReadoutSpec()), ds, ds.dt
+    )
+    assert mlp.eval_aggregate["r2"] > linear.eval_aggregate["r2"] + 0.2
 
 
 def test_noise_std_perturbs_signal_but_keeps_contract():

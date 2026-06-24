@@ -9,15 +9,22 @@ Design + acceptance bands: juniper-ml ``notes/JUNIPER_RECURRENCE_EVALUATION_DESI
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from juniper_model_core.crossval import cross_validate, walk_forward_folds
-from juniper_recurrence_model import LMURegressor, RFFReadoutSpec
+from juniper_recurrence_model import LMURegressor, MLPReadoutSpec, RFFReadoutSpec
 
 from bench import baselines, datasets
+
+# DP-3 Rung 2b: the torch MLP readout row runs only when the optional [torch] extra is installed
+# (install ``.[bench,bench-torch]``). Probe with ``find_spec`` rather than importing torch, so the
+# offline bench and its torch-free CI lane keep working — the MLP row is simply omitted when torch is
+# absent (mirrors the equities row's graceful skip rather than aborting the whole dataset).
+_TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 
 _RESULTS = Path(__file__).resolve().parent / "results"
 _HEADLINE_D = 16
@@ -92,6 +99,20 @@ def run_dataset(ds: datasets.Dataset) -> dict[str, Any]:
         aux_real,
         folds,
     )
+    # Nonlinear torch MLP readout (DP-3 Rung 2b) — only when the optional [torch] extra is installed.
+    # Trained full-budget (no early stopping: walk-forward CV passes no held-out split, and reusing the
+    # eval fold as validation would leak), so weight_decay is its only regularizer. Like RFF, a capacity
+    # probe vs the linear readout — on delay_product it fits the bilinear target a linear readout
+    # provably cannot. Default (untuned) MLPReadoutSpec() for a reproducible, non-cherry-picked row.
+    if _TORCH_AVAILABLE:
+        models[f"lmu_var_d{_HEADLINE_D}_mlp"] = _run_cv(
+            lambda i: LMURegressor(
+                d=_HEADLINE_D, theta=theta, readout=MLPReadoutSpec()
+            ),
+            ds,
+            aux_real,
+            folds,
+        )
     # d-sensitivity sweep for the variable-Δt LMU (headline d already covered above)
     sweep = {
         f"lmu_var_d{d}": _run_cv(
@@ -208,6 +229,27 @@ def evaluate_bands(results: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
                 "pass": (rff_r2 - lin_r2) >= 0.10
                 if is_capacity
                 else abs(rff_r2 - lin_r2) <= 0.10,
+                "primary": False,
+            }
+        )
+
+    # Band 4b (informational) — DP-3 Rung 2b: the torch MLP readout vs the linear readout, the same
+    # capacity probe as Band 4 (RFF). Present only when the bench ran with the [torch] extra. On
+    # delay_product expect a clear capacity gap; on near-linear datasets the untuned full-budget MLP
+    # (no early stopping in CV) may trail the linear readout — informational, never pre-registered.
+    mlp_key = f"lmu_var_d{_HEADLINE_D}_mlp"
+    for name in results:
+        if mlp_key not in results[name]["models"]:
+            continue
+        mlp_r2, lin_r2 = r2(name, mlp_key), r2(name, var)
+        is_capacity = name == "delay_product"
+        bands.append(
+            {
+                "band": f"4b — {name}: MLP readout vs linear readout ({'capacity gap' if is_capacity else 'comparison'})",
+                "value": f"mlp={mlp_r2:.4f}  linear={lin_r2:.4f}  gap={mlp_r2 - lin_r2:+.4f}",
+                "pass": (mlp_r2 - lin_r2) >= 0.10
+                if is_capacity
+                else abs(mlp_r2 - lin_r2) <= 0.10,
                 "primary": False,
             }
         )
