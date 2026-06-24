@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Added
 
 - **`readout` selection forwarded by `train()` / `crossval()` (DP-3 P2c).** Both methods gain
