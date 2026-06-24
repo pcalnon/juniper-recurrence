@@ -44,13 +44,16 @@ keys are configured; health + docs are always exempt):
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
 | `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`. |
 | `/v1/training/status` | GET | `idle` / `trained` + last metrics + training events. |
+| `/v1/crossval` | POST | Walk-forward cross-validation over the dataset's `_full` split (synchronous); returns aggregated per-fold metrics. |
+| `/v1/crossval/status` | GET | Most recent cross-validation result (aggregate + per-fold). |
 | `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref. |
 | `/v1/model` | GET | Current model topology + regression metrics. |
 | `/v1/dataset` | GET | Descriptor of the trained-on dataset. |
 | `/docs` | GET | OpenAPI / Swagger UI (exempt). |
 
-Training runs **inline** (a one-shot closed-form solve), so `POST /v1/train` returns the
-result in the response — no background jobs or WebSocket streams in v1.
+Both `POST /v1/train` and `POST /v1/crossval` run **inline** (closed-form solves) and return
+their result in the response — no background jobs or WebSocket streams in v1. A second
+cross-validation run while one is in progress returns `409`.
 
 ```bash
 # Train on a juniper-data dataset, then inspect the model.
