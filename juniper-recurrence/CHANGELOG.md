@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Fixed
 
 - **CLI `--rff-features` / `--rff-gamma` are now rejected without `--readout rff`** (P2c follow-up).
