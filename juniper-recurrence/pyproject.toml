@@ -25,13 +25,15 @@ classifiers = [
 ]
 
 # Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.2.0,
-# juniper-service-core 0.1.0, juniper-recurrence-model 0.1.4, juniper-data-client
+# juniper-service-core 0.1.0, juniper-recurrence-model 0.1.5, juniper-data-client
 # 0.4.2), so the app pins them directly — no editable-sibling / cross-repo-clone
 # step is required (plan §10 publish-first end-state). The /v1/crossval endpoint pulls
-# juniper-model-core's optional [crossval] extra; juniper-recurrence-model>=0.1.4 is the
-# release that adds the RFF nonlinear readout (RFFReadoutSpec) that the DP-3 P2c HTTP
-# `readout` enum constructs; publish-first: 0.1.4 must reach PyPI before this app change is
-# installable (it is already live).
+# juniper-model-core's optional [crossval] extra; juniper-recurrence-model>=0.1.5 is the
+# release that adds the Rung 2b torch MLP readout (MLPReadoutSpec) the DP-3 P3 HTTP
+# `readout="mlp"` enum constructs (atop the 0.1.4 RFF readout); publish-first: 0.1.5 must
+# reach PyPI before this app change is installable (it is already live). The MLP readout needs
+# torch *at runtime* only — kept optional via the [torch] extra below, never a base dependency
+# (importing MLPReadoutSpec is torch-free; torch is lazily imported inside the readout's fit).
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.30",
@@ -40,7 +42,7 @@ dependencies = [
     "numpy>=1.24",
     "juniper-service-core>=0.1.0,<0.2.0",
     "juniper-model-core[crossval]>=0.2.0,<0.3.0",
-    "juniper-recurrence-model>=0.1.4,<0.2.0",
+    "juniper-recurrence-model>=0.1.5,<0.2.0",
     "juniper-data-client>=0.4.2,<0.5.0",
 ]
 
@@ -59,6 +61,13 @@ observability = [
     # so the bare package would ModuleNotFoundError at /metrics scrape time (mirrors
     # juniper-data's observability extra).
     "juniper-observability[prometheus]>=0.4.0,<0.5.0",
+]
+# Rung 2b torch MLP readout over the HTTP API / CLI (DP-3 P3). ``readout="mlp"`` needs torch at
+# runtime; it is optional (~GB) so deployments that never select the MLP readout stay torch-free —
+# the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
+# when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
+torch = [
+    "juniper-recurrence-model[torch]>=0.1.5,<0.2.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the

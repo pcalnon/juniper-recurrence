@@ -27,6 +27,17 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `readout="rff"`. Floor-bumps the model pin to `juniper-recurrence-model>=0.1.4` (the release that
   ships `RFFReadoutSpec`). See the DP-3 design §6 / §8a.
 
+- **HTTP readout enum — `readout="mlp"`, the torch MLP readout (DP-3 P3).** Extends the `readout`
+  enum on `POST /v1/train`, `POST /v1/crossval`, and the `train` CLI with `"mlp"` (Rung 2b), plus the
+  optional MLP hyperparameters `mlp_hidden` / `mlp_weight_decay` / `mlp_lr` / `mlp_max_epochs` /
+  `mlp_patience` (each defaults to the `MLPReadoutSpec` value; rejected unless `readout="mlp"`, and
+  `ridge` is rejected with `"mlp"` since the MLP regularises via weight decay). Floor-bumps the model
+  pin to `juniper-recurrence-model>=0.1.5` (the release that ships `MLPReadoutSpec`). The MLP needs
+  torch **at runtime**, kept optional via a new **`[torch]` extra**
+  (`pip install 'juniper-recurrence[torch]'`); a deployment without it still starts and rejects
+  `readout="mlp"` with a clear **503** (the spec import itself is torch-free). See the DP-3 design §6
+  and the evaluation findings §3.4.
+
 - **Container image — `Dockerfile` + `.dockerignore` (OUT-4 / WS-7).** A multi-stage,
   slim (~77 MB) image. The LMU stack is numpy-only (no torch), so the build installs the
   app + the `[observability]` extra from PyPI with no CPU-torch lock dance. Runs as a

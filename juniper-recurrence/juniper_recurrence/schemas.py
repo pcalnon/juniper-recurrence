@@ -32,22 +32,41 @@ __all__ = [
 # ``settings.default_ridge``). The ``ge=0`` bound applies only to the float member of the union.
 RidgeField = Annotated[float, Field(ge=0)] | Literal["gcv"] | None
 
-# DP-3 (P2c): the readout *spectrum* exposed as a tagged enum at the HTTP edge. ``None`` ⇒ the
-# back-compat linear readout (which uses ``ridge``); ``"rff"`` selects the nonlinear
-# random-Fourier-feature readout (Rung 2a), configured by ``rff_features`` / ``rff_gamma`` (the
-# ``ridge`` penalty is shared and, for RFF, defaults to closed-form GCV). The Python model is
-# configured by an immutable readout *spec*; this enum is its edge surface (design §6 / Appendix A).
-ReadoutKind = Literal["linear", "rff"]
+# DP-3: the readout *spectrum* exposed as a tagged enum at the HTTP edge. ``None`` ⇒ the back-compat
+# linear readout (which uses ``ridge``); ``"rff"`` selects the nonlinear random-Fourier-feature readout
+# (Rung 2a, P2c), configured by ``rff_features`` / ``rff_gamma``; ``"mlp"`` selects the torch MLP readout
+# (Rung 2b, P3 — needs the ``[torch]`` extra at runtime), configured by the ``mlp_*`` knobs. The Python
+# model is configured by an immutable readout *spec*; this enum is its edge surface (design §6 / App. A).
+ReadoutKind = Literal["linear", "rff", "mlp"]
 
 # RFF bandwidth γ: a positive float, or the median heuristic (``"median"``); ``None`` ⇒ the model
 # default ("median"). The ``gt=0`` bound applies only to the float member of the union.
 GammaField = Annotated[float, Field(gt=0)] | Literal["median"] | None
 
 
-def _validate_rff_fields(readout: ReadoutKind | None, rff_features: int | None, rff_gamma: Any) -> None:
-    """Reject the RFF-only params when the readout is not ``"rff"`` (no silent no-op at the edge)."""
+def _validate_readout_fields(
+    *,
+    readout: ReadoutKind | None,
+    ridge: Any,
+    rff_features: int | None,
+    rff_gamma: Any,
+    mlp_hidden: int | None,
+    mlp_weight_decay: float | None,
+    mlp_lr: float | None,
+    mlp_max_epochs: int | None,
+    mlp_patience: int | None,
+) -> None:
+    """Reject a rung's params when a different rung (or none) is selected — no silent no-op at the edge.
+
+    Mirrors the guards in ``juniper_recurrence._readout.build_lmu_regressor`` so the HTTP edge rejects a
+    misconfiguration with 422 up front, identically to the CLI and the shared translation point.
+    """
     if readout != "rff" and (rff_features is not None or rff_gamma is not None):
         raise ValueError("rff_features / rff_gamma are only valid when readout='rff'")
+    if readout != "mlp" and any(v is not None for v in (mlp_hidden, mlp_weight_decay, mlp_lr, mlp_max_epochs, mlp_patience)):
+        raise ValueError("mlp_hidden / mlp_weight_decay / mlp_lr / mlp_max_epochs / mlp_patience are only valid when readout='mlp'")
+    if readout == "mlp" and ridge is not None:
+        raise ValueError("ridge is not applicable to readout='mlp' (the MLP regularises via weight decay; set mlp_weight_decay)")
 
 
 class DatasetRef(BaseModel):
@@ -101,10 +120,25 @@ class TrainRequest(BaseModel):
     readout: ReadoutKind | None = None
     rff_features: int | None = Field(default=None, ge=1)
     rff_gamma: GammaField = None
+    mlp_hidden: int | None = Field(default=None, ge=1)
+    mlp_weight_decay: float | None = Field(default=None, ge=0)
+    mlp_lr: float | None = Field(default=None, gt=0)
+    mlp_max_epochs: int | None = Field(default=None, ge=1)
+    mlp_patience: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _check_readout(self) -> TrainRequest:
-        _validate_rff_fields(self.readout, self.rff_features, self.rff_gamma)
+        _validate_readout_fields(
+            readout=self.readout,
+            ridge=self.ridge,
+            rff_features=self.rff_features,
+            rff_gamma=self.rff_gamma,
+            mlp_hidden=self.mlp_hidden,
+            mlp_weight_decay=self.mlp_weight_decay,
+            mlp_lr=self.mlp_lr,
+            mlp_max_epochs=self.mlp_max_epochs,
+            mlp_patience=self.mlp_patience,
+        )
         return self
 
 
@@ -189,10 +223,25 @@ class CrossValRequest(BaseModel):
     readout: ReadoutKind | None = None
     rff_features: int | None = Field(default=None, ge=1)
     rff_gamma: GammaField = None
+    mlp_hidden: int | None = Field(default=None, ge=1)
+    mlp_weight_decay: float | None = Field(default=None, ge=0)
+    mlp_lr: float | None = Field(default=None, gt=0)
+    mlp_max_epochs: int | None = Field(default=None, ge=1)
+    mlp_patience: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _check_readout(self) -> CrossValRequest:
-        _validate_rff_fields(self.readout, self.rff_features, self.rff_gamma)
+        _validate_readout_fields(
+            readout=self.readout,
+            ridge=self.ridge,
+            rff_features=self.rff_features,
+            rff_gamma=self.rff_gamma,
+            mlp_hidden=self.mlp_hidden,
+            mlp_weight_decay=self.mlp_weight_decay,
+            mlp_lr=self.mlp_lr,
+            mlp_max_epochs=self.mlp_max_epochs,
+            mlp_patience=self.mlp_patience,
+        )
         return self
 
 

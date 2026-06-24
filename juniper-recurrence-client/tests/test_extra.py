@@ -88,6 +88,24 @@ def test_crossval_forwards_readout_rff() -> None:
 
 
 @responses.activate
+def test_train_forwards_readout_mlp() -> None:
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client().train(name="equities", readout="mlp", mlp_hidden=64, mlp_weight_decay=1e-3, mlp_lr=5e-3, mlp_max_epochs=50, mlp_patience=5)
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["readout"] == "mlp"
+    assert sent["mlp_hidden"] == 64 and sent["mlp_weight_decay"] == 1e-3 and sent["mlp_lr"] == 5e-3
+    assert sent["mlp_max_epochs"] == 50 and sent["mlp_patience"] == 5
+
+
+@responses.activate
+def test_crossval_forwards_readout_mlp() -> None:
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 2, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client().crossval(generator="equities_seq", n_folds=2, readout="mlp", mlp_hidden=32, mlp_max_epochs=80)
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["readout"] == "mlp" and sent["mlp_hidden"] == 32 and sent["mlp_max_epochs"] == 80
+
+
+@responses.activate
 def test_wait_for_ready_polls_until_ready() -> None:
     responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"status": "starting"}, status=200)
     responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"status": "ready"}, status=200)

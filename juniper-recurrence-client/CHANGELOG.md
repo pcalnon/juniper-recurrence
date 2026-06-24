@@ -16,6 +16,12 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   callers can select the service's nonlinear RFF readout (Rung 2a). Backward compatible — all optional;
   unset ⇒ an unchanged request body.
 
+- **`readout="mlp"` + MLP knobs forwarded by `train()` / `crossval()` (DP-3 P3).** Both methods widen
+  `readout` to `Optional[Literal["linear", "rff", "mlp"]]` and gain `mlp_hidden` / `mlp_weight_decay` /
+  `mlp_lr` / `mlp_max_epochs` / `mlp_patience` (all `Optional`), forwarded verbatim in the request body
+  so callers can select the service's torch MLP readout (Rung 2b). Backward compatible — all optional;
+  unset ⇒ an unchanged request body. (The service needs its own `[torch]` extra to fulfil `readout="mlp"`.)
+
 - **`ridge="gcv"` accepted by `train()` / `crossval()` (DP-3 P1).** The `ridge` parameter widens
   from `Optional[float]` to `Optional[Union[float, Literal["gcv"]]]`, so callers can request the
   service's closed-form GCV selection of the readout penalty. The value is forwarded verbatim in

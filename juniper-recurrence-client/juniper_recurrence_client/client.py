@@ -299,9 +299,14 @@ class JuniperRecurrenceClient:
         d: Optional[int] = None,
         theta: Optional[float] = None,
         ridge: Optional[Union[float, Literal["gcv"]]] = None,
-        readout: Optional[Literal["linear", "rff"]] = None,
+        readout: Optional[Literal["linear", "rff", "mlp"]] = None,
         rff_features: Optional[int] = None,
         rff_gamma: Optional[Union[float, Literal["median"]]] = None,
+        mlp_hidden: Optional[int] = None,
+        mlp_weight_decay: Optional[float] = None,
+        mlp_lr: Optional[float] = None,
+        mlp_max_epochs: Optional[int] = None,
+        mlp_patience: Optional[int] = None,
     ) -> dict[str, Any]:
         """``POST /v1/train`` — synchronously fit the LMU regressor on a dataset split.
 
@@ -322,6 +327,16 @@ class JuniperRecurrenceClient:
             body["rff_features"] = rff_features
         if rff_gamma is not None:
             body["rff_gamma"] = rff_gamma
+        if mlp_hidden is not None:
+            body["mlp_hidden"] = mlp_hidden
+        if mlp_weight_decay is not None:
+            body["mlp_weight_decay"] = mlp_weight_decay
+        if mlp_lr is not None:
+            body["mlp_lr"] = mlp_lr
+        if mlp_max_epochs is not None:
+            body["mlp_max_epochs"] = mlp_max_epochs
+        if mlp_patience is not None:
+            body["mlp_patience"] = mlp_patience
         return self._parse_json(self._request("POST", ENDPOINT_TRAIN, json=body))
 
     def training_status(self) -> dict[str, Any]:
@@ -378,9 +393,14 @@ class JuniperRecurrenceClient:
         d: Optional[int] = None,
         theta: Optional[float] = None,
         ridge: Optional[Union[float, Literal["gcv"]]] = None,
-        readout: Optional[Literal["linear", "rff"]] = None,
+        readout: Optional[Literal["linear", "rff", "mlp"]] = None,
         rff_features: Optional[int] = None,
         rff_gamma: Optional[Union[float, Literal["median"]]] = None,
+        mlp_hidden: Optional[int] = None,
+        mlp_weight_decay: Optional[float] = None,
+        mlp_lr: Optional[float] = None,
+        mlp_max_epochs: Optional[int] = None,
+        mlp_patience: Optional[int] = None,
     ) -> dict[str, Any]:
         """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the ``_full`` split.
 
@@ -407,6 +427,16 @@ class JuniperRecurrenceClient:
             body["rff_features"] = rff_features
         if rff_gamma is not None:
             body["rff_gamma"] = rff_gamma
+        if mlp_hidden is not None:
+            body["mlp_hidden"] = mlp_hidden
+        if mlp_weight_decay is not None:
+            body["mlp_weight_decay"] = mlp_weight_decay
+        if mlp_lr is not None:
+            body["mlp_lr"] = mlp_lr
+        if mlp_max_epochs is not None:
+            body["mlp_max_epochs"] = mlp_max_epochs
+        if mlp_patience is not None:
+            body["mlp_patience"] = mlp_patience
         return self._parse_json(self._request("POST", ENDPOINT_CROSSVAL, json=body))
 
     def crossval_status(self) -> dict[str, Any]:
