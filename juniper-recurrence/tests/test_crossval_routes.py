@@ -101,6 +101,33 @@ def test_crossval_rff_params_without_readout_422(fake_full_data):
     assert resp.status_code == 422
 
 
+def test_crossval_readout_mlp_without_torch_503(fake_full_data, monkeypatch):
+    # DP-3 P3: a torch-less deployment rejects readout="mlp" up front (the pre-flight build) with a
+    # clean 503 — toggling find_spec keeps this deterministic whether or not torch is installed.
+    import importlib.util as iu
+
+    real = iu.find_spec
+    monkeypatch.setattr(
+        "juniper_recurrence._readout.importlib.util.find_spec",
+        lambda name, *a, **k: None if name == "torch" else real(name, *a, **k),
+    )
+    resp = _client(api_keys=None).post(
+        "/v1/crossval",
+        json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4, "readout": "mlp"},
+    )
+    assert resp.status_code == 503, resp.text
+    assert "torch" in resp.text
+
+
+def test_crossval_mlp_params_without_readout_422(fake_full_data):
+    # mlp_* params are rejected by the request schema unless readout="mlp".
+    resp = _client(api_keys=None).post(
+        "/v1/crossval",
+        json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "mlp_hidden": 64},
+    )
+    assert resp.status_code == 422
+
+
 def test_crossval_status_idle_then_persisted(fake_full_data):
     client = _client(api_keys=None)
     idle = client.get("/v1/crossval/status").json()

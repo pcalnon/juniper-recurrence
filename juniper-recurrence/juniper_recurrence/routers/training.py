@@ -56,15 +56,26 @@ def train(
         theta = req.theta if req.theta is not None else settings.default_theta
 
         sink = EventSink()
-        model = build_lmu_regressor(
-            d=d,
-            theta=theta,
-            readout=req.readout,
-            ridge=req.ridge,
-            rff_features=req.rff_features,
-            rff_gamma=req.rff_gamma,
-            default_ridge=settings.default_ridge,
-        )
+        try:
+            model = build_lmu_regressor(
+                d=d,
+                theta=theta,
+                readout=req.readout,
+                ridge=req.ridge,
+                rff_features=req.rff_features,
+                rff_gamma=req.rff_gamma,
+                mlp_hidden=req.mlp_hidden,
+                mlp_weight_decay=req.mlp_weight_decay,
+                mlp_lr=req.mlp_lr,
+                mlp_max_epochs=req.mlp_max_epochs,
+                mlp_patience=req.mlp_patience,
+                default_ridge=settings.default_ridge,
+            )
+        except ValueError as exc:
+            # Schema validation already rejects bad-knob / ridge-with-mlp combinations (422). The only
+            # ValueError reachable here is the readout='mlp' torch-capability gap — a deployment without
+            # the [torch] extra — which is a service-unavailability, not a client error.
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
         lifecycle = TrainingLifecycle(model, on_event=sink)
         result = lifecycle.run(sequence.X, sequence.y, **sequence.fit_kwargs())
 

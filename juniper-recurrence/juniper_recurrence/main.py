@@ -52,9 +52,14 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--d", type=int, default=None, help="LMU memory order (default: settings.default_d).")
     train.add_argument("--theta", type=float, default=None, help="LMU window length θ (default: data-driven).")
     train.add_argument("--ridge", type=_ridge_arg, default=None, help="Readout L2 penalty: a float or 'gcv' for closed-form GCV selection (default: settings.default_ridge).")
-    train.add_argument("--readout", choices=("linear", "rff"), default=None, help="Readout rung: 'linear' (default) or 'rff' (nonlinear random Fourier features; DP-3 P2c).")
+    train.add_argument("--readout", choices=("linear", "rff", "mlp"), default=None, help="Readout rung: 'linear' (default), 'rff' (nonlinear random Fourier features; DP-3 P2c), or 'mlp' (torch MLP; DP-3 P3 — needs the [torch] extra).")
     train.add_argument("--rff-features", type=int, default=None, help="RFF feature count D when --readout=rff (default: 256).")
     train.add_argument("--rff-gamma", type=_gamma_arg, default=None, help="RFF bandwidth γ when --readout=rff: a positive float or 'median' (default: 'median').")
+    train.add_argument("--mlp-hidden", type=int, default=None, help="MLP hidden width when --readout=mlp (default: 128).")
+    train.add_argument("--mlp-weight-decay", type=float, default=None, help="MLP Adam weight decay when --readout=mlp (default: 1e-4).")
+    train.add_argument("--mlp-lr", type=float, default=None, help="MLP Adam learning rate when --readout=mlp (default: 1e-3).")
+    train.add_argument("--mlp-max-epochs", type=int, default=None, help="MLP max training epochs when --readout=mlp (default: 200).")
+    train.add_argument("--mlp-patience", type=int, default=None, help="MLP early-stop patience in epochs when --readout=mlp (default: 20).")
     train.add_argument("--out", default=None, help="Path to save the trained model (.npz) via LMUSerializer.")
 
     return parser
@@ -107,6 +112,11 @@ def _train(args: argparse.Namespace) -> int:
             ridge=args.ridge,
             rff_features=args.rff_features,
             rff_gamma=args.rff_gamma,
+            mlp_hidden=args.mlp_hidden,
+            mlp_weight_decay=args.mlp_weight_decay,
+            mlp_lr=args.mlp_lr,
+            mlp_max_epochs=args.mlp_max_epochs,
+            mlp_patience=args.mlp_patience,
             default_ridge=settings.default_ridge,
         )
     except ValueError as exc:

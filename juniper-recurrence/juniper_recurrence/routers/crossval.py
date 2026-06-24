@@ -16,6 +16,7 @@ recent result is persisted on the app state for ``GET /v1/crossval/status``.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -81,16 +82,32 @@ def crossval(
         except ValueError as exc:
             raise HTTPException(422, f"invalid cross-validation configuration: {exc}") from exc
 
+        # The per-fold model factory, built once up front to validate the readout config (torch
+        # availability for readout='mlp', knob combinations) and fail fast with a clean error rather
+        # than surfacing identically on every fold. Schema validation already covers the client-side
+        # knob errors (422); the case reachable here is the readout='mlp' torch-capability gap (503).
+        make_model = partial(
+            build_lmu_regressor,
+            d=d,
+            theta=theta,
+            readout=req.readout,
+            ridge=req.ridge,
+            rff_features=req.rff_features,
+            rff_gamma=req.rff_gamma,
+            mlp_hidden=req.mlp_hidden,
+            mlp_weight_decay=req.mlp_weight_decay,
+            mlp_lr=req.mlp_lr,
+            mlp_max_epochs=req.mlp_max_epochs,
+            mlp_patience=req.mlp_patience,
+            default_ridge=settings.default_ridge,
+        )
+        try:
+            make_model()
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
         result = cross_validate(
-            lambda _fold: build_lmu_regressor(
-                d=d,
-                theta=theta,
-                readout=req.readout,
-                ridge=req.ridge,
-                rff_features=req.rff_features,
-                rff_gamma=req.rff_gamma,
-                default_ridge=settings.default_ridge,
-            ),
+            lambda _fold: make_model(),
             sequence.X,
             sequence.y,
             folds,
