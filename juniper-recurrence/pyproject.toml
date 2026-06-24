@@ -80,6 +80,14 @@ bench = [
 bench-equities = [
     "juniper-data[equities]>=0.9.0,<0.10.0",
 ]
+# Rung 2b torch MLP readout row in the bench (DP-3 P3). The [torch] extra pulls torch (~GB), so it is
+# kept separate from [bench] like [bench-equities]: the offline bench and its CI lane stay torch-free
+# (run_benchmark.py probes for torch and omits the MLP row when absent), while a developer who wants
+# the MLP capacity row installs `.[bench,bench-torch]`. >=0.1.5 is REQUIRED — MLPReadoutSpec ships in
+# juniper-recurrence-model 0.1.5 (the LMURegressor validation plumbing + the Rung 2b readout).
+bench-torch = [
+    "juniper-recurrence-model[torch]>=0.1.5,<0.2.0",
+]
 
 [project.scripts]
 juniper-recurrence = "juniper_recurrence.main:main"
