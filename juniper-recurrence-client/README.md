@@ -45,10 +45,10 @@ client.is_ready()         # readiness probe
 
 | Method | Endpoint |
 |--------|----------|
-| `train(*, dataset_id / name / generator, params, split, d, theta, ridge)` | `POST /v1/train` |
+| `train(*, dataset_id / name / generator, params, split, d, theta, ridge, readout, rff_*, mlp_*)` | `POST /v1/train` |
 | `training_status()` | `GET /v1/training/status` |
 | `predict(*, X / dt / target_dt / seq_lengths, or a dataset ref)` | `POST /v1/predict` |
-| `crossval(*, n_folds, scheme, embargo, min_train, dataset ref, d, theta, ridge)` | `POST /v1/crossval` |
+| `crossval(*, n_folds, scheme, embargo, min_train, dataset ref, d, theta, ridge, readout, rff_*, mlp_*)` | `POST /v1/crossval` |
 | `crossval_status()` | `GET /v1/crossval/status` |
 | `get_model()` | `GET /v1/model` |
 | `get_dataset()` | `GET /v1/dataset` |

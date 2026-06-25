@@ -4,7 +4,7 @@
 **Application**: juniper-recurrence (FastAPI + CLI service)
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.1.1
+**Version**: 0.2.0
 
 FastAPI + CLI service that wraps the Δt-native Legendre Memory Unit regressor
 ([`juniper-recurrence-model`](https://github.com/pcalnon/juniper-recurrence)) on the
@@ -22,6 +22,7 @@ surface.
 
 ```bash
 pip install juniper-recurrence
+pip install "juniper-recurrence[torch]"   # adds the torch MLP readout (DP-3 Rung 2b)
 ```
 
 All upstreams resolve from PyPI: `juniper-service-core`, `juniper-model-core`,
@@ -49,11 +50,18 @@ keys are configured; health + docs are always exempt):
 | `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref. |
 | `/v1/model` | GET | Current model topology + regression metrics. |
 | `/v1/dataset` | GET | Descriptor of the trained-on dataset. |
+| `/v1/metrics` | GET | Prometheus metrics — IP-allowlist gated; needs the `[observability]` extra. |
 | `/docs` | GET | OpenAPI / Swagger UI (exempt). |
 
 Both `POST /v1/train` and `POST /v1/crossval` run **inline** (closed-form solves) and return
 their result in the response — no background jobs or WebSocket streams in v1. A second
 cross-validation run while one is in progress returns `409`.
+
+`POST /v1/train` and `POST /v1/crossval` accept a **`readout`** selector (DP-3): `"linear"`
+(default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
+`rff_features` / `rff_gamma`), or `"mlp"` (a torch MLP with the `mlp_*` knobs — needs the `[torch]`
+extra; returns `503` if torch is not installed). `ridge` accepts a float or `"gcv"` (closed-form
+generalized-cross-validation selection). See the `juniper-recurrence-model` README for the spectrum.
 
 ```bash
 # Train on a juniper-data dataset, then inspect the model.
@@ -102,8 +110,9 @@ publishing (no API tokens). The model package (`juniper-recurrence-model`) publi
 separately on `juniper-recurrence-model-v*` tags.
 
 ```bash
-git tag juniper-recurrence-v0.1.0
-git push origin juniper-recurrence-v0.1.0
+# Cut a GitHub Release on a juniper-recurrence-v* tag (the ecosystem convention — not a
+# bare `git push <tag>`); the Release drives publish-recurrence-app.yml (TestPyPI → PyPI).
+gh release create juniper-recurrence-v0.2.0 --generate-notes
 ```
 
 ## Ecosystem

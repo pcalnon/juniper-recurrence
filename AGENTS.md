@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.1.1
-**Last Updated**: 2026-06-21
+**Version**: 0.2.0
+**Last Updated**: 2026-06-25
 
 ---
 
@@ -19,9 +19,9 @@ It is a live **4-sub-project monorepo** — a FastAPI + CLI application, its mod
 
 | Sub-project | Directory | PyPI package | Version |
 |---|---|---|---|
-| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.1.1 |
-| Model core (Δt-native LMU + `LMURegressor`) | `juniper-recurrence-model/` | `juniper-recurrence-model` | 0.1.3 |
-| HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.1.0 |
+| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.2.0 |
+| Model core (Δt-native LMU + `LMURegressor`) | `juniper-recurrence-model/` | `juniper-recurrence-model` | 0.1.5 |
+| HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.2.0 |
 | Benchmark / evaluation harness | `bench/` | _(not a package)_ | n/a |
 
 The application is the first real consumer of the shared `juniper-service-core` framework (`create_app` + `TrainingLifecycle`), and the model passes the shared `juniper-model-core` `TrainableModel` conformance kit unchanged. The model, the data foundation, and the service framework all ship as separate PyPI packages; the app is the glue + the HTTP/CLI surface.
@@ -111,4 +111,4 @@ CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 ma
 
 ## Status
 
-Live monorepo: the application (`juniper-recurrence` 0.1.1), the model core (`juniper-recurrence-model` 0.1.3), and the HTTP client (`juniper-recurrence-client` 0.1.0) are all published to PyPI, plus the `bench/` evaluation harness. The Δt-native LMU memory unit (the C1-clean Approach-C core) and `LMURegressor` pass `juniper-model-core`'s conformance kit; the app exposes the train / predict / model / dataset / cross-validation HTTP surface on the shared `juniper-service-core` framework.
+Live monorepo: the application (`juniper-recurrence` 0.2.0), the model core (`juniper-recurrence-model` 0.1.5), and the HTTP client (`juniper-recurrence-client` 0.2.0) are all published to PyPI, plus the `bench/` evaluation harness. The Δt-native LMU memory unit (the C1-clean Approach-C core) and `LMURegressor` pass `juniper-model-core`'s conformance kit; the app exposes the train / predict / model / dataset / cross-validation HTTP surface on the shared `juniper-service-core` framework.
