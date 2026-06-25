@@ -7,6 +7,7 @@ predictions — never an ``argmax`` collapse to labels (RK-6). ``409`` before an
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 import numpy as np
@@ -20,6 +21,8 @@ from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
 router = APIRouter(tags=["predict"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/v1/predict", response_model=PredictResponse)
@@ -54,6 +57,7 @@ def predict(
                 split=req.dataset.split,
             )
         except (JuniperDataClientError, ValueError) as exc:
+            logger.warning("predict aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
             raise map_data_error(exc) from exc
         features = sequence.X
         kwargs = sequence.fit_kwargs()
@@ -61,6 +65,7 @@ def predict(
     try:
         predictions = model.predict(features, **kwargs)
     except (ValueError, RuntimeError) as exc:
+        logger.warning("prediction failed: %s", exc)
         # 422 literal: avoids Starlette's deprecated HTTP_422_UNPROCESSABLE_ENTITY constant.
         raise HTTPException(422, f"prediction failed: {exc}") from exc
 

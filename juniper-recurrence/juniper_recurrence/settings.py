@@ -46,6 +46,13 @@ class Settings(SettingsBase):
     host: str = "0.0.0.0"  # nosec B104 — intentional container bind-all (design §6.8)
     port: int = 8210  # container port; deploy maps host 8211 -> ctr 8210 (design §6.8)
 
+    # --- logging ----------------------------------------------------------------------
+    # ``SettingsBase`` supplies ``log_level`` (default "INFO"); ``log_format`` selects the
+    # output style consumed by ``juniper_observability.configure_logging`` — "json" for
+    # structured-JSON (log shippers) or "text" for human-readable. "text" is the ecosystem
+    # default (matches juniper-data / juniper-cascor / juniper-canopy).
+    log_format: str = "text"
+
     # --- API-key auth + rate limiting -------------------------------------------------
     api_keys: Annotated[list[str] | None, NoDecode] = Field(default=None)
     rate_limit_enabled: bool = True

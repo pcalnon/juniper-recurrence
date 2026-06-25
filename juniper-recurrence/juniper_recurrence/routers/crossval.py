@@ -16,6 +16,8 @@ recent result is persisted on the app state for ``GET /v1/crossval/status``.
 
 from __future__ import annotations
 
+import logging
+import time
 from functools import partial
 from typing import Annotated
 
@@ -31,6 +33,8 @@ from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
 router = APIRouter(tags=["crossval"])
+
+logger = logging.getLogger(__name__)
 
 
 def _to_response(result: CrossValResult, dataset: DatasetDescriptor) -> CrossValResponse:
@@ -53,6 +57,7 @@ def crossval(
 ) -> CrossValResponse:
     """Synchronously cross-validate the LMU over walk-forward folds of the dataset's ``_full`` split."""
     if not state.crossval_lock.acquire(blocking=False):
+        logger.warning("POST /v1/crossval rejected: a cross-validation run is already in progress")
         raise HTTPException(status.HTTP_409_CONFLICT, "a cross-validation run is already in progress")
     try:
         try:
@@ -66,6 +71,7 @@ def crossval(
                 split="full",  # CV always derives folds from the full chronological set (D-CV-4)
             )
         except (JuniperDataClientError, ValueError) as exc:
+            logger.warning("cross-validation aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
             raise map_data_error(exc) from exc
 
         d = req.d if req.d is not None else settings.default_d
@@ -104,8 +110,11 @@ def crossval(
         try:
             make_model()
         except ValueError as exc:
+            logger.warning("cross-validation unavailable: readout=%r requires the [torch] extra: %s", req.readout, exc)
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
+        logger.info("cross-validation start: dataset=%s folds=%s scheme=%s d=%s theta=%s readout=%s", descriptor["dataset_id"], len(folds), req.scheme, d, theta, req.readout or "linear")
+        start = time.perf_counter()
         result = cross_validate(
             lambda _fold: make_model(),
             sequence.X,
@@ -115,6 +124,7 @@ def crossval(
         )
         dataset = DatasetDescriptor(**descriptor)
         state.set_crossval(result, dataset)
+        logger.info("cross-validation complete: dataset=%s folds=%s duration=%.3fs eval_aggregate=%s", descriptor["dataset_id"], len(result.folds), time.perf_counter() - start, result.eval_aggregate)
         return _to_response(result, dataset)
     finally:
         state.crossval_lock.release()

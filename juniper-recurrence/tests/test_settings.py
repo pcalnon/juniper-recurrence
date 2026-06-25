@@ -28,6 +28,8 @@ def test_defaults():
     assert settings.default_d == 16
     assert settings.default_theta is None
     assert settings.default_ridge == 0.0
+    assert settings.log_level == "INFO"  # inherited from SettingsBase
+    assert settings.log_format == "text"
 
 
 def test_default_ridge_accepts_gcv():
