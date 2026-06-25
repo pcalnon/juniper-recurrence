@@ -8,6 +8,15 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Input validation hardening (audit MODEL-01 / MODEL-04).** Non-finite (`NaN`/`Inf`) values in
+  the `dt` timing channel — and in the feature drive — are now rejected with a clear `ValueError`
+  in `VariableStepLMUMemory.rollout` / `rollout_batch` and in `sequence_data_from_arrays`
+  (previously a `NaN` gap slipped past the bare `dt < 0` guard and silently produced `NaN`
+  predictions / an opaque LAPACK error). `RFFReadout` now rejects `n_features_out < 1` instead of
+  failing with a later `ZeroDivisionError`.
+
 ## [0.1.5] - 2026-06-23
 
 DP-3 readout-spectrum, **phase P3** — the optional **torch MLP readout (Rung 2b)** plus the

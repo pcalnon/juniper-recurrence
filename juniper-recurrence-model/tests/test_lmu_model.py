@@ -50,6 +50,25 @@ def test_rollout_batch_treats_zero_gap_as_held_step():
     assert np.allclose(out[0, 2, 0, :], out[0, 1, 0, :])  # held across the zero gap
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_rollout_batch_rejects_nonfinite_dt(bad):
+    """A NaN/Inf gap must fail loudly — it slips past a bare ``dt < 0`` guard (audit MODEL-01)."""
+    mem = VariableStepLMUMemory(d=8, theta=4.0)
+    X, dt, _ = _toy_3d(n=2, n_steps=5, n_features=1, seed=3)
+    dt[0, 2] = bad
+    with pytest.raises(ValueError, match="finite"):
+        mem.rollout_batch(X, dt)
+
+
+def test_rollout_batch_rejects_nonfinite_input():
+    """A NaN in the drive ``u`` is rejected rather than silently producing NaN output."""
+    mem = VariableStepLMUMemory(d=8, theta=4.0)
+    X, dt, _ = _toy_3d(n=2, n_steps=5, n_features=1, seed=4)
+    X[0, 1, 0] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        mem.rollout_batch(X, dt)
+
+
 def test_fit_predict_recovers_linear_over_memory():
     """A target linear in the final-step memory state is recovered with high R²."""
     mem = VariableStepLMUMemory(d=16, theta=10.0)

@@ -268,6 +268,8 @@ class RFFReadout:
     kind: ClassVar[str] = "rff"
 
     def __init__(self, n_features_out: int = 256, gamma: float | Literal["median"] = "median", ridge: RidgeParam = "gcv") -> None:
+        if int(n_features_out) < 1:
+            raise ValueError(f"n_features_out must be >= 1; got {n_features_out}")
         self.n_features_out = int(n_features_out)
         self.gamma: float | Literal["median"] = gamma
         self.ridge: RidgeParam = ridge
