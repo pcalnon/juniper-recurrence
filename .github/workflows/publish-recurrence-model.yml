@@ -57,7 +57,7 @@ jobs:
       run:
         working-directory: juniper-recurrence-model
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       # Release-convention gate: a tag-triggered publish only proceeds when a GitHub Release exists
       # for the tag (publish by cutting a Release, never a bare `git push <tag>`). workflow_dispatch
@@ -125,7 +125,7 @@ jobs:
           verbose: true
           skip-existing: true  # tolerate an already-uploaded immutable artifact (re-run)
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           sparse-checkout: |
             juniper-recurrence-model/juniper_recurrence_model/_version.py
