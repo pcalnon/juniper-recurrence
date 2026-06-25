@@ -1,0 +1,103 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (monorepo: app + model + client + bench)
+# File Name:     dependabot.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-25
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    Dependabot configuration for automated dependency and CI action updates
+#    (audit CI-05). This is a polyrepo-style monorepo: each published package
+#    keeps its own pyproject.toml, so pip updates are scoped per directory.
+#    The bench/ tooling carries no manifest of its own -- its deps come from the
+#    app's [bench] extra -- so it is covered by the /juniper-recurrence entry.
+#    github-actions updates keep the SHA-pinned workflow actions from silently
+#    rotting.
+#####################################################################################################################################################################################################
+
+version: 2
+
+updates:
+  # --- pip: application (juniper-recurrence) ------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/juniper-recurrence"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps(app)"
+    groups:
+      python-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- pip: model (juniper-recurrence-model) ------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/juniper-recurrence-model"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps(model)"
+    groups:
+      python-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- pip: client (juniper-recurrence-client) ----------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/juniper-recurrence-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps(client)"
+    groups:
+      python-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- github-actions (workflows at repo root) ----------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"

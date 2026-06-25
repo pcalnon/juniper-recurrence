@@ -64,6 +64,13 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
+# Warnings-as-errors gate (TST-5 / audit TEST-02): any warning fails the suite so dependency
+# deprecations surface early instead of rotting silently. The client is requests/urllib3-only and the
+# CI test job installs .[test] (no observability), so the ignore list is empty -- verified green under
+# this exact policy (47 tests, 3 observability-skips, 0 warnings, 2026-06-25).
+filterwarnings = [
+    "error",
+]
 
 [tool.coverage.run]
 source = ["juniper_recurrence_client"]
