@@ -12,6 +12,8 @@ is serialised (the fetch dominates wall-clock, the solve is negligible).
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -28,6 +30,8 @@ from juniper_recurrence.state import AppState
 
 router = APIRouter(tags=["training"])
 
+logger = logging.getLogger(__name__)
+
 
 @router.post("/v1/train", response_model=TrainResponse)
 def train(
@@ -37,6 +41,7 @@ def train(
 ) -> TrainResponse:
     """Synchronously train the LMU on a dataset split and return the ``TrainResult``."""
     if not state.train_lock.acquire(blocking=False):
+        logger.warning("POST /v1/train rejected: a training run is already in progress")
         raise HTTPException(status.HTTP_409_CONFLICT, "a training run is already in progress")
     try:
         try:
@@ -50,6 +55,7 @@ def train(
                 split=req.dataset.split,
             )
         except (JuniperDataClientError, ValueError) as exc:
+            logger.warning("training aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
             raise map_data_error(exc) from exc
 
         d = req.d if req.d is not None else settings.default_d
@@ -75,12 +81,17 @@ def train(
             # Schema validation already rejects bad-knob / ridge-with-mlp combinations (422). The only
             # ValueError reachable here is the readout='mlp' torch-capability gap — a deployment without
             # the [torch] extra — which is a service-unavailability, not a client error.
+            logger.warning("training unavailable: readout=%r requires the [torch] extra: %s", req.readout, exc)
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+        logger.info("training start: dataset=%s split=%s windows=%s d=%s theta=%s readout=%s", descriptor["dataset_id"], descriptor.get("split"), descriptor.get("n_windows"), d, theta, req.readout or "linear")
+        start = time.perf_counter()
         lifecycle = TrainingLifecycle(model, on_event=sink)
         result = lifecycle.run(sequence.X, sequence.y, **sequence.fit_kwargs())
 
         dataset = DatasetDescriptor(**descriptor)
         state.set_trained(model, result, sink, dataset)
+        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, time.perf_counter() - start, result.final_metrics)
         return TrainResponse(
             final_metrics=result.final_metrics,
             n_epochs=result.n_epochs,

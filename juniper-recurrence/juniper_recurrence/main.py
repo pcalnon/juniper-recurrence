@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 
@@ -69,11 +70,14 @@ def _serve(args: argparse.Namespace) -> int:
     """Run ``uvicorn`` against the module-level app, honoring host/port overrides."""
     import uvicorn
 
+    from juniper_recurrence.logging_config import init_logging
     from juniper_recurrence.settings import Settings
 
     settings = Settings()
+    init_logging(settings)
     host = args.host or settings.host
     port = args.port or settings.port
+    logging.getLogger(__name__).info("juniper-recurrence %s starting on %s:%s", __version__, host, port)
     # Import string (not the app object) so uvicorn owns process/worker lifecycle.
     uvicorn.run("juniper_recurrence.app:app", host=host, port=port)
     return 0
