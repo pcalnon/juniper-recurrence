@@ -69,15 +69,17 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Changed
 
-- **`juniper-recurrence-model` pin floor → `>=0.1.3`** (was `>=0.1.2`; ceiling unchanged at
-  `<0.2.0`). 0.1.3 ships the DP-3 readout spectrum that accepts `ridge="gcv"`, which the widened
-  API requires at runtime. Publish-first: 0.1.3 must reach PyPI before this app change installs.
+- **`juniper-recurrence-model` pin floor → `>=0.1.5`** (was `>=0.1.2`; ceiling unchanged at
+  `<0.2.0`). 0.1.5 ships the full DP-3 readout spectrum — `ridge="gcv"`, the numpy RFF readout, and
+  the torch MLP readout (the `[torch]` extra) — which the widened API selects at runtime.
+  Publish-first: 0.1.5 must reach PyPI before this app change installs.
 
-- **`[bench]` extra now pins `juniper-data>=0.8.0`** (was `>=0.6.0`). juniper-data 0.7.0
-  publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189) to PyPI and
-  0.8.0 adds the equities `regression_target` option (#195), so the benchmark harness installs
-  cleanly from PyPI — the editable-sibling / cross-repo-clone workaround is no longer needed.
-  `>=0.8.0` is required (not just `>=0.7.0`): `EquitiesParams` ignores unknown kwargs (pydantic
+- **`[bench]` extra now pins `juniper-data>=0.9.0`** (was `>=0.6.0`). juniper-data 0.7.0
+  publishes the synthetic Δt generators (#187/#188) + scaling-meta channel (#189), 0.8.0 adds the
+  equities `regression_target` option (#195), and 0.9.0 ships the `delay_product` capacity
+  generator (#203) the DP-3 nonlinear-readout benchmark requires — so the benchmark harness installs
+  cleanly from PyPI (the editable-sibling / cross-repo-clone workaround is no longer needed).
+  `>=0.9.0` is required (not just `>=0.7.0`): `EquitiesParams` ignores unknown kwargs (pydantic
   `extra='ignore'`), so an older pin would silently drop the new target and re-measure the raw
   non-stationary close.
 - **Benchmark `equities_seq` re-bench — stationary target + regularized-readout LMU.** The

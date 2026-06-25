@@ -8,9 +8,11 @@ variable-step LMU discretisation that is the only first-principles-clean ("C1") 
 handling irregularly-sampled time series — **and** `LMURegressor`, the recurrent model
 implementing the shared [`juniper-model-core`](https://github.com/pcalnon/juniper-ml)
 `TrainableModel` interface (now that that package has landed). The regressor keeps the LMU memory
-**fixed** and trains only a linear readout in **closed form** (least squares — no BPTT, fully
-deterministic); it passes model-core's conformance kit unchanged, making it the WS-4 refactor
-template (a non-cascor model on the shared model seam).
+**fixed** and trains only the readout — a **linear** closed-form least-squares fit by default (no
+BPTT, fully deterministic), with an optional nonlinear **readout spectrum** (ridge/GCV, random
+Fourier features, and a torch MLP — see [Readout spectrum](#readout-spectrum)). It passes
+model-core's conformance kit unchanged, making it the WS-4 refactor template (a non-cascor model on
+the shared model seam).
 
 Design of record (in juniper-ml):
 [`notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md).
@@ -53,8 +55,9 @@ reconstruction = m @ w
 ## Trainable model (`LMURegressor`)
 
 The package also exposes `LMURegressor`, a `juniper-model-core` `TrainableModel`. The
-LMU memory is fixed; only a linear readout is fit, in closed form (least squares — no BPTT, fully
-deterministic). It is Δt-native: pass per-step gaps `dt` (`(n, T)`) and an optional `readout_mask`
+LMU memory is fixed; the **readout** is fit — a linear closed-form least-squares solve by default
+(no BPTT, fully deterministic), or a nonlinear readout from the [spectrum below](#readout-spectrum).
+It is Δt-native: pass per-step gaps `dt` (`(n, T)`) and an optional `readout_mask`
 to `fit` / `predict`; both default to uniform gaps and the final step, so the bare ABC
 `predict(X)` works too. It reports canonical regression metrics (`mse`, `rmse`, `mae`, `r2`).
 
@@ -77,6 +80,29 @@ LMUSerializer().save(model, "/tmp/lmu")   # writes /tmp/lmu.npz (lossless round-
 
 `LMURegressor` passes model-core's conformance kit unchanged
 (`tests/test_conformance.py`), proving the WS-4 refactor template.
+
+## Readout spectrum
+
+The LMU memory is always the fixed, closed-form Δt-native recurrence; only the **readout** on top of
+the memory trajectory varies. Select it with the `readout=` constructor argument (DP-3):
+
+| Rung | Spec | What it fits | Notes |
+|---|---|---|---|
+| 0 / 1 | `LinearReadoutSpec` (default) | linear least squares, optional L2 | `ridge=` a float, or `"gcv"` for closed-form generalized-cross-validation selection |
+| 2a | `RFFReadoutSpec` | linear fit over random Fourier features of the memory | numpy-only; `n_features_out` / `gamma` (or `gamma="median"`) — adds nonlinear capacity |
+| 2b | `MLPReadoutSpec` | a small torch MLP over the memory | needs the `[torch]` extra (`pip install juniper-recurrence-model[torch]`); deterministic CPU fit |
+
+```python
+from juniper_recurrence_model import LMURegressor, RFFReadoutSpec
+
+model = LMURegressor(d=16, readout=RFFReadoutSpec(n_features_out=256, gamma="median"))
+```
+
+All three rungs keep the closed-form Δt memory and pass the conformance kit (including bit-exact
+save/load). On the synthetic `delay_product` capacity benchmark the RFF readout measures **+0.83 r²**
+over the linear readout; on the efficient-market equities target the spread is ≈0 (juniper-ml DP-3
+findings). Default to `linear` + `ridge="gcv"`; reach for `rff` / `mlp` when the target has genuine
+nonlinear structure.
 
 ## Verified behaviour
 
