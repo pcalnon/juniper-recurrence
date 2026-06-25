@@ -56,6 +56,12 @@ LABEL org.opencontainers.image.revision="${GIT_SHA}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 
+# Also expose provenance to the running process (OBS-03): juniper_recurrence.provenance
+# reads these back so set_build_info() can populate the juniper_recurrence_build_info
+# Info metric. Empty outside a provenance-stamped build (provenance.* then return None).
+ENV JUNIPER_RECURRENCE_GIT_SHA=${GIT_SHA}
+ENV JUNIPER_RECURRENCE_BUILD_DATE=${BUILD_DATE}
+
 # Non-root runtime user.
 RUN groupadd --gid 1000 juniper && \
     useradd --uid 1000 --gid juniper --shell /bin/bash --create-home juniper

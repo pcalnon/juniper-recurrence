@@ -22,6 +22,13 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   dataset, duration, and metrics; upstream-data failures; `409` lock contention; `503` torch-readout gaps).
 - **`log_format` setting** (`JUNIPER_RECURRENCE_LOG_FORMAT`, default `"text"`; `"json"` for structured
   logs) selecting the logging output style.
+- **Build-info provenance** (audit OBS-03). New `juniper_recurrence.provenance` module reads the
+  `JUNIPER_RECURRENCE_GIT_SHA` / `JUNIPER_RECURRENCE_BUILD_DATE` environment variables (stamped into the
+  image by the Dockerfile from the existing `GIT_SHA` / `BUILD_DATE` build-args) and threads them into
+  `set_build_info(...)`, so the Prometheus `juniper_recurrence_build_info` Info metric now surfaces the
+  deployed source revision — the foundation for ecosystem stale-image-drift detection (juniper-ml
+  `notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md`). Both are `None`/absent outside a provenance-stamped
+  image (local dev / a bare `docker build`), matching the data / cascor / canopy siblings.
 
 ### Changed
 
