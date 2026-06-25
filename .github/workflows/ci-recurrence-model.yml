@@ -141,8 +141,18 @@ jobs:
       - name: Install package + test + torch extras
         run: pip install --upgrade "pip>=26.1.1" && pip install -e ".[test,torch]"
 
-      - name: Run the Rung 2b (torch) readout tests
-        run: python -m pytest tests/test_readouts_mlp.py -ra -p no:dash -p no:playwright
+      - name: Run the Rung 2b (torch) readout tests with MLP-path coverage
+        # Audit H2 / TEST-01: measure _readout_mlp.py coverage HERE (the base job omits it) and gate
+        # at >=90, so the shipped readout="mlp" fit path can no longer regress green. Uses the same
+        # PACKAGE-form --cov as the base job (.coveragerc.torch then scopes the report to _readout_mlp
+        # via `include`); the dotted `--cov=...._readout_mlp` submodule form trips a numpy-2.x import
+        # guard under coverage. Measured 95% locally.
+        run: >-
+          python -m pytest tests/test_readouts_mlp.py -ra -p no:dash -p no:playwright
+          --cov=juniper_recurrence_model
+          --cov-config=.coveragerc.torch
+          --cov-report=term-missing
+          --cov-fail-under=90
 
   required-checks:
     name: Required checks

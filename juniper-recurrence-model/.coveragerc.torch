@@ -1,0 +1,31 @@
+# Coverage config for the optional `test-torch` CI lane (audit H2 / TEST-01).
+#
+# The base [tool.coverage.run] in pyproject.toml OMITs _readout_mlp.py because the base no-torch
+# job never exercises the Rung 2b torch readout. This config deliberately does NOT omit it, so the
+# torch lane measures the MLP readout's actual fit path and gates it at >=90 -- otherwise the shipped
+# `readout="mlp"` feature contributes 0% to any enforced bar and could regress green.
+#
+# Used only via `--cov-config=.coveragerc.torch` in ci-recurrence-model.yml's test-torch job, paired
+# with `--cov=juniper_recurrence_model` (the same PACKAGE form the base job uses -- the dotted
+# `--cov=...._readout_mlp` submodule form trips a numpy-2.x "cannot load module more than once" import
+# guard under coverage). The report is then scoped to _readout_mlp.py via `include`, so the gate
+# measures only the Rung 2b module the MLP tests exercise (the linear/RFF readouts in readouts.py are
+# covered by the base job).
+[run]
+branch = true
+omit =
+    */tests/*
+    */__pycache__/*
+
+[report]
+include = */_readout_mlp.py
+fail_under = 90
+show_missing = true
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
