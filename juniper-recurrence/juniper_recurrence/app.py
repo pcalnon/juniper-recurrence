@@ -19,6 +19,8 @@ event holder) is created per ``build_app`` and stashed on ``app.state`` for the 
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from juniper_service_core import (
@@ -31,6 +33,7 @@ from juniper_service_core import (
 )
 
 from juniper_recurrence._version import __version__
+from juniper_recurrence.logging_config import init_logging
 from juniper_recurrence.routers import crossval_router, dataset_router, model_router, predict_router, training_router
 from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
@@ -54,10 +57,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     """
     settings = settings or Settings()
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Configure logging at startup via juniper-service-core 0.3.0's create_app(lifespan=) hook,
+        # so a direct `uvicorn juniper_recurrence.app:app` is covered too — not only the CLI `serve`
+        # path. Runs once when uvicorn starts the app (not at import / build_app time).
+        init_logging(settings)
+        logger.info("juniper-recurrence %s starting", __version__)
+        yield
+
     application = create_app(
         title="Juniper Recurrence",
         version=__version__,
         routers=(training_router, predict_router, model_router, dataset_router, crossval_router),
+        lifespan=lifespan,
     )
 
     # Middleware (Starlette LIFO: last added runs first on the request path). This
