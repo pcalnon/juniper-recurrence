@@ -192,6 +192,16 @@ repos:
         files: ^\.env(\.secrets)?$
         types: [file]
 
+      # Version-drift gate (audit CI-06): each package's _version.py must agree with its CHANGELOG
+      # top heading and the root AGENTS.md version table/header. Catches the DOC-05/CI-01/DOC-01
+      # drift class. Pure stdlib; the git-tag check degrades gracefully on a shallow CI checkout.
+      - id: version-drift
+        name: Version drift (_version.py <-> CHANGELOG <-> AGENTS.md)
+        entry: python scripts/check_version_drift.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
 # CI configuration (for pre-commit.ci service, if used)
 ci:
   autofix_prs: false
