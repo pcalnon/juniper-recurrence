@@ -53,6 +53,8 @@ juniper-recurrence/
 │       ├── publish-recurrence-client.yml
 │       └── pr-base-branch-guard.yml
 ├── notes/                           # repo-local notes
+├── scripts/                         # repo-level tooling
+│   └── check_version_drift.py       # CI-06 version-drift lint (run by the version-drift pre-commit hook)
 ├── juniper-recurrence/              # the FastAPI + CLI application (PyPI: juniper-recurrence)
 │   ├── pyproject.toml
 │   ├── README.md
@@ -108,6 +110,8 @@ pip install -e "juniper-recurrence/.[test,bench]" && python -m pytest bench/
 ```
 
 CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 matrix and enforces `--cov-fail-under=90`. The pytest `addopts` carry the ecosystem-standard `-p no:dash -p no:playwright` autoload-SIGSEGV guard.
+
+A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-06) runs as a `version-drift` pre-commit hook (and so via the `CI — pre-commit` gate): each package's `_version.py` must agree with its CHANGELOG top heading and the root AGENTS.md version table, and the root `**Version**` header must match the app. Pure stdlib; the git-tag check degrades gracefully on a shallow checkout.
 
 ## Status
 
