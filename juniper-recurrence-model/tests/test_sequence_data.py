@@ -42,6 +42,23 @@ def test_load_sequence_npz_roundtrip(tmp_path):
     assert set(data.fit_kwargs()) == {"dt", "target_dt", "seq_lengths"}
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf])
+def test_sequence_data_rejects_nonfinite_dt(bad):
+    """Non-finite dt must be rejected at ingestion (audit MODEL-01)."""
+    arrays = _make_equities_seq_arrays(splits=("train",))
+    arrays["dt_train"][0, 1] = bad
+    with pytest.raises(ValueError, match="non-finite|finite"):
+        sequence_data_from_arrays(arrays, split="train")
+
+
+def test_sequence_data_rejects_nonfinite_features():
+    """Non-finite feature values (X) must be rejected at ingestion."""
+    arrays = _make_equities_seq_arrays(splits=("train",))
+    arrays["X_train"][0, 0, 0] = np.nan
+    with pytest.raises(ValueError, match="non-finite|finite"):
+        sequence_data_from_arrays(arrays, split="train")
+
+
 def test_end_to_end_fit_predict_on_sequence_npz(tmp_path):
     """The irregular-Δt consumer path: load a 3-D NPZ and train/predict LMURegressor end-to-end."""
     path = tmp_path / "equities_seq.npz"

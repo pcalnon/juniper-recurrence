@@ -68,6 +68,8 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
     X = np.asarray(arrays[f"X_{split}"])
     if X.ndim != 3:
         raise ValueError(f"X_{split} must be 3-D (W, L, F) for a sequence artifact; got {X.ndim}-D")
+    if not np.all(np.isfinite(X)):
+        raise ValueError(f"X_{split} has non-finite values (NaN/Inf)")
     n_windows, lookback = int(X.shape[0]), int(X.shape[1])
 
     # Regression target: prefer y_reg, fall back to y.
@@ -92,6 +94,8 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
         raise ValueError(f"a 3-D artifact needs at least one of 'dt_{split}' / 't_{split}'")
     if dt.shape != (n_windows, lookback):
         raise ValueError(f"{dt_key} shape {dt.shape} != {(n_windows, lookback)}")
+    if not np.all(np.isfinite(dt)):
+        raise ValueError(f"{dt_key} has non-finite gaps (NaN/Inf)")
     if np.any(dt < 0):
         raise ValueError(f"{dt_key} has negative gaps")
     if n_windows and np.any(dt[:, 0] != 0):

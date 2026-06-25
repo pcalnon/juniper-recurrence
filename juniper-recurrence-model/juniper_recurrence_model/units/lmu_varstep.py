@@ -149,6 +149,8 @@ class VariableStepLMUMemory:
         dt = np.asarray(dt, dtype=float)
         if u.ndim != 1 or dt.ndim != 1 or u.shape[0] != dt.shape[0]:
             raise ValueError(f"u and dt must be 1-D and equal length; got {u.shape}, {dt.shape}")
+        if not np.all(np.isfinite(u)) or not np.all(np.isfinite(dt)):
+            raise ValueError("u and dt must be finite (no NaN/Inf)")
         n = u.shape[0]
         m = np.zeros((self.d, 1))
         out = np.zeros((n, self.d))
@@ -208,6 +210,10 @@ class VariableStepLMUMemory:
         n, n_steps, n_channels = u.shape
         if dt.shape != (n, n_steps):
             raise ValueError(f"dt must have shape {(n, n_steps)} to match u; got {dt.shape}")
+        if not np.all(np.isfinite(u)):
+            raise ValueError("u must be finite (no NaN/Inf)")
+        if not np.all(np.isfinite(dt)):
+            raise ValueError("dt must be finite (no NaN/Inf); a non-finite gap would silently poison the rollout")
         if np.any(dt < 0):
             raise ValueError("dt must be >= 0 everywhere (dt == 0 is a held/no-op step)")
 

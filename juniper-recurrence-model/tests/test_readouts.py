@@ -39,6 +39,12 @@ def test_linear_spec_is_frozen():
         spec.ridge = 1.0  # type: ignore[misc]
 
 
+def test_rff_rejects_nonpositive_n_features():
+    """RFFReadout(n_features_out < 1) must raise, not divide-by-zero at fit time (audit MODEL-04)."""
+    with pytest.raises(ValueError, match="n_features_out"):
+        RFFReadout(n_features_out=0)
+
+
 def test_linear_readout_lstsq_recovers_linear_target():
     M, extra, rng = _block(n=120, p=10, k=1, seed=1)
     design = np.concatenate([M, extra, np.ones((M.shape[0], 1))], axis=1)
