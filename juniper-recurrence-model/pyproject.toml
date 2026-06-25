@@ -34,7 +34,7 @@ dependencies = [
     # Topology, TrainableModel, TrainingEvent, TrainResult — model.py), present since
     # 0.1.0; the floor is raised to 0.2.0 to match what CI actually exercises (the
     # [test] extra pulls model-core[crossval]>=0.2.0, so 0.1.x is never tested).
-    "juniper-model-core>=0.2.0,<0.3.0",
+    "juniper-model-core>=0.2.0,<0.4.0",
 ]
 
 [project.optional-dependencies]
