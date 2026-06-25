@@ -80,7 +80,7 @@ jobs:
           echo "::error::No GitHub Release exists for tag $tag. Per the release convention, publish by cutting a GitHub Release (gh release create $tag ...), not a bare tag push. Use workflow_dispatch to override."
           exit 1
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
 
