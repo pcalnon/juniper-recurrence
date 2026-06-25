@@ -28,7 +28,9 @@ name: CI — bench harness
 
 on:
   push:
-    branches: [main]
+    # Parity with the per-package ci-recurrence-*.yml lanes (audit CI-04): the bench lane previously
+    # push-triggered only on main, so bench changes on a working branch got no push CI before the PR.
+    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
     paths:
       - "bench/**"
       - ".github/workflows/ci-recurrence-bench.yml"
