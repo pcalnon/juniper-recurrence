@@ -32,6 +32,7 @@ from juniper_service_core import (
     create_app,
 )
 
+from juniper_recurrence import provenance
 from juniper_recurrence._version import __version__
 from juniper_recurrence.logging_config import init_logging
 from juniper_recurrence.routers import crossval_router, dataset_router, model_router, predict_router, training_router
@@ -101,7 +102,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             application.add_middleware(PrometheusMiddleware, service_name=settings.service_name)
             # Prometheus metric names are underscore-only; the build-info namespace is the
             # underscored service name -> the metric is ``juniper_recurrence_build_info``.
-            set_build_info(settings.service_name.replace("-", "_"), __version__)
+            # git_sha / build_date are stamped into the image by the Dockerfile (OBS-03);
+            # both are None outside a provenance-stamped image (local dev / bare build).
+            set_build_info(
+                settings.service_name.replace("-", "_"),
+                __version__,
+                git_sha=provenance.git_sha(),
+                build_date=provenance.build_date(),
+            )
             application.mount(
                 "/metrics",
                 MetricsAuthMiddleware(get_prometheus_app(), trusted_ips=settings.metrics_trusted_ips),
