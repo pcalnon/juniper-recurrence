@@ -3,8 +3,8 @@
 The service previously never configured logging. These assert that ``init_logging``
 configures the root logger from settings (level + handler), prefers the shared
 structured-JSON formatter when ``juniper-observability`` is installed and falls back to
-stdlib logging when it is not, that the ``serve`` CLI configures logging before handing
-off to uvicorn, and that the training router emits operational log lines.
+stdlib logging when it is not, that the app's lifespan configures logging on startup
+(via ``create_app(lifespan=)``), and that the training router emits operational log lines.
 """
 
 from __future__ import annotations
@@ -62,16 +62,14 @@ def test_init_logging_falls_back_without_observability(monkeypatch, _restore_roo
     assert root.handlers
 
 
-def test_serve_configures_logging_before_uvicorn(monkeypatch, _restore_root_logging):
-    import uvicorn
-
-    from juniper_recurrence import main as cli
-
-    order: list[str] = []
-    monkeypatch.setattr("juniper_recurrence.logging_config.init_logging", lambda settings: order.append("init"))
-    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: order.append("run"))
-    assert cli.main(["serve"]) == 0
-    assert order == ["init", "run"], "logging must be configured before uvicorn starts"
+def test_app_lifespan_configures_logging(monkeypatch, _restore_root_logging):
+    # Logging is configured by the app's FastAPI lifespan (create_app(lifespan=)) at startup —
+    # not in the `serve` CLI. Entering the TestClient context runs the lifespan startup.
+    calls: list[str] = []
+    monkeypatch.setattr("juniper_recurrence.app.init_logging", lambda settings: calls.append("init"))
+    with TestClient(build_app(Settings(api_keys=None))):
+        pass
+    assert calls == ["init"], "the app lifespan must configure logging on startup"
 
 
 def test_train_route_logs_run_lifecycle(fake_data, caplog):

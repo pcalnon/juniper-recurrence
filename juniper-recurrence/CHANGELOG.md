@@ -11,15 +11,23 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
-- **Application logging is now configured at startup** (audit H1). The `serve` entrypoint calls a new
+- **Application logging is now configured at startup** (audit H1). The app's FastAPI **lifespan**
+  (via `juniper-service-core` 0.3.0's `create_app(lifespan=)`) calls
   `juniper_recurrence.logging_config.init_logging`, which configures the root logger from
   `settings.log_level` / the new `settings.log_format` — preferring the shared
   `juniper_observability.configure_logging` (structured-JSON with `request_id` correlation) when the
-  `[observability]` extra is installed, and falling back to stdlib `logging` when it is not. The
-  train / predict / crossval routers now emit operational log lines (run start/complete with dataset,
-  duration, and metrics; upstream-data failures; `409` lock contention; `503` torch-readout gaps).
+  `[observability]` extra is installed, and falling back to stdlib `logging` when it is not. Running in
+  the lifespan covers both `juniper-recurrence serve` and a direct `uvicorn juniper_recurrence.app:app`.
+  The train / predict / crossval routers now emit operational log lines (run start/complete with
+  dataset, duration, and metrics; upstream-data failures; `409` lock contention; `503` torch-readout gaps).
 - **`log_format` setting** (`JUNIPER_RECURRENCE_LOG_FORMAT`, default `"text"`; `"json"` for structured
   logs) selecting the logging output style.
+
+### Changed
+
+- **`juniper-service-core` pin → `>=0.3.0,<0.4.0`** (was `>=0.1.0,<0.2.0`) to adopt the
+  `create_app(lifespan=)` hook (service-core 0.3.0), used to run logging configuration in the app's
+  FastAPI lifespan.
 
 ## [0.2.0] - 2026-06-24
 
