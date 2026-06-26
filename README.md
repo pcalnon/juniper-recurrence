@@ -134,7 +134,7 @@ print(result.final_metrics["r2"])
 LMUSerializer().save(model, "/tmp/lmu")   # lossless round-trip to /tmp/lmu.npz
 ```
 
-`dt` and the readout mask both default to uniform gaps and the final step, so the plain
+`dt` (Δt) and the readout mask both default to uniform gaps and the final step, so the plain
 `model.predict(X)` interface works too. See the
 [model README](./juniper-recurrence-model/README.md) for the raw `VariableStepLMUMemory` unit and the
 readout-spectrum API.
@@ -213,9 +213,9 @@ keys are configured, authentication is disabled (development default). The
 packages it consumes from PyPI:
 
 ```text
-                     juniper-data ──datasets──▶ juniper-data-client ───┐
+juniper-data ──datasets──▶ juniper-data-client ────────────────────────┐
                                                                        ├─▶ juniper-recurrence (app) ──HTTP──▶ juniper-recurrence-client ──▶ juniper-canopy
-               juniper-service-core ──create_app + lifecycle───────────┤                                                                    (dashboard)
+juniper-service-core ──create_app + lifecycle──────────────────────────┤                                                                    (dashboard)
 juniper-model-core ──TrainableModel seam──▶ juniper-recurrence-model ──┘
 ```
 
