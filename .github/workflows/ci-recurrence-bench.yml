@@ -82,3 +82,24 @@ jobs:
       # extra provides, so the suite actually executes rather than skipping.
       - name: Run bench smoke suite
         run: python -m pytest bench/ -ra -p no:dash -p no:playwright
+
+  # Branch-protection-stable aggregate (audit CI-07): the matrix `test` job fans out to one check per
+  # Python version, whose names shift when the matrix changes -- awkward to pin as required checks. This
+  # single job depends on the whole matrix (a matrix job's `result` is `success` only when every leg
+  # succeeds), so branch protection can require one stable check for the bench lane. `if: always()` so
+  # it runs even when `test` fails and reports that failure rather than being skipped. Mirrors the
+  # `required-checks` aggregate in ci-recurrence-app.yml; named distinctly so the two never collide.
+  required-checks:
+    name: Bench required checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test]
+    steps:
+      - name: Verify the bench smoke matrix succeeded
+        run: |
+          echo "Bench smoke: ${{ needs.test.result }}"
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "The bench smoke suite did not succeed."
+            exit 1
+          fi
+          echo "All bench required checks passed."
