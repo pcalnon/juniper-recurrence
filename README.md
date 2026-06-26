@@ -213,10 +213,15 @@ keys are configured, authentication is disabled (development default). The
 packages it consumes from PyPI:
 
 ```text
-juniper-data ──datasets──▶ juniper-data-client ────────────────────────┐
-                                                                       ├─▶ juniper-recurrence (app) ──HTTP──▶ juniper-recurrence-client ──▶ juniper-canopy
-juniper-service-core ──create_app + lifecycle──────────────────────────┤                                                                    (dashboard)
-juniper-model-core ──TrainableModel seam──▶ juniper-recurrence-model ──┘
+juniper-data ──datasets──▶ juniper-data-client ──▶ ─────────────────────────┐
+                                                                            │
+juniper-service-core ──create_app + lifecycle──▶ ───────────────────────────┼───┐
+                                                                            │   │
+juniper-model-core ──TrainableModel seam──▶ juniper-recurrence-model ──▶ ───┘   │
+                                                                                │
+   ┌────────────────────────────────────────────────────────────────────────────┘
+   │
+   └───▶ juniper-recurrence (app) ──HTTP──▶ juniper-recurrence-client ──▶ juniper-canopy (dashboard + visualization)
 ```
 
 - **[`juniper-service-core`](https://pypi.org/project/juniper-service-core/)** — the FastAPI app
