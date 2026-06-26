@@ -14,6 +14,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
 
+from juniper_recurrence import metrics
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
 from juniper_recurrence.schemas import PredictRequest, PredictResponse
@@ -69,4 +70,5 @@ def predict(
         # 422 literal: avoids Starlette's deprecated HTTP_422_UNPROCESSABLE_ENTITY constant.
         raise HTTPException(422, f"prediction failed: {exc}") from exc
 
+    metrics.record_predict()
     return PredictResponse(predictions=predictions.tolist(), shape=list(predictions.shape))

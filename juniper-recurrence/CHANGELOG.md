@@ -29,6 +29,15 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   deployed source revision — the foundation for ecosystem stale-image-drift detection (juniper-ml
   `notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md`). Both are `None`/absent outside a provenance-stamped
   image (local dev / a bare `docker build`), matching the data / cascor / canopy siblings.
+- **Domain Prometheus metrics** (audit OBS-04). New `juniper_recurrence.metrics` module registers
+  train / predict / cross-validation counters (`juniper_recurrence_train_runs_total`,
+  `juniper_recurrence_predict_requests_total`, `juniper_recurrence_crossval_runs_total`) plus
+  last-value gauges (per-run duration and the final / eval-aggregate metrics such as `r2` / `mse`,
+  keyed by a `metric` label) through `juniper_observability.register_or_reuse`. The training /
+  predict / crossval routers record on each completed run and the collectors surface through the
+  existing `/metrics` endpoint. Gated behind the optional `[observability]` extra exactly like
+  `/metrics` itself: the `record_*` helpers are no-ops when the extra is absent, so an
+  observability-less deployment is unaffected.
 
 ### Changed
 
