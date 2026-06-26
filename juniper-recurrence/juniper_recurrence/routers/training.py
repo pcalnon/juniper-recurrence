@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
 from juniper_service_core import TrainingLifecycle
 
+from juniper_recurrence import metrics
 from juniper_recurrence._readout import build_lmu_regressor
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.events import EventSink
@@ -91,7 +92,9 @@ def train(
 
         dataset = DatasetDescriptor(**descriptor)
         state.set_trained(model, result, sink, dataset)
-        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, time.perf_counter() - start, result.final_metrics)
+        duration = time.perf_counter() - start
+        metrics.record_train(duration, result.final_metrics)
+        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
         return TrainResponse(
             final_metrics=result.final_metrics,
             n_epochs=result.n_epochs,

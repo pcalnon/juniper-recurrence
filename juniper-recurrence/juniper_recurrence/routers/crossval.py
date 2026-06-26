@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
 from juniper_model_core.crossval import CrossValResult, cross_validate, walk_forward_folds
 
+from juniper_recurrence import metrics
 from juniper_recurrence._readout import build_lmu_regressor
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
@@ -124,7 +125,9 @@ def crossval(
         )
         dataset = DatasetDescriptor(**descriptor)
         state.set_crossval(result, dataset)
-        logger.info("cross-validation complete: dataset=%s folds=%s duration=%.3fs eval_aggregate=%s", descriptor["dataset_id"], len(result.folds), time.perf_counter() - start, result.eval_aggregate)
+        duration = time.perf_counter() - start
+        metrics.record_crossval(duration, result.eval_aggregate)
+        logger.info("cross-validation complete: dataset=%s folds=%s duration=%.3fs eval_aggregate=%s", descriptor["dataset_id"], len(result.folds), duration, result.eval_aggregate)
         return _to_response(result, dataset)
     finally:
         state.crossval_lock.release()
