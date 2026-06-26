@@ -253,9 +253,9 @@ Each package is tested from its own subdirectory (CI runs the Python 3.12 / 3.13
 coverage):
 
 ```bash
-cd juniper-recurrence-model && pip install -e ".[test]" && python -m pytest
-cd juniper-recurrence       && pip install -e ".[test,observability]" && python -m pytest
-cd juniper-recurrence-client && pip install -e ".[test]" && python -m pytest
+cd juniper-recurrence-model  && pip install -e ".[test]"               && python -m pytest
+cd juniper-recurrence        && pip install -e ".[test,observability]" && python -m pytest
+cd juniper-recurrence-client && pip install -e ".[test]"               && python -m pytest
 
 # Benchmark harness — run from the repo root so `import bench` resolves
 pip install -e "juniper-recurrence/.[test,bench]" && python -m pytest bench/
