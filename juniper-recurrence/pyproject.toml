@@ -124,12 +124,18 @@ python_functions = ["test_*"]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 # Warnings-as-errors gate (TST-5): any warning fails the suite so dependency deprecations
-# surface early instead of rotting silently. The single targeted ignore is FastAPI's TestClient
-# re-export of starlette's httpx->httpx2 transition warning (fires at import in every route test);
-# third-party + transitional. Verified green under this exact policy (89 tests, 2026-06-23).
+# surface early instead of rotting silently. The single targeted ignore is starlette's
+# httpx->httpx2 TestClient transition warning (fires at TestClient construction in every route
+# test while httpx2 is absent); third-party + transitional. Matched by MESSAGE + builtin
+# category, NOT by the StarletteDeprecationWarning class path: pytest imports the category of a
+# class-based ini filter at config parse, so any starlette release without the class kills
+# collection outright before a single test runs (DISC-1, per-file-coverage rollout scoping
+# 2026-06-30 — the class is version-dependent: absent in the 2026-06-30 resolution, present in
+# 1.3.1). If starlette rewords the message, the warning surfaces as a loud test failure at the
+# warn site (the TST-5-intended failure mode), never as a collection death.
 filterwarnings = [
     "error",
-    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
 ]
 
 [tool.coverage.run]

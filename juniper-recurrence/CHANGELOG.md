@@ -45,6 +45,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `create_app(lifespan=)` hook (service-core 0.3.0), used to run logging configuration in the app's
   FastAPI lifespan.
 
+### Fixed
+
+- **Pytest collection no longer depends on a starlette class existing** (DISC-1). The TST-5
+  warnings-as-errors gate ignored starlette's httpx→httpx2 TestClient transition warning by class
+  path (`ignore::starlette.exceptions.StarletteDeprecationWarning`); pytest imports that class at
+  config parse, so any starlette release without it (as resolved on 2026-06-30) aborted collection
+  before a single test ran. The ignore now matches the warning **message** against the builtin
+  `Warning` category, which survives the class appearing, vanishing, or being re-parented across
+  starlette releases; a reworded message degrades to a loud test failure instead of a collection
+  death. Unblocks coverage measurement for the per-file-coverage rollout (juniper-ml scoping doc
+  `JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md` §4).
+
 ## [0.2.0] - 2026-06-24
 
 ### Fixed
