@@ -124,3 +124,44 @@ def test_api_key_file_read_error_falls_back_to_env(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv(API_KEY_ENV_VAR, "env-key")
     client = JuniperRecurrenceClient(base_url=BASE_URL)
     assert client.session.headers[API_KEY_HEADER_NAME] == "env-key"
+
+
+@responses.activate
+def test_dataset_ref_forwards_params() -> None:
+    # A ``params`` mapping on a name/generator dataset selection is forwarded verbatim inside the
+    # DatasetRef body (the ``if params is not None`` arm of ``_dataset_ref``).
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client().train(generator="equities_seq", params={"window": 32, "horizon": 4})
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["dataset"]["params"] == {"window": 32, "horizon": 4}
+    assert sent["dataset"]["generator"] == "equities_seq"
+
+
+@responses.activate
+def test_crossval_forwards_mlp_regularization() -> None:
+    # The MLP regularization knobs unique to ``crossval`` (weight-decay / lr / patience) are
+    # forwarded verbatim; ``train`` covers them separately, so this pins the crossval body arms.
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 2, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client().crossval(generator="equities_seq", n_folds=2, readout="mlp", mlp_weight_decay=1e-4, mlp_lr=2e-3, mlp_patience=7)
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["mlp_weight_decay"] == 1e-4 and sent["mlp_lr"] == 2e-3 and sent["mlp_patience"] == 7
+
+
+@responses.activate
+def test_on_request_hook_exception_is_suppressed() -> None:
+    # A raising instrumentation hook must never crash the request path: the exception is caught
+    # and logged in the ``finally`` block, and the call still returns its parsed result.
+    def boom(method: str, url: str, status: object, duration_ms: float, error: object) -> None:
+        raise RuntimeError("instrumentation failed")
+
+    responses.add(responses.GET, f"{BASE_URL}/v1/model", json={"topology": {}, "metrics": {}}, status=200)
+    out = _client(on_request=boom).get_model()
+    assert out == {"topology": {}, "metrics": {}}
+
+
+@responses.activate
+def test_is_ready_false_on_client_error() -> None:
+    # ``is_ready`` swallows a typed client error from ``/v1/health/ready`` (here a 404) and
+    # reports not-ready, rather than propagating the exception to the caller.
+    responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"detail": "no route"}, status=404)
+    assert _client().is_ready() is False
