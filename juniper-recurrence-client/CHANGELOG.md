@@ -8,6 +8,20 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Changed
+
+- **Per-file coverage lifted to the ratified bars + a blocking gate wired into CI (per-file
+  coverage rollout C-5, juniper-ml
+  `notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`).** Every source file
+  now measures ≥90% statement coverage and the package's statement-weighted `pooled` coverage is
+  ≥95% (baseline `client.py` 92.73% / package pooled 93.96% → 100% / 100%), enforced on every PR
+  by `juniper-coverage-gap-map --enforce` (`juniper-ci-tools>=0.6.0,<0.7.0`). Added 6 `responses`-based
+  tests (403/501 error-status `else` arm, non-JSON error-body text fallback, `on_request` hook
+  exception suppression, `crossval` MLP-regularization knobs, `DatasetRef` `params` forwarding,
+  `is_ready` typed-error path). The `[test]` extra now pulls `juniper-observability` so the three
+  guarded `X-Request-ID` propagation tests run instead of skipping in CI. Tests / CI / packaging-extra
+  only — no runtime change, no version bump.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added

@@ -61,3 +61,22 @@ def test_malformed_json_raises_client_error() -> None:
     responses.add(responses.GET, f"{BASE_URL}/v1/dataset", body="not-json", status=200, content_type="application/json")
     with pytest.raises(JuniperRecurrenceClientError, match="Malformed JSON"):
         _client().get_dataset()
+
+
+@responses.activate
+def test_non_special_error_status_maps_to_base_client_error() -> None:
+    # 403 is neither retryable (not in RETRYABLE_STATUS_CODES) nor one of the specially mapped
+    # statuses (404/409/400/422), so the generic ``else`` arm raises the base client error with
+    # the JSON ``detail`` and the status code in the message.
+    responses.add(responses.GET, f"{BASE_URL}/v1/model", json={"detail": "forbidden"}, status=403)
+    with pytest.raises(JuniperRecurrenceClientError, match=r"403.*forbidden"):
+        _client().get_model()
+
+
+@responses.activate
+def test_error_body_not_json_falls_back_to_raw_text() -> None:
+    # An error response whose body is not JSON: ``response.json()`` raises, so detail extraction
+    # falls back to the raw response text. 501 is non-retryable and non-special -> the ``else`` arm.
+    responses.add(responses.GET, f"{BASE_URL}/v1/dataset", body="upstream said no", status=501, content_type="text/plain")
+    with pytest.raises(JuniperRecurrenceClientError, match="upstream said no"):
+        _client().get_dataset()
