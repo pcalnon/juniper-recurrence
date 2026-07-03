@@ -122,6 +122,40 @@ def test_predict_bad_shape_422(fake_data):
     assert client.post("/v1/predict", json={"X": [[0.0, 0.0]]}).status_code == 422
 
 
+def test_predict_inline_with_seq_lengths(fake_data):
+    # Inline predict passing seq_lengths engages the many-to-one readout step (predict.py:48).
+    client = _client(api_keys=None)
+    client.post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}})
+    resp = client.post(
+        "/v1/predict",
+        json={
+            "X": fake_data["X_train"].tolist(),
+            "dt": fake_data["dt_train"].tolist(),
+            "target_dt": fake_data["target_dt_train"].tolist(),
+            "seq_lengths": fake_data["seq_lengths_train"].tolist(),
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["shape"][0] == 12
+
+
+def test_predict_dataset_fetch_failure_mapped(fake_data, monkeypatch):
+    # A dataset-ref predict whose upstream fetch fails is mapped through map_data_error
+    # (predict.py:60-62). The model must be trained first (else the 409 no-model guard fires),
+    # then the predict-time fetch is forced to fail.
+    from juniper_data_client import JuniperDataClientError
+
+    client = _client(api_keys=None)
+    client.post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}})
+
+    def _raise(**kwargs):
+        raise JuniperDataClientError("upstream predict fetch failed")
+
+    monkeypatch.setattr("juniper_recurrence.routers.predict.load_sequence_data", _raise)
+    resp = client.post("/v1/predict", json={"dataset": {"dataset_id": "ds-1", "split": "train"}})
+    assert resp.status_code == 502  # JuniperDataClientError -> map_data_error -> 502
+
+
 # --- model + dataset ------------------------------------------------------------------
 
 

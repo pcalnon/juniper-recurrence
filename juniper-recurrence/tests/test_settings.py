@@ -8,6 +8,8 @@ the shared ``JUNIPER_DATA_URL`` alias, and — the recorded incident — that no
 
 from __future__ import annotations
 
+import pytest
+
 from juniper_recurrence.settings import Settings
 
 # Ambient ``JUNIPER_*`` env vars are cleared by the autouse fixture in conftest.py,
@@ -56,6 +58,22 @@ def test_api_keys_programmatic_forms():
     assert Settings(api_keys=None).resolve_api_keys() == []
     assert Settings(api_keys="   ").resolve_api_keys() == []
     assert Settings(api_keys=[]).resolve_api_keys() == []
+
+
+def test_api_keys_bracketed_but_invalid_json_falls_back_to_csv():
+    # A '[...]'-wrapped but non-JSON api_keys value degrades to a CSV split instead of raising
+    # (settings.py:122-123): json.loads fails -> parsed=None -> the raw text is CSV-split. This is
+    # the secret-file hardening (a malformed JSON-looking payload never raises a ValidationError).
+    assert Settings(api_keys="[k1, k2]").resolve_api_keys() == ["[k1", "k2]"]
+
+
+def test_api_keys_non_str_non_list_passthrough_rejected():
+    # A non-str / non-list api_keys value passes through the field validator unchanged
+    # (settings.py:130) and is then rejected by the field's list[str] | None type check.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(api_keys=123)
 
 
 def test_api_keys_csv_env_var(monkeypatch):

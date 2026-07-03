@@ -38,12 +38,24 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   existing `/metrics` endpoint. Gated behind the optional `[observability]` extra exactly like
   `/metrics` itself: the `record_*` helpers are no-ops when the extra is absent, so an
   observability-less deployment is unaffected.
+- **Blocking per-file coverage gate in CI** (per-file coverage rollout C-5; juniper-ml
+  `notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`). `ci-recurrence-app.yml`
+  now runs `juniper-coverage-gap-map --enforce`, failing the build if any source file drops below 90%
+  statement coverage or any packaged sub-module below 95% pooled (statement-weighted) coverage. Added
+  tests for the `POST /v1/predict` inline-`seq_lengths` and dataset-fetch-failure paths and the
+  `api_keys` malformed-JSON / non-list validator branches to clear the bars — the predict router and
+  settings module reach 100% statement coverage, with no source changes.
 
 ### Changed
 
 - **`juniper-service-core` pin → `>=0.3.0,<0.4.0`** (was `>=0.1.0,<0.2.0`) to adopt the
   `create_app(lifespan=)` hook (service-core 0.3.0), used to run logging configuration in the app's
   FastAPI lifespan.
+- **The `[test]` extra now self-references `[observability]`** so a bare `pip install -e ".[test]"`
+  runs — rather than skips — the Prometheus-metrics and structured-JSON-logging tests
+  (`test_metrics.py` / `test_obs04_metrics.py` / `test_logging.py`); the observability pin stays
+  single-sourced in `[observability]`. Pre-gate fix for the per-file coverage rollout (C-5): the
+  metrics / logging modules were under-measured when the optional extra was absent.
 
 ### Fixed
 
