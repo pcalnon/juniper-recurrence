@@ -85,7 +85,22 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          python -m pytest --cov=juniper_recurrence_model --cov-report=term-missing --cov-fail-under=90
+          python -m pytest --cov=juniper_recurrence_model --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
+
+      - name: Enforce per-file coverage gate (blocking; base lane)
+        # Per-file coverage rollout C-5 (juniper-ml
+        # notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md):
+        # exit 1 if any source file's statement coverage < 90 OR a packaged
+        # sub-module's pooled (statement-weighted) coverage < 95. This BASE lane's
+        # coverage.json measures every packaged file EXCEPT _readout_mlp.py, which
+        # [tool.coverage.run].omit in pyproject.toml drops (the base no-torch job
+        # never exercises the Rung 2b torch readout). The test-torch lane below
+        # gates _readout_mlp.py via .coveragerc.torch's complementary report scope,
+        # so the two lanes gate the UNION of source files with no file falling
+        # through the crack between them.
+        run: |
+          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   build:
     name: Build distribution
@@ -152,7 +167,21 @@ jobs:
           --cov=juniper_recurrence_model
           --cov-config=.coveragerc.torch
           --cov-report=term-missing
+          --cov-report=json:coverage.json
           --cov-fail-under=90
+
+      - name: Enforce per-file coverage gate (blocking; torch lane)
+        # Per-file coverage rollout C-5 (juniper-ml
+        # notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
+        # .coveragerc.torch's [report] include scopes this lane's coverage.json to
+        # _readout_mlp.py (the base lane omits it), so this enforce run gates the
+        # Rung 2b torch MLP readout: statement coverage >= 90 and its (single-file)
+        # sub-module pooled >= 95. Complementary to the base-lane gate; together the
+        # two lanes cover every packaged source file. This job is a required check,
+        # so a regression in _readout_mlp.py blocks the merge.
+        run: |
+          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   required-checks:
     name: Required checks
