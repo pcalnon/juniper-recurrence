@@ -8,6 +8,22 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Changed
+
+- **Blocking per-file coverage gate wired into both CI lanes** (per-file coverage rollout C-5;
+  juniper-ml `notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`).
+  `ci-recurrence-model.yml` now runs `juniper-coverage-gap-map --enforce`
+  (`juniper-ci-tools>=0.6.0,<0.7.0`) in **both** the base `test` lane and the `test-torch` lane,
+  failing the build if any source file drops below 90% statement coverage or any packaged
+  sub-module below 95% pooled (statement-weighted) coverage. The two lanes gate the **union** of
+  source files through their existing complementary coverage configs: the base lane's
+  `[tool.coverage.run].omit` drops `_readout_mlp.py`, while `.coveragerc.torch`'s `[report] include`
+  scopes the torch lane to exactly that module — so every packaged file is gated in exactly one
+  lane, with none falling through the crack between lanes. No coverage lift was required — measured
+  statement coverage is already 95.90–100% per file (base sub-module `juniper_recurrence_model`
+  pooled 97.68%, `units` pooled 98.85%; `_readout_mlp.py` 97.42%; union `juniper_recurrence_model`
+  pooled 97.61%). CI / packaging only — no runtime change, no version bump.
+
 ### Fixed
 
 - **Input validation hardening (audit MODEL-01 / MODEL-04).** Non-finite (`NaN`/`Inf`) values in
