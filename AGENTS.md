@@ -28,9 +28,9 @@ The application is the first real consumer of the shared `juniper-service-core` 
 
 The canonical design of record lives in juniper-ml:
 
-- [`notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md) — application **and** model-package design.
-- [`notes/JUNIPER_RECURRENCE_WS4B_APP_BUILD_PLAN_2026-06-15.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_WS4B_APP_BUILD_PLAN_2026-06-15.md) — the WS-4b application build plan.
-- [`notes/JUNIPER_RECURSE_OQ4_CASCOR_3D_INGESTION_GATE_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURSE_OQ4_CASCOR_3D_INGESTION_GATE_2026-06-14.md) — the 3-D dataset-ingestion build-side scoping.
+- [`notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-14_JUNIPER-RECURRENCE_MODEL-DETAILED-DESIGN.md) — application **and** model-package design.
+- [`notes/JUNIPER_RECURRENCE_WS4B_APP_BUILD_PLAN_2026-06-15.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-15_JUNIPER-RECURRENCE_WS4B-APP-BUILD-PLAN.md) — the WS-4b application build plan.
+- [`notes/JUNIPER_RECURSE_OQ4_CASCOR_3D_INGESTION_GATE_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-14_JUNIPER-RECURRENCE_RECURSE-OQ4-CASCOR-3D-INGESTION-GATE.md) — the 3-D dataset-ingestion build-side scoping.
 
 ## Repository layout
 

@@ -76,7 +76,7 @@ None known at time of release.
 
 - Changelog: `juniper-recurrence-client/CHANGELOG.md`
 - Introducing PR: <https://github.com/pcalnon/juniper-recurrence/pull/24>
-- Roadmap (H7): [JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md)
+- Roadmap (H7): [JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-17_JUNIPER-RECURRENCE_STATE-ASSESSMENT-AND-ROADMAP.md)
 
 ---
 

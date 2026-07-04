@@ -16,8 +16,8 @@ DP-3 readout-spectrum **phase P3**: adds the optional **torch MLP readout** (`ML
 that feeds it. The base package stays **numpy-only / torch-free** (torch is imported lazily), the
 default linear readout is unchanged, and all closed-form rungs are byte-identical to 0.1.4 — so this
 is an additive PATCH release. Design-of-record:
-`juniper-ml/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md` §4 (Rung 2b), ratified
-**GO** 2026-06-23 (`juniper-ml/notes/JUNIPER_DECISIONS_RATIFIED_2026-06-23.md` D5) — built as capability
+`juniper-ml/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md` §4 (Rung 2b), ratified
+**GO** 2026-06-23 (`juniper-ml/notes/JUNIPER_2026-06-23_JUNIPER-ECOSYSTEM_DECISIONS-RATIFIED.md` D5) — built as capability
 insurance for future complex / hybrid datasets and as a falsifiable demonstration; the current dataset
 catalog does not itself require it.
 
@@ -236,6 +236,6 @@ pip install --upgrade "juniper-recurrence-model[torch]==0.1.5" # + the optional 
 ## Links
 
 - [Full Changelog](../../juniper-recurrence-model/CHANGELOG.md)
-- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md)
-- [Decisions ratified 2026-06-23 (D5)](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_DECISIONS_RATIFIED_2026-06-23.md)
+- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md)
+- [Decisions ratified 2026-06-23 (D5)](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-23_JUNIPER-ECOSYSTEM_DECISIONS-RATIFIED.md)
 - [Previous Release](RELEASE_NOTES_juniper-recurrence-model-v0.1.4.md)

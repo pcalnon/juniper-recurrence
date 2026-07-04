@@ -158,6 +158,6 @@ deployment returns a clear **503** (the service still starts and serves every ot
 ## Links
 
 - [Full Changelog](../../juniper-recurrence/CHANGELOG.md)
-- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md)
-- [Evaluation findings (§3.4 MLP capacity)](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_EVALUATION_FINDINGS_2026-06-18.md)
+- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md)
+- [Evaluation findings (§3.4 MLP capacity)](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-18_JUNIPER-RECURRENCE_EVALUATION-FINDINGS.md)
 - [Model release (Rung 2b)](RELEASE_NOTES_juniper-recurrence-model-v0.1.5.md)

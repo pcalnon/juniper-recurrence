@@ -104,4 +104,4 @@ Existing calls are unaffected; pass `readout=` / `mlp_*` / `ridge="gcv"` to use 
 
 - [Full Changelog](../../juniper-recurrence-client/CHANGELOG.md)
 - [App release (the service edge)](RELEASE_NOTES_juniper-recurrence-v0.2.0.md)
-- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md)
+- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md)

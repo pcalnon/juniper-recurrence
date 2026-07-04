@@ -69,8 +69,8 @@ None known at time of release.
 ## Links
 
 - Changelog: `juniper-recurrence-model/CHANGELOG.md`
-- Design of record: [JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md)
-- Roadmap (D-3 / R3): [JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md)
+- Design of record: [JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-14_JUNIPER-RECURRENCE_MODEL-DETAILED-DESIGN.md)
+- Roadmap (D-3 / R3): [JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-17_JUNIPER-RECURRENCE_STATE-ASSESSMENT-AND-ROADMAP.md)
 - **Full Changelog:** https://github.com/pcalnon/juniper-recurrence/compare/juniper-recurrence-model-v0.1.0...juniper-recurrence-model-v0.1.1
 
 ---
