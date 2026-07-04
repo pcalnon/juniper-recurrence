@@ -79,7 +79,7 @@ The model implements the shared [`juniper-model-core`](https://github.com/pcalno
 model to validate that shared seam.
 
 For the full derivation, design rationale, and evaluation, see the design of record:
-[`JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md)
+[`JUNIPER_RECURRENCE_MODEL_DETAILED_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-14_JUNIPER-RECURRENCE_MODEL-DETAILED-DESIGN.md)
 (in `juniper-ml`).
 
 ---

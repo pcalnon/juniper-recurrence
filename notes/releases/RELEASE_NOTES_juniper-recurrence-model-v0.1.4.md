@@ -15,7 +15,7 @@ DP-3 readout-spectrum **phase P2a**: adds `RFFReadout` / `RFFReadoutSpec`, a gen
 readout for the LMU regressor with **no torch** — it maps the LMU memory block through random Fourier
 features before a ridge solve (`standardize(M) → RFF → GCV-ridge`). The default linear readout is
 unchanged, so this is an additive patch release. Design-of-record:
-`juniper-ml/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md` (ratified §8a, Rung 2a).
+`juniper-ml/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md` (ratified §8a, Rung 2a).
 
 > **Status:** STABLE — additive / backward-compatible; the default readout and all 0.1.3 behaviour are
 > unchanged, and the package remains numpy-only (no torch dependency).
@@ -197,5 +197,5 @@ pip install --upgrade juniper-recurrence-model==0.1.4
 ## Links
 
 - [Full Changelog](../../juniper-recurrence-model/CHANGELOG.md)
-- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_RECURRENCE_DP3_READOUT_SPECTRUM_DESIGN_2026-06-20.md)
+- [DP-3 design-of-record](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-20_JUNIPER-RECURRENCE_DP3-READOUT-SPECTRUM-DESIGN.md)
 - [Previous Release](RELEASE_NOTES_juniper-recurrence-model-v0.1.3.md)
