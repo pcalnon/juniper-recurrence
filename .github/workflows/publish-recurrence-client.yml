@@ -35,19 +35,36 @@
 name: Publish juniper-recurrence-client to PyPI
 
 on:
-  push:
-    tags:
-      - "juniper-recurrence-client-v*"
-  # Manual dispatch so operators can re-fire a publish against any tag.
+  # Publish ONLY on a cut GitHub Release (the ratified convention — never a bare `git push <tag>`).
+  # We deliberately do NOT subscribe to `push: tags`: cutting a Release also creates the tag, which
+  # emits a `push: tags` event — subscribing to both fired TWO concurrent publish runs that raced the
+  # immutable TestPyPI upload (one uploaded, the other 400'd "file already exists"; see juniper-ml#555).
+  # The build job is tag-prefix-guarded below; `release: published` is the single publish path.
+  release:
+    types: [published]
+  # Manual dispatch so operators can re-fire a publish (e.g. after a transient failure).
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  # Belt-and-suspenders serialization keyed on the ref. The primary dedupe is the single
+  # `release: published` trigger above; `skip-existing` on the publish steps makes any residual
+  # overlap (e.g. a manual dispatch during a release) a no-op rather than an immutable-upload race.
+  group: publish-recurrence-client-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build and Validate
+    # For a `release` event, run only when the release is THIS package's tag. The
+    # `juniper-recurrence-client-v` prefix is disjoint from the app's `juniper-recurrence-v*` and the
+    # model's `juniper-recurrence-model-v*` (they diverge at the char after `juniper-recurrence-`), so
+    # neither sibling release proceeds here. workflow_dispatch always runs. Downstream jobs
+    # `needs: build`, so this one guard gates the whole pipeline.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'juniper-recurrence-client-v')
     runs-on: ubuntu-latest
     defaults:
       run:
