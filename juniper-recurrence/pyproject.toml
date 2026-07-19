@@ -25,7 +25,8 @@ classifiers = [
 ]
 
 # Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.2.0,
-# juniper-service-core 0.3.0 (the create_app(lifespan=) hook), juniper-recurrence-model 0.1.5, juniper-data-client
+# juniper-service-core 0.5.0 (create_app(lifespan=) plus the SEC-F01 enforce_auth_posture
+# boot-time auth-posture self-check the lifespan calls), juniper-recurrence-model 0.1.5, juniper-data-client
 # 0.4.2), so the app pins them directly — no editable-sibling / cross-repo-clone
 # step is required (plan §10 publish-first end-state). The /v1/crossval endpoint pulls
 # juniper-model-core's optional [crossval] extra; juniper-recurrence-model>=0.1.5 is the
@@ -40,7 +41,7 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.2",
     "numpy>=1.24",
-    "juniper-service-core>=0.3.0,<0.6.0",
+    "juniper-service-core>=0.5.0,<0.6.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
     "juniper-recurrence-model>=0.1.5,<0.2.0",
     "juniper-data-client>=0.4.2,<0.5.0",

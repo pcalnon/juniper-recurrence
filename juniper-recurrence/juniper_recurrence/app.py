@@ -30,6 +30,7 @@ from juniper_service_core import (
     build_api_key_auth,
     build_rate_limiter,
     create_app,
+    enforce_auth_posture,
 )
 
 from juniper_recurrence import provenance
@@ -65,6 +66,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         # path. Runs once when uvicorn starts the app (not at import / build_app time).
         init_logging(settings)
         logger.info("juniper-recurrence %s starting", __version__)
+        # SEC-F01 (HO-2): boot-time auth-posture self-check. An empty/blank
+        # JUNIPER_RECURRENCE_API_KEYS secret silently disables APIKeyAuth and the
+        # service serves OPEN behind a healthy health check; make that posture loud
+        # at startup, before serving begins. require_auth=False because the service
+        # has no require-auth flag today — flipping to fail-closed (CRITICAL +
+        # refuse to start) is the owner-approved JUNIPER_RECURRENCE_REQUIRE_AUTH
+        # follow-up. Bypass with JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
+        enforce_auth_posture(
+            settings.resolve_api_keys(),
+            require_auth=False,
+            service_name="juniper-recurrence",
+            logger=logger,
+        )
         yield
 
     application = create_app(
