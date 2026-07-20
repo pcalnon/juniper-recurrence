@@ -69,13 +69,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         # SEC-F01 (HO-2): boot-time auth-posture self-check. An empty/blank
         # JUNIPER_RECURRENCE_API_KEYS secret silently disables APIKeyAuth and the
         # service serves OPEN behind a healthy health check; make that posture loud
-        # at startup, before serving begins. require_auth=False because the service
-        # has no require-auth flag today — flipping to fail-closed (CRITICAL +
-        # refuse to start) is the owner-approved JUNIPER_RECURRENCE_REQUIRE_AUTH
-        # follow-up. Bypass with JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
+        # at startup, before serving begins. The intended posture comes from
+        # JUNIPER_RECURRENCE_REQUIRE_AUTH (settings.require_auth; default false):
+        # false = loud WARNING only (bare/dev profile), true = missing/blank key
+        # is a boot FAILURE (CRITICAL + AuthPostureError) — set true wherever
+        # secrets are provisioned (the composed juniper-deploy stack). Bypass
+        # with JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
         enforce_auth_posture(
             settings.resolve_api_keys(),
-            require_auth=False,
+            require_auth=settings.require_auth,
             service_name="juniper-recurrence",
             logger=logger,
         )

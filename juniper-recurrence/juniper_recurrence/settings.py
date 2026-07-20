@@ -55,6 +55,13 @@ class Settings(SettingsBase):
 
     # --- API-key auth + rate limiting -------------------------------------------------
     api_keys: Annotated[list[str] | None, NoDecode] = Field(default=None)
+    # SEC-F01: the INTENDED auth posture, fed to enforce_auth_posture at boot.
+    # False (default) = an unset/blank JUNIPER_RECURRENCE_API_KEYS only WARNs
+    # (service runs open — bare/dev profile); True = boot REFUSES (CRITICAL +
+    # AuthPostureError) when no real key is configured. Set
+    # JUNIPER_RECURRENCE_REQUIRE_AUTH=true wherever secrets are provisioned
+    # (the composed juniper-deploy stack).
+    require_auth: bool = False
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 60
 
