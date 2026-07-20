@@ -1,12 +1,13 @@
 """Regression tests for the SEC-F01 boot-time auth-posture self-check (HO-2 class).
 
-The app lifespan calls juniper-service-core's ``enforce_auth_posture(...,
-require_auth=False, service_name="juniper-recurrence")`` at startup — before
-serving — so an empty/blank ``JUNIPER_RECURRENCE_API_KEYS`` secret (which
-silently disables ``APIKeyAuth`` and serves the API open behind a healthy
-health check) is at least LOUD at boot. ``require_auth`` stays ``False`` until
-the owner-approved ``JUNIPER_RECURRENCE_REQUIRE_AUTH`` follow-up flips the
-posture to fail-closed.
+The app lifespan calls juniper-service-core's ``enforce_auth_posture(
+settings.resolve_api_keys(), require_auth=settings.require_auth,
+service_name="juniper-recurrence")`` at startup — before serving — so an
+empty/blank ``JUNIPER_RECURRENCE_API_KEYS`` secret (which silently disables
+``APIKeyAuth`` and serves the API open behind a healthy health check) is LOUD
+at boot, and — with ``JUNIPER_RECURRENCE_REQUIRE_AUTH=true`` (default false) —
+a boot FAILURE instead (the fail-closed posture for deployments where secrets
+are provisioned).
 
 The wiring test monkeypatches the module attribute and drives the real lifespan
 via ``TestClient`` (entering the client context runs startup); the behavioural
@@ -25,19 +26,45 @@ from juniper_recurrence.app import build_app
 from juniper_recurrence.settings import Settings
 
 
-def test_lifespan_calls_posture_check_with_resolved_keys(monkeypatch):
+@pytest.mark.parametrize("require_auth", [False, True])
+def test_lifespan_calls_posture_check_with_resolved_keys(monkeypatch, require_auth):
     """The lifespan must invoke enforce_auth_posture once, with the settings'
-    resolved keys, require_auth=False, and the service's own name."""
+    resolved keys, the settings-driven require_auth, and the service's own name."""
     calls: list[tuple[list[str], bool, str]] = []
 
     def _recorder(api_keys, *, require_auth, service_name, logger=None, **_kwargs):
         calls.append((list(api_keys or []), require_auth, service_name))
 
     monkeypatch.setattr(app_module, "enforce_auth_posture", _recorder)
-    settings = Settings(api_keys=["k1", "k2"])
+    settings = Settings(api_keys=["k1", "k2"], require_auth=require_auth)
     with TestClient(build_app(settings)):
         pass
-    assert calls == [(settings.resolve_api_keys(), False, "juniper-recurrence")]
+    assert calls == [(settings.resolve_api_keys(), require_auth, "juniper-recurrence")]
+
+
+def test_require_auth_defaults_to_false():
+    """The flag defaults to False (today's loud-WARNING posture) so bare/dev
+    runs keep starting; deployments opt in to fail-closed explicitly."""
+    assert Settings.model_fields["require_auth"].default is False
+    assert Settings().require_auth is False
+
+
+def test_env_flag_flips_posture(monkeypatch):
+    """JUNIPER_RECURRENCE_REQUIRE_AUTH=true wires through the standard env prefix."""
+    monkeypatch.setenv("JUNIPER_RECURRENCE_REQUIRE_AUTH", "true")
+    assert Settings().require_auth is True
+
+
+def test_required_with_no_keys_refuses_startup(monkeypatch):
+    """The fail-closed posture end-to-end: require_auth=True with no keys makes
+    the REAL lifespan raise AuthPostureError, so uvicorn startup fails instead
+    of serving open."""
+    from juniper_service_core import AuthPostureError
+
+    monkeypatch.delenv("JUNIPER_SKIP_AUTH_POSTURE_CHECK", raising=False)
+    with pytest.raises(AuthPostureError):
+        with TestClient(build_app(Settings(api_keys=None, require_auth=True))):
+            pass  # pragma: no cover — startup raises before the body runs
 
 
 def test_no_keys_and_not_required_warns_open(caplog):
