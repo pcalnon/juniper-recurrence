@@ -87,7 +87,7 @@ torch = [
 # Equities/Synthetic params ignore unknown kwargs (pydantic extra='ignore'), so an older pin would
 # also silently drop newer params (e.g. the stationary log-return target).
 bench = [
-    "juniper-data>=0.9.0,<0.10.0",
+    "juniper-data>=0.9.0,<0.11.0",
 ]
 # Equities real-data bench row (bench.datasets.equities_seq). The [equities] extra pulls
 # yfinance / pandas and needs network at generation time, so it is kept separate from
@@ -96,7 +96,7 @@ bench = [
 # equities row SKIPs gracefully (run_benchmark.py catches the ImportError). Same
 # juniper-data floor/cap as [bench].
 bench-equities = [
-    "juniper-data[equities]>=0.9.0,<0.10.0",
+    "juniper-data[equities]>=0.9.0,<0.11.0",
 ]
 # Rung 2b torch MLP readout row in the bench (DP-3 P3). The [torch] extra pulls torch (~GB), so it is
 # kept separate from [bench] like [bench-equities]: the offline bench and its CI lane stay torch-free
