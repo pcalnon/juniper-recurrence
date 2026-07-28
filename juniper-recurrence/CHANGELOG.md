@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-28
+
 ### Added
 
 - **Application logging is now configured at startup** (audit H1). The app's FastAPI **lifespan**
