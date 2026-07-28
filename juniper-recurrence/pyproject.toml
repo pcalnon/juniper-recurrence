@@ -43,7 +43,7 @@ dependencies = [
     "numpy>=1.24",
     "juniper-service-core>=0.5.0,<0.6.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
-    "juniper-recurrence-model>=0.1.5,<0.2.0",
+    "juniper-recurrence-model>=0.1.5,<0.3.0",
     "juniper-data-client>=0.4.2,<0.5.0",
 ]
 
@@ -76,7 +76,7 @@ observability = [
 # the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
 # when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
 torch = [
-    "juniper-recurrence-model[torch]>=0.1.5,<0.2.0",
+    "juniper-recurrence-model[torch]>=0.1.5,<0.3.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
@@ -104,7 +104,7 @@ bench-equities = [
 # the MLP capacity row installs `.[bench,bench-torch]`. >=0.1.5 is REQUIRED — MLPReadoutSpec ships in
 # juniper-recurrence-model 0.1.5 (the LMURegressor validation plumbing + the Rung 2b readout).
 bench-torch = [
-    "juniper-recurrence-model[torch]>=0.1.5,<0.2.0",
+    "juniper-recurrence-model[torch]>=0.1.5,<0.3.0",
 ]
 
 [project.scripts]
