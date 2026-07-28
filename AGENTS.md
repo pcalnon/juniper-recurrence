@@ -4,7 +4,7 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.2.0
+**Version**: 0.3.0
 **Last Updated**: 2026-06-25
 
 ---
@@ -19,7 +19,7 @@ It is a live **4-sub-project monorepo** — a FastAPI + CLI application, its mod
 
 | Sub-project | Directory | PyPI package | Version |
 |---|---|---|---|
-| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.2.0 |
+| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.3.0 |
 | Model core (Δt-native LMU + `LMURegressor`) | `juniper-recurrence-model/` | `juniper-recurrence-model` | 0.1.5 |
 | HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.2.0 |
 | Benchmark / evaluation harness | `bench/` | _(not a package)_ | n/a |
@@ -115,4 +115,4 @@ A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-0
 
 ## Status
 
-Live monorepo: the application (`juniper-recurrence` 0.2.0), the model core (`juniper-recurrence-model` 0.1.5), and the HTTP client (`juniper-recurrence-client` 0.2.0) are all published to PyPI, plus the `bench/` evaluation harness. The Δt-native LMU memory unit (the C1-clean Approach-C core) and `LMURegressor` pass `juniper-model-core`'s conformance kit; the app exposes the train / predict / model / dataset / cross-validation HTTP surface on the shared `juniper-service-core` framework.
+Live monorepo: the application (`juniper-recurrence` 0.3.0), the model core (`juniper-recurrence-model` 0.1.5), and the HTTP client (`juniper-recurrence-client` 0.2.0) are all published to PyPI, plus the `bench/` evaluation harness. The Δt-native LMU memory unit (the C1-clean Approach-C core) and `LMURegressor` pass `juniper-model-core`'s conformance kit; the app exposes the train / predict / model / dataset / cross-validation HTTP surface on the shared `juniper-service-core` framework.
