@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-28
+
 ### Changed
 
 - **Blocking per-file coverage gate wired into both CI lanes** (per-file coverage rollout C-5;
