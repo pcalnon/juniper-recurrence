@@ -9,6 +9,20 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **Wave 3.3: experiment YAML config layer** (CLI experimentation plan §5.1/§5.2/§5.6, juniper-ml
+  `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`).
+  New `ExperimentYamlSettingsSource` projects ONLY the experiment YAML's `service:` block into `Settings` with the
+  ratified precedence `CLI/init > YAML > env > defaults` — the stock `YamlConfigSettingsSource` would silently no-op
+  under this model's `extra="ignore"` with the experiment YAML's nested top level. Fail-loud validation before boot:
+  unknown top-level blocks, `schema_version` (1..1), unknown `service:` keys, and the launcher-owned infra keys
+  `host`/`port`/`juniper_data_url` are rejected (§5.6 rules 1/2/6). Activated only by the new
+  `JUNIPER_RECURRENCE_CONFIG_FILE` env var — inert for every existing env/compose deployment (risk R-4) — with a new
+  `--config PATH` flag on **both** the `serve` and `train` subcommands that sets the env var before either handler
+  constructs `Settings()`. Adds the `PyYAML>=6.0` dependency (the app previously had no YAML reader).
+  Tests: `tests/test_experiment_yaml_settings.py`.
+
 ## [0.3.0] - 2026-07-28
 
 ### Added
