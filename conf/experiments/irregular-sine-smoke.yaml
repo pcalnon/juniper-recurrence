@@ -1,0 +1,46 @@
+# irregular-sine-smoke — the P1.3 smoke configuration, live-proven 2026-08-07 (exit 0 in 4.8s,
+# train r² 0.991 / 2-fold CV 0.987; evidence: juniper-ml notes/…P1-SMOKE-EVIDENCE.md).
+schema_version: 1
+experiment:
+  name: irregular-sine-smoke
+  description: "P1.3 minimal irregular_sine smoke (linear readout, 2-fold CV)"
+  seed: 20260807
+
+service:
+  log_level: INFO
+  metrics_enabled: true
+  rate_limit_enabled: false
+
+dataset:
+  generator: irregular_sine
+  split: train
+  params:
+    n_steps: 500
+    lookback: 64
+    horizon: 1
+    sample_dt: 1.0
+    jitter: 0.3
+    n_components: 3
+    noise_std: 0.1
+    train_ratio: 0.8
+    seed: 20260807
+
+train:
+  d: 8
+  ridge: 1.0
+  readout: linear
+
+crossval:
+  enabled: true
+  n_folds: 2
+  scheme: expanding
+  embargo: 2
+
+predict:
+  enabled: true
+  from_dataset_split: test
+
+outputs:
+  plots: [dataset_overview, dt_histogram, forecast_vs_truth, residuals, crossval_folds]
+  max_wall_seconds: 300
+  grafana_bridge: true

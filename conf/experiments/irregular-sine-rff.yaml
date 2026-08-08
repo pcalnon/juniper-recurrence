@@ -1,0 +1,60 @@
+# irregular-sine-rff — the reference recurrence experiment (CLI experimentation plan §5.5, Wave 3.4).
+# Drive with the juniper-ml stack:
+#   util/experiment_stack.bash --up --recurrence --config conf/experiments/irregular-sine-rff.yaml
+#   python util/experiments/run_experiment.py --config .../irregular-sine-rff.yaml --run-dir $RUN_DIR
+# The service: block is consumed by the app's ExperimentYamlSettingsSource (YAML > env, §5.1);
+# dataset:/train:/crossval:/predict: by the driver; outputs: by the driver/launcher — never Settings.
+schema_version: 1
+experiment:
+  name: irregular-sine-rff
+  description: "Irregular-Δt sine, RFF readout, walk-forward CV (DP-3 rung 2a)"
+  seed: 20260729
+
+service:                               # -> juniper_recurrence Settings
+  log_level: INFO
+  log_format: text
+  metrics_enabled: true
+  rate_limit_enabled: false            # a tight driver loop must not be throttled
+  default_d: 16
+  default_theta: null                  # null = data-driven θ
+  default_ridge: 0.0
+  # host / port / juniper_data_url are launcher-owned and REJECTED here (§5.6 rule 6)
+
+dataset:                               # -> juniper-data POST /v1/datasets + DatasetRef (driver)
+  generator: irregular_sine
+  split: train
+  params:
+    n_steps: 4000
+    lookback: 64
+    horizon: 1
+    sample_dt: 1.0
+    jitter: 0.30
+    n_components: 3
+    noise_std: 0.10
+    train_ratio: 0.8
+    seed: 20260729
+
+train:                                 # -> POST /v1/train (driver; hyperparams shared with crossval)
+  d: 16
+  theta: null
+  ridge: 1.0
+  readout: rff
+  rff_features: 256
+  rff_gamma: median
+
+crossval:                              # -> POST /v1/crossval (driver)
+  enabled: true
+  n_folds: 5
+  scheme: expanding
+  embargo: 2
+  min_train: null
+
+predict:                               # -> POST /v1/predict (driver)
+  enabled: true
+  from_dataset_split: test
+
+outputs:
+  plots: [dataset_overview, dt_histogram, forecast_vs_truth, residuals, crossval_folds, metrics_table]
+  grafana_bridge: true
+  save_model: true                     # G-18: re-runs `juniper-recurrence train --dataset <id> --out` (driver)
+  max_wall_seconds: 900
