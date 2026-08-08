@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -43,6 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("serve", help="Run the FastAPI service under uvicorn.")
     serve.add_argument("--host", default=None, help="Bind host (defaults to JUNIPER_RECURRENCE_HOST / settings).")
     serve.add_argument("--port", type=int, default=None, help="Bind port (defaults to JUNIPER_RECURRENCE_PORT / settings).")
+    serve.add_argument("--config", default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_RECURRENCE_CONFIG_FILE before settings load; Wave 3.3).")
 
     train = subparsers.add_parser("train", help="Headless: fit the LMU on a dataset and print metrics.")
     train.add_argument("--dataset", default=None, help="Dataset id to train on.")
@@ -61,6 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--mlp-max-epochs", type=int, default=None, help="MLP max training epochs when --readout=mlp (default: 200).")
     train.add_argument("--mlp-patience", type=int, default=None, help="MLP early-stop patience in epochs when --readout=mlp (default: 20).")
     train.add_argument("--out", default=None, help="Path to save the trained model (.npz) via LMUSerializer.")
+    train.add_argument("--config", default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_RECURRENCE_CONFIG_FILE before settings load; Wave 3.3).")
 
     return parser
 
@@ -142,6 +145,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI dispatch entrypoint (``[project.scripts] juniper-recurrence``)."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, "config", None):
+        # Wave 3.3: must land before the first Settings() construction (plan SS5.2) --
+        # both _serve and _train build Settings() inside their handlers.
+        os.environ["JUNIPER_RECURRENCE_CONFIG_FILE"] = args.config
 
     if args.command == "serve":
         return _serve(args)

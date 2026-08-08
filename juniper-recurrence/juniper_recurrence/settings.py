@@ -23,19 +23,124 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
+import os
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import yaml
 from juniper_service_core import SettingsBase, get_secret
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import NoDecode, SettingsConfigDict
+from pydantic_settings import NoDecode, PydanticBaseSettingsSource, SettingsConfigDict
 
 __all__ = ["Settings"]
+
+
+# ---------------------------------------------------------------------------------------------------
+# Experiment YAML config layer (Wave 3.3 -- CLI experimentation plan SS5.1/SS5.2/SS5.6, juniper-ml
+# notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md)
+# ---------------------------------------------------------------------------------------------------
+
+_EXPERIMENT_CONFIG_ENV_VAR: str = "JUNIPER_RECURRENCE_CONFIG_FILE"
+_EXPERIMENT_SCHEMA_VERSION_MAX: int = 1
+# The SS5.4/SS5.5 top-level surface. Only ``service:`` is projected into Settings; the
+# other blocks belong to the driver / launcher layers (plan SS6) and are ignored here.
+_EXPERIMENT_TOP_LEVEL_BLOCKS: frozenset = frozenset({"schema_version", "experiment", "service", "dataset", "training", "train", "crossval", "predict", "runtime", "outputs"})
+# SS5.6 rule 6 (SS5.5 comment): infrastructure is launcher-owned (CLI flags / process env)
+# and rejected outright in experiment YAML.
+_EXPERIMENT_SERVICE_FORBIDDEN_KEYS: frozenset = frozenset({"host", "port", "juniper_data_url"})
+
+_experiment_config_logger = logging.getLogger("juniper_recurrence.settings")
+
+
+class ExperimentConfigError(ValueError):
+    """Invalid experiment YAML for the ``service:`` projection -- fail loud BEFORE boot (SS5.6)."""
+
+
+class ExperimentYamlSettingsSource(PydanticBaseSettingsSource):
+    """Project ONLY the experiment YAML's ``service:`` block into Settings values (SS5.2).
+
+    The stock ``YamlConfigSettingsSource`` reads the file's TOP-LEVEL mapping as field
+    values, and an experiment YAML's top level is ``schema_version`` / ``experiment`` /
+    ``service`` / ``dataset`` / ``train`` / ... -- none of which is a Settings field.
+    With this model's ``extra="ignore"`` every key would be dropped silently: the stock
+    source would no-op the whole layer. This source parses the file once, validates
+    fail-loud (unknown top-level blocks, ``schema_version``, unknown or launcher-owned
+    ``service:`` keys -- SS5.6 rules 1/2/6), and yields the ``service:`` keys so YAML
+    sits ABOVE env in the SS5.1 precedence (a run stays reproducible from its YAML even
+    in a shell with stale exported ``JUNIPER_RECURRENCE_*`` vars).
+    """
+
+    def __init__(self, settings_cls: type, yaml_file: str) -> None:
+        super().__init__(settings_cls)
+        self._yaml_file = yaml_file
+        self._service_block = self._load_and_validate()
+
+    def _load_and_validate(self) -> dict[str, Any]:
+        try:
+            raw = Path(self._yaml_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ExperimentConfigError(f"{_EXPERIMENT_CONFIG_ENV_VAR}={self._yaml_file!r} is unreadable: {exc}") from exc
+        try:
+            data = yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r} is not valid YAML: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r} must be a YAML mapping, got {type(data).__name__}")
+
+        unknown_blocks = sorted(set(data) - _EXPERIMENT_TOP_LEVEL_BLOCKS)
+        if unknown_blocks:
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: unknown top-level block(s) {', '.join(unknown_blocks)} (allowed: {', '.join(sorted(_EXPERIMENT_TOP_LEVEL_BLOCKS))})")
+
+        version = data.get("schema_version")
+        if not isinstance(version, int) or isinstance(version, bool) or not 1 <= version <= _EXPERIMENT_SCHEMA_VERSION_MAX:
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: schema_version must be an integer in 1..{_EXPERIMENT_SCHEMA_VERSION_MAX}, got {version!r}")
+
+        service = data.get("service") or {}
+        if not isinstance(service, dict):
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: service must be a mapping, got {type(service).__name__}")
+
+        forbidden = sorted(set(service) & _EXPERIMENT_SERVICE_FORBIDDEN_KEYS)
+        if forbidden:
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: service key(s) {', '.join(forbidden)} rejected (SS5.6 rule 6) -- host/port/juniper_data_url are launcher-owned (CLI flags / process env), never experiment YAML")
+
+        known_fields = set(self.settings_cls.model_fields)
+        unknown = sorted(key for key in service if key not in known_fields)
+        if unknown:
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: unknown service key(s) {', '.join(unknown)} -- Settings is extra='ignore', so an unvalidated key would be dropped silently; fix the YAML (fields include e.g. log_level, log_format, metrics_enabled, rate_limit_enabled, default_d, default_theta, default_ridge)")
+
+        if service:
+            _experiment_config_logger.info("experiment config %s: projecting service keys %s (YAML > env, SS5.1)", self._yaml_file, sorted(service))
+        return dict(service)
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        if field_name in self._service_block:
+            return self._service_block[field_name], field_name, False
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return dict(self._service_block)
 
 
 class Settings(SettingsBase):
     """Runtime configuration for the juniper-recurrence app (env prefix ``JUNIPER_RECURRENCE_``)."""
 
     model_config = SettingsConfigDict(env_prefix="JUNIPER_RECURRENCE_", extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
+        """CLI/init > YAML ``service:`` block > env > defaults (SS5.1; Wave 3.3).
+
+        The YAML source is inserted only when ``JUNIPER_RECURRENCE_CONFIG_FILE`` is set,
+        so the layer is inert for every existing env/compose deployment (plan risk R-4).
+        (No ``.env`` tier here by design -- see the module docstring's env-file-leak note.)
+        """
+        yaml_path = os.environ.get(_EXPERIMENT_CONFIG_ENV_VAR)
+        sources: list[Any] = [init_settings]
+        if yaml_path:
+            sources.append(ExperimentYamlSettingsSource(settings_cls, yaml_file=yaml_path))
+        sources += [env_settings, dotenv_settings, file_secret_settings]
+        return tuple(sources)
 
     # --- service identity / bind (override SettingsBase defaults) ---------------------
     service_name: str = "juniper-recurrence"
