@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-08
+
 ### Added
 
 - **W-11: `train` seeds its argparse defaults from the experiment YAML's `train:` block** (CLI experimentation plan §11 / Wave 3.6). An explicitly-passed CLI flag wins; an unset flag falls back to the YAML value; absent both,
