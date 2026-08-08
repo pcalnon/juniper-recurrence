@@ -8,6 +8,8 @@ that actually generate data.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from juniper_model_core.crossval import cross_validate, walk_forward_folds
@@ -106,6 +108,50 @@ def test_noise_std_perturbs_signal_but_keeps_contract():
     assert noisy.X.shape == clean.X.shape
     assert np.all(noisy.dt[:, 0] == 0.0)
     assert not np.allclose(noisy.X, clean.X)  # the signal is genuinely perturbed
+
+
+def test_results_dir_flag_redirects_output(tmp_path, monkeypatch):
+    """W-7/H-6: ``--results-dir`` redirects the per-dataset JSON + REPORT.md.
+
+    The heavy pieces (``run_dataset``/``evaluate_bands``/``_render_report``) are
+    stubbed — this pins ONLY the output-routing seam, not the benchmark itself.
+    """
+    from bench import run_benchmark
+
+    monkeypatch.setattr(
+        run_benchmark.datasets,
+        "DATASETS",
+        {
+            "irregular_sine": lambda: datasets.irregular_sine(
+                n_steps=240, lookback=12, seed=0
+            )
+        },
+    )
+    monkeypatch.setattr(run_benchmark, "run_dataset", lambda ds: {"stub": True})
+    monkeypatch.setattr(run_benchmark, "evaluate_bands", lambda results: [])
+    monkeypatch.setattr(run_benchmark, "_render_report", lambda *a: "stub-report")
+    out = tmp_path / "alt-results"
+    run_benchmark.main(["--results-dir", str(out)])
+    assert (out / "irregular_sine.json").is_file()
+    assert (out / "REPORT.md").read_text() == "stub-report"
+
+
+def test_results_dir_default_flows_from_module_constant(tmp_path, monkeypatch):
+    """No flag ⇒ output lands in ``_RESULTS`` (bench/results in real runs) — the
+    default target is unchanged by W-7. Patched here so the test never writes
+    into the checkout's committed baseline home."""
+    from bench import run_benchmark
+
+    assert (
+        run_benchmark._RESULTS
+        == Path(run_benchmark.__file__).resolve().parent / "results"
+    )
+    monkeypatch.setattr(run_benchmark.datasets, "DATASETS", {})
+    monkeypatch.setattr(run_benchmark, "evaluate_bands", lambda results: [])
+    monkeypatch.setattr(run_benchmark, "_render_report", lambda *a: "stub-report")
+    monkeypatch.setattr(run_benchmark, "_RESULTS", tmp_path / "default-home")
+    run_benchmark.main([])
+    assert (tmp_path / "default-home" / "REPORT.md").is_file()
 
 
 def test_dataset_registry_covers_primary_and_extensions():
