@@ -1,0 +1,50 @@
+# delay-product-rff — the DP-3 capacity-separation case (plan §10.4/§10.5 E-E): on delay_product,
+# readout: rff must beat readout: linear on r²; if it does not, that is a FINDING to record.
+schema_version: 1
+experiment:
+  name: delay-product-rff
+  description: "Bilinear delay_product target, RFF readout (DP-3 capacity claim)"
+  seed: 20260729
+
+service:
+  log_level: INFO
+  metrics_enabled: true
+  rate_limit_enabled: false
+
+dataset:
+  generator: delay_product
+  split: train
+  params:
+    n_steps: 4000
+    lookback: 64
+    horizon: 1
+    sample_dt: 1.0
+    jitter: 0.30
+    lag1: 3
+    lag2: 11
+    n_components: 3
+    noise_std: 0.05
+    train_ratio: 0.8
+    seed: 20260729
+
+train:
+  d: 16
+  ridge: 1.0
+  readout: rff
+  rff_features: 256
+  rff_gamma: median
+
+crossval:
+  enabled: true
+  n_folds: 5
+  scheme: expanding
+  embargo: 2
+
+predict:
+  enabled: true
+  from_dataset_split: test
+
+outputs:
+  plots: [dataset_overview, dt_histogram, forecast_vs_truth, residuals, crossval_folds, metrics_table]
+  grafana_bridge: true
+  max_wall_seconds: 900

@@ -11,6 +11,13 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **Wave 3.4: reference experiment YAMLs** under `conf/experiments/` (CLI experimentation plan §5.3/§14; the repo's
+  first `conf/` directory): `irregular-sine-rff.yaml` (the §5.5 reference — RFF readout, 5-fold walk-forward CV,
+  `save_model`, Grafana bridge), `irregular-sine-smoke.yaml` (the P1.3 smoke, live-proven 2026-08-07: exit 0 in 4.8 s,
+  train r² 0.991 / 2-fold CV 0.987), and `delay-product-rff.yaml` (the DP-3 capacity-separation case — E-E).
+  Each file validates against BOTH consumers: the app-side `ExperimentYamlSettingsSource` (`service:` projection,
+  Wave 3.3) and the juniper-ml driver's `load_config` (§5.6).
+
 - **Wave 3.3: experiment YAML config layer** (CLI experimentation plan §5.1/§5.2/§5.6, juniper-ml
   `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`).
   New `ExperimentYamlSettingsSource` projects ONLY the experiment YAML's `service:` block into `Settings` with the
@@ -179,8 +186,6 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 - **Adopt the juniper-model-core 0.2.0 cross-validation layer.** Bumped `juniper-model-core` to `[crossval]>=0.2.0,<0.3.0` (the app now imports `juniper_model_core.crossval` at runtime) and `juniper-recurrence-model` to `>=0.1.2,<0.2.0` (the crossval-capable model release that admits model-core 0.2.0).
 
 ## [0.1.0] - 2026-06-17
-
-### Added
 
 - **App skeleton (WS-4b PR-1).** New `juniper-recurrence` application distribution:
   the import package `juniper_recurrence/` with `Settings` (env prefix
