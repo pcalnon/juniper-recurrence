@@ -10,8 +10,9 @@ For ``equities_seq`` the regression target is ``y_reg_full`` (next-day close), n
 ``y_full`` direction label.
 
 The ``DATASETS`` set is the pre-registered benchmark scope (DP-5 guardrail). Beyond the three
-synthetic datasets of the ratified eval it adds two **extensions**: a noise-robustness sweep
-(``*_noise0.10`` / ``*_noise0.25`` — does the Δt advantage survive observation noise?) and a
+synthetic datasets of the ratified eval it adds four **extensions**: a noise-robustness sweep
+(``*_noise0.10`` / ``*_noise0.25`` — does the Δt advantage survive observation noise?), the
+``delay_product`` capacity dataset (design §8a), the ``ar_p`` linear floor (plan W-5), and a
 real-data irregular-Δt sanity check (``equities_seq``).
 """
 
@@ -27,6 +28,7 @@ __all__ = [
     "irregular_sine",
     "multi_sine",
     "mackey_glass",
+    "ar_p",
     "delay_product",
     "equities_seq",
     "DATASETS",
