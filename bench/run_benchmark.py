@@ -1,14 +1,17 @@
 """The recurrence benchmark (C2): walk-forward CV of the Δt-native LMU vs a fixed-Δt control,
 naive persistence, and a linear ridge baseline, on irregular- and regular-Δt datasets.
 
-Run from the repo root:  ``python -m bench.run_benchmark``
-Writes ``bench/results/<dataset>.json`` + ``bench/results/REPORT.md`` (reproducible from the seeds).
+Run from the repo root:  ``python -m bench.run_benchmark [--results-dir DIR]``
+Writes ``<results-dir>/<dataset>.json`` + ``<results-dir>/REPORT.md`` (reproducible from the seeds);
+the default stays ``bench/results/`` — the committed baseline home. ``--results-dir`` exists so
+concurrent bench runs in one checkout don't clobber each other (W-7 / H-6).
 
 Design + acceptance bands: juniper-ml ``notes/JUNIPER_RECURRENCE_EVALUATION_DESIGN_2026-06-18.md``.
 """
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -324,8 +327,22 @@ def _render_report(
     return "\n".join(lines)
 
 
-def main() -> None:
-    _RESULTS.mkdir(parents=True, exist_ok=True)
+def main(argv: list[str] | None = None) -> None:
+    # W-7 (CLI experimentation plan §11 / H-6): --results-dir unblocks concurrent
+    # bench runs in one checkout — the default stays bench/results, the committed
+    # baseline home, byte-identically. argv threads explicitly (never implicit
+    # sys.argv from an importing test runner — the cascor#486 class).
+    parser = argparse.ArgumentParser(
+        description="Run the recurrence Δt benchmark suite."
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=_RESULTS,
+        help="Directory for the per-dataset JSON + REPORT.md (default: bench/results, the committed baseline home). Point concurrent runs at distinct dirs (W-7/H-6).",
+    )
+    results_dir = parser.parse_args(argv).results_dir
+    results_dir.mkdir(parents=True, exist_ok=True)
     results: dict[str, dict[str, Any]] = {}
     skipped: dict[str, str] = {}
     for name, factory in datasets.DATASETS.items():
@@ -338,16 +355,16 @@ def main() -> None:
             print(f"[bench] {name} SKIPPED — {type(exc).__name__}: {exc}", flush=True)
             continue
         results[name] = res
-        (_RESULTS / f"{name}.json").write_text(
+        (results_dir / f"{name}.json").write_text(
             json.dumps(res, indent=2, sort_keys=True)
         )
 
     bands = evaluate_bands(results)
     report = _render_report(results, bands, skipped)
-    (_RESULTS / "REPORT.md").write_text(report)
+    (results_dir / "REPORT.md").write_text(report)
     print("\n" + report)
     print(
-        f"[bench] wrote {_RESULTS}/REPORT.md + per-dataset JSON"
+        f"[bench] wrote {results_dir}/REPORT.md + per-dataset JSON"
         + (f" ({len(skipped)} skipped)" if skipped else "")
     )
 
