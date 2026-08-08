@@ -84,6 +84,40 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+# W-11 (CLI experimentation plan SS11 / Wave 3.6): ``train`` seeds its argparse defaults
+# from the experiment YAML's ``train:`` block. Precedence: an explicitly-passed CLI flag
+# wins; an unset flag (None) falls back to the YAML value; absent both, the existing
+# settings/builder defaults apply (SS5.1: CLI > YAML > env-backed settings > defaults).
+# main() has already threaded --config into JUNIPER_RECURRENCE_CONFIG_FILE, and the
+# Settings source fail-loud-validates the file (SS5.6) before these helpers read it.
+_W11_TRAIN_KEYS = ("d", "theta", "ridge", "readout", "rff_features", "rff_gamma", "mlp_hidden", "mlp_weight_decay", "mlp_lr", "mlp_max_epochs", "mlp_patience")
+
+
+def _experiment_train_overrides() -> dict:
+    """Return the experiment YAML's ``train:`` block ({} when no config is threaded)."""
+    config_path = os.environ.get("JUNIPER_RECURRENCE_CONFIG_FILE")
+    if not config_path:
+        return {}
+    from pathlib import Path
+
+    import yaml
+
+    data = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+    block = data.get("train") or {}
+    unknown = sorted(key for key in block if key not in _W11_TRAIN_KEYS)
+    if unknown:
+        print(f"warning: experiment train: keys with no CLI counterpart, ignored: {', '.join(unknown)}", file=sys.stderr)
+    return {key: value for key, value in block.items() if key in _W11_TRAIN_KEYS}
+
+
+def _apply_train_overrides(args: argparse.Namespace, overrides: dict) -> argparse.Namespace:
+    """Seed unset (None) train flags from the YAML ``train:`` block; explicit CLI wins."""
+    for key in _W11_TRAIN_KEYS:
+        if key in overrides and getattr(args, key, None) is None:
+            setattr(args, key, overrides[key])
+    return args
+
+
 def _train(args: argparse.Namespace) -> int:
     """Headless train: load a 3-D NPZ, fit ``LMURegressor``, print metrics, persist."""
     from juniper_recurrence_model import LMUSerializer
@@ -95,6 +129,9 @@ def _train(args: argparse.Namespace) -> int:
     if not (args.dataset or args.name or args.generator):
         print("error: train requires one of --dataset / --name / --generator", file=sys.stderr)
         return 2
+
+    # W-11: YAML train: block seeds any flag the CLI left unset (explicit CLI wins).
+    args = _apply_train_overrides(args, _experiment_train_overrides())
 
     settings = Settings()
     sequence, descriptor = load_sequence_data(

@@ -11,6 +11,10 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **W-11: `train` seeds its argparse defaults from the experiment YAML's `train:` block** (CLI experimentation plan §11 / Wave 3.6). An explicitly-passed CLI flag wins; an unset flag falls back to the YAML value; absent both,
+  the existing settings/builder defaults apply (§5.1 precedence). Unknown `train:` keys are warned about on stderr, never applied silently. `--config`/`JUNIPER_RECURRENCE_CONFIG_FILE` threading is the Wave-3.3 mechanism;
+  the Settings source fail-loud-validates the file first. Tests: `tests/test_w11_train_yaml_seeding.py`.
+
 - **Wave 3.4: reference experiment YAMLs** under `conf/experiments/` (CLI experimentation plan §5.3/§14; the repo's
   first `conf/` directory): `irregular-sine-rff.yaml` (the §5.5 reference — RFF readout, 5-fold walk-forward CV,
   `save_model`, Grafana bridge), `irregular-sine-smoke.yaml` (the P1.3 smoke, live-proven 2026-08-07: exit 0 in 4.8 s,
