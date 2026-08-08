@@ -134,6 +134,30 @@ def mackey_glass(*, n_steps: int = 2000, lookback: int = 32, seed: int = 0) -> D
     )
 
 
+def ar_p(
+    *, n_steps: int = 2000, lookback: int = 32, seed: int = 0, name: str = "ar_p"
+) -> Dataset:
+    """Regular-Δt stable AR(2) linear-stochastic series — the linear-floor extension (plan W-5).
+
+    A stable AR(p) is exactly representable by a linear readout over a long-enough window, so this
+    row probes the floor: Δt-awareness and nonlinear readouts must not LOSE to the linear baseline
+    here. Extension row — informational, not scored against the ratified bands.
+    """
+    from juniper_data.generators.ar_p import ArPGenerator, ArPParams
+
+    out = ArPGenerator.generate(
+        ArPParams(n_steps=n_steps, lookback=lookback, seed=seed)
+    )
+    return Dataset(
+        name,
+        "regular",
+        _full(out, "X"),
+        _full(out, "y"),
+        _full(out, "dt"),
+        _full(out, "target_dt"),
+    )
+
+
 def delay_product(
     *,
     n_steps: int = 2000,
@@ -235,7 +259,8 @@ def equities_seq(
 #: The three pre-registered datasets the ratified OQ-14 bands are scored against (DP-5 guardrail).
 PRIMARY_DATASETS = ("irregular_sine", "multi_sine", "mackey_glass")
 
-#: name -> generator factory. The primary set plus the extensions (noise sweep + the delay_product
+#: name -> generator factory. The primary set plus the extensions (noise sweep + the ar_p linear
+#: floor + the delay_product
 #: capacity dataset + real data). Noise variants probe whether the Δt advantage survives observation
 #: noise; ``delay_product`` is the DP-3 capacity dataset (a bilinear target only a nonlinear readout
 #: can fit — design §8a); ``equities_seq`` is the real-data irregular-Δt sanity check. Extension
@@ -257,6 +282,7 @@ DATASETS = {
         multi_sine, noise_std=0.25, name="multi_sine_noise0.25"
     ),
     "mackey_glass": mackey_glass,
+    "ar_p": ar_p,
     "delay_product": delay_product,
     "equities_seq": equities_seq,
 }

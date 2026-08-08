@@ -34,6 +34,18 @@ def test_irregular_sine_contract():
     assert np.all(ds.dt[:, 0] == 0.0)
 
 
+def test_ar_p_contract():
+    """W-5 linear-floor extension: regular-Δt AR(2) rows honour the Dataset contract."""
+    ds = datasets.ar_p(n_steps=240, lookback=12, seed=0)
+    assert ds.name == "ar_p"
+    assert ds.grid == "regular"
+    assert ds.X.ndim == 3
+    assert ds.dt.shape == ds.X.shape[:2]
+    assert ds.y.shape[0] == ds.X.shape[0]
+    assert ds.target_dt.shape[0] == ds.X.shape[0]
+    assert np.all(ds.dt[:, 0] == 0.0)
+
+
 def _cv(factory, ds, dt):
     folds = walk_forward_folds(ds.X.shape[0], n_folds=3, embargo=2)
     return cross_validate(
@@ -101,4 +113,8 @@ def test_dataset_registry_covers_primary_and_extensions():
     assert set(datasets.PRIMARY_DATASETS) <= set(datasets.DATASETS)
     assert "equities_seq" in datasets.DATASETS
     assert "delay_product" in datasets.DATASETS
+    assert "ar_p" in datasets.DATASETS
+    assert (
+        "ar_p" not in datasets.PRIMARY_DATASETS
+    )  # W-5: linear-floor extension, never scored
     assert sum("noise" in k for k in datasets.DATASETS) == 4
