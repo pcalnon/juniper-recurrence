@@ -99,7 +99,7 @@ jobs:
         # so the two lanes gate the UNION of source files with no file falling
         # through the crack between them.
         run: |
-          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          pip install "juniper-ci-tools>=0.8.0,<0.9.0"
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   build:
@@ -180,7 +180,7 @@ jobs:
         # two lanes cover every packaged source file. This job is a required check,
         # so a regression in _readout_mlp.py blocks the merge.
         run: |
-          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          pip install "juniper-ci-tools>=0.8.0,<0.9.0"
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   required-checks:
