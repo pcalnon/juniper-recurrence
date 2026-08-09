@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.4.0
-**Last Updated**: 2026-06-25
+**Last Updated**: 2026-08-09
 
 ---
 
@@ -44,14 +44,20 @@ juniper-recurrence/
 ├── .gitignore
 ├── .github/
 │   ├── CODEOWNERS
-│   └── workflows/                   # per-package CI + publish, path-scoped
+│   └── workflows/                   # per-package CI + publish (path-scoped) + repo-wide gates and nets
 │       ├── ci-recurrence-app.yml
 │       ├── ci-recurrence-model.yml
 │       ├── ci-recurrence-client.yml
 │       ├── publish-recurrence-app.yml
 │       ├── publish-recurrence-model.yml
 │       ├── publish-recurrence-client.yml
-│       └── pr-base-branch-guard.yml
+│       ├── pr-base-branch-guard.yml
+│       ├── ci-recurrence-bench.yml
+│       ├── ci-pre-commit.yml
+│       ├── ci-docs.yml
+│       ├── security-scan.yml
+│       ├── sequence-safety.yml      # per-PR advisory sequence-safety net (rollout extension, 2026-08-09)
+│       └── main-verify.yml          # post-merge bypass-proof compositional-loss net
 ├── notes/                           # repo-local notes
 ├── scripts/                         # repo-level tooling
 │   └── check_version_drift.py       # CI-06 version-drift lint (run by the version-drift pre-commit hook)
@@ -112,6 +118,15 @@ pip install -e "juniper-recurrence/.[test,bench]" && python -m pytest bench/
 CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 matrix and enforces `--cov-fail-under=90`. The pytest `addopts` carry the ecosystem-standard `-p no:dash -p no:playwright` autoload-SIGSEGV guard.
 
 A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-06) runs as a `version-drift` pre-commit hook (and so via the `CI — pre-commit` gate): each package's `_version.py` must agree with its CHANGELOG top heading and the root AGENTS.md version table, and the root `**Version**` header must match the app. Pure stdlib; the git-tag check degrades gracefully on a shallow checkout.
+
+## Sequence-safety nets (advisory CI)
+
+The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.8.0,<0.9.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`); neither is a required check.
+
+- `.github/workflows/sequence-safety.yml` — per-PR **advisory** screens over base..HEAD: AST symbol-loss + docs deletion-magnitude. Symbol scope: five monorepo trees (`juniper-recurrence/**`, `juniper-recurrence-model/**`, `juniper-recurrence-client/**`, `bench/**`, `scripts/**`; tests/ live inside each tree). Docs screen: the universal default cluster (AGENTS.md, docs/, notes/). `allow-symbol-loss` / `docs-rewrite` labels demote the screen to WARN-only; JSON reports upload as `sequence-safety-report`.
+- `.github/workflows/main-verify.yml` — post-merge, bypass-proof net on `push: main` (per-SHA concurrency, no cancel, so a merge storm never drops a verification): the same two screens over the catch-up BASE..merge (screens-only — no battery; the per-package CI lanes gate pre-merge). On failure it upserts a stable-title tracking issue (one per red streak) and posts a non-blocking Slack summary when a `SLACK_WEBHOOK_URL` secret exists (none is currently provisioned, so that step self-skips).
+
+An intentional symbol removal / docs rewrite is waived with the enumerated `Allow-Symbol-Loss: <qualified.symbol>` / `Allow-Docs-Rewrite: <path>` commit trailers, which travel in git history and clear both nets — carry them into the squash-merge commit message.
 
 ## Status
 
