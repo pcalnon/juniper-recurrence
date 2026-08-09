@@ -98,7 +98,7 @@ jobs:
         # exit 1 if any source file's statement coverage < 90 OR a
         # sub-module's pooled (statement-weighted) coverage < 95.
         run: |
-          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          pip install "juniper-ci-tools>=0.8.0,<0.9.0"
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   build:
