@@ -33,7 +33,7 @@ name: CI — juniper-recurrence-app
 
 on:
   push:
-    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
+    branches: [main, develop]
     paths:
       - "juniper-recurrence/**"
       - ".github/workflows/ci-recurrence-app.yml"
