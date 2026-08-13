@@ -34,3 +34,32 @@ hardening roadmap live in juniper-ml:
   produces a signed commit.
 - If a PR sits at `CLEAN` without merging, **re-arm auto-merge** — a ruleset edit is
   not a PR event, so nothing re-evaluates the queue. Do not admin-merge.
+
+## Package-CI gating (2026-08-12)
+
+This repo publishes **three PyPI packages** behind four path-scoped CI lanes
+(`app` / `model` / `client` / `bench`). None of those lanes was a *required* status
+check, so a PR breaking a published package could go red and still merge.
+
+The lanes could not simply be required, for two reasons:
+
+1. **The gate never reported on most PRs.** Each lane's `on.pull_request` carried a
+   `paths:` filter, so on a PR that did not touch that package the whole workflow —
+   gate included — never ran. A required context that never reports blocks the PR
+   forever (the failure class that made all 9 fleet repos unmergeable on 2026-08-10).
+2. **The context name was ambiguous.** `app`, `client`, and `model` all emitted a job
+   named `Required checks`.
+
+**Fix (app lane first, recurrence#107):** path scoping moved from the *workflow* level
+to the *job* level. `on.pull_request` is unfiltered; a `changes` job diffs
+`origin/<base>...HEAD` and the expensive jobs carry
+`if: needs.changes.outputs.app == 'true'`, so CI cost is unchanged. The gate is renamed
+**`App required checks`**, runs `if: always()`, and treats `skipped` as a pass — which
+is what lets it report on every PR and therefore be required. If the detector itself
+fails, the gate fails: reporting a pass without knowing whether the package was touched
+would reopen the hole.
+
+`on.push` keeps its path filter — a push has no base ref to diff against.
+
+Remaining: replicate to `model` / `client` / `bench` with uniquely-named gates, then add
+all four to the ruleset's required status checks.
