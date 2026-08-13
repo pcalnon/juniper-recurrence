@@ -23,7 +23,7 @@ name: CI — juniper-recurrence-client
 
 on:
   push:
-    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
+    branches: [main, develop]
     paths:
       - "juniper-recurrence-client/**"
       - ".github/workflows/ci-recurrence-client.yml"

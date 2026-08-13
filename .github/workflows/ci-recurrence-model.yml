@@ -22,7 +22,7 @@ name: CI — juniper-recurrence-model
 
 on:
   push:
-    branches: [main, develop, "feature/**", "feat/**", "fix/**", "chore/**"]
+    branches: [main, develop]
     paths:
       - "juniper-recurrence-model/**"
       - ".github/workflows/ci-recurrence-model.yml"
