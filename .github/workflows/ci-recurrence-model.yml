@@ -27,10 +27,13 @@ on:
       - "juniper-recurrence-model/**"
       - ".github/workflows/ci-recurrence-model.yml"
   pull_request:
+    # Deliberately UNFILTERED (2026-08-12). Previously a `paths:` filter here meant the
+    # whole workflow — gate included — never ran on a PR that did not touch this package,
+    # so `Model required checks` could not be a required status check, so a PR breaking
+    # this published package could merge with red CI. Path scoping now lives at the JOB
+    # level via the `changes` job, so CI cost is unchanged but the gate reports on every
+    # PR. `on.push` keeps its filter — a push has no base ref to diff against.
     branches: [main]
-    paths:
-      - "juniper-recurrence-model/**"
-      - ".github/workflows/ci-recurrence-model.yml"
   workflow_dispatch:
 
 concurrency:
@@ -44,9 +47,41 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect model changes
+    runs-on: ubuntu-latest
+    outputs:
+      model: ${{ steps.filter.outputs.model }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect whether this PR touches the model package
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # push / workflow_dispatch keep the historical behaviour: `on.push` already
+          # path-filters, and a push has no base ref to diff against.
+          if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+            changed=true
+          elif git diff --name-only "origin/${BASE_REF}...HEAD" \
+               | grep -qE '^(juniper-recurrence-model/|\.github/workflows/ci-recurrence-model\.yml$)'; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "model=${changed}" >> "$GITHUB_OUTPUT"
+          echo "model package changed: ${changed}"
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.model == 'true'
     defaults:
       run:
         working-directory: juniper-recurrence-model
@@ -66,6 +101,8 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.model == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -139,6 +176,8 @@ jobs:
   test-torch:
     name: Test — torch MLP readout (Rung 2b; optional [torch] extra)
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.model == 'true'
     # Optional / non-gating (deliberately NOT in required-checks): the torch wheel adds ~1-3 GB, so it
     # is kept off the 3.12/3.13/3.14 base matrix and out of the required gate. It exercises the
     # importorskip-gated Rung 2b tests, which skip in the base no-torch job. Promote into
@@ -184,20 +223,42 @@ jobs:
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   required-checks:
-    name: Required checks
+    # Renamed from the bare "Required checks" (2026-08-12): ci-recurrence-app.yml and
+    # ci-recurrence-client.yml BOTH emitted that same context name, so requiring it would
+    # have been ambiguous about which workflow satisfied it. Each package lane now emits a
+    # uniquely-named gate.
+    name: Model required checks
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint, test, build]
+    needs: [changes, lint, test, build]
     steps:
       - name: Verify required jobs succeeded
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
         run: |
-          echo "Lint:  ${{ needs.lint.result }}"
-          echo "Test:  ${{ needs.test.result }}"
-          echo "Build: ${{ needs.build.result }}"
-          if [[ "${{ needs.lint.result }}" != "success" \
-             || "${{ needs.test.result }}" != "success" \
-             || "${{ needs.build.result }}" != "success" ]]; then
-            echo "::error::one or more required jobs did not succeed"
+          set -euo pipefail
+          echo "Changes: ${CHANGES}"
+          echo "Lint:    ${LINT}"
+          echo "Test:    ${TEST}"
+          echo "Build:   ${BUILD}"
+
+          # The detector must succeed. If it did not, we do NOT know whether the package
+          # was touched, so reporting success would be exactly the hole this gate closes.
+          if [[ "${CHANGES}" != "success" ]]; then
+            echo "::error::change detection did not succeed — refusing to report a pass"
             exit 1
           fi
+
+          # 'skipped' is a PASS here: this PR did not touch the model package, so the
+          # package jobs correctly did not run. That is what lets this gate report on
+          # EVERY PR and therefore be usable as a required status check.
+          for result in "${LINT}" "${TEST}" "${BUILD}"; do
+            if [[ "${result}" != "success" && "${result}" != "skipped" ]]; then
+              echo "::error::one or more required jobs did not succeed"
+              exit 1
+            fi
+          done
           echo "All required checks passed."

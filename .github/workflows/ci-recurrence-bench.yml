@@ -35,10 +35,12 @@ on:
       - "bench/**"
       - ".github/workflows/ci-recurrence-bench.yml"
   pull_request:
+    # Deliberately UNFILTERED (2026-08-12). Previously a `paths:` filter here meant the
+    # whole workflow — gate included — never ran on a PR that did not touch bench, so
+    # `Bench required checks` could not be a required status check. Path scoping now lives
+    # at the JOB level via the `changes` job, so CI cost is unchanged but the gate reports
+    # on every PR. `on.push` keeps its filter — a push has no base ref to diff against.
     branches: [main]
-    paths:
-      - "bench/**"
-      - ".github/workflows/ci-recurrence-bench.yml"
   workflow_dispatch:
 
 concurrency:
@@ -52,9 +54,41 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect bench changes
+    runs-on: ubuntu-latest
+    outputs:
+      bench: ${{ steps.filter.outputs.bench }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect whether this PR touches bench
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # push / workflow_dispatch keep the historical behaviour: `on.push` already
+          # path-filters, and a push has no base ref to diff against.
+          if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+            changed=true
+          elif git diff --name-only "origin/${BASE_REF}...HEAD" \
+               | grep -qE '^(bench/|\.github/workflows/ci-recurrence-bench\.yml$)'; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "bench=${changed}" >> "$GITHUB_OUTPUT"
+          echo "bench changed: ${changed}"
+
   test:
     name: Bench smoke (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.bench == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -93,13 +127,29 @@ jobs:
     name: Bench required checks
     runs-on: ubuntu-latest
     if: always()
-    needs: [test]
+    needs: [changes, test]
     steps:
       - name: Verify the bench smoke matrix succeeded
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TEST: ${{ needs.test.result }}
         run: |
-          echo "Bench smoke: ${{ needs.test.result }}"
-          if [[ "${{ needs.test.result }}" != "success" ]]; then
-            echo "The bench smoke suite did not succeed."
+          set -euo pipefail
+          echo "Changes:     ${CHANGES}"
+          echo "Bench smoke: ${TEST}"
+
+          # The detector must succeed. If it did not, we do NOT know whether bench was
+          # touched, so reporting success would be exactly the hole this gate closes.
+          if [[ "${CHANGES}" != "success" ]]; then
+            echo "::error::change detection did not succeed — refusing to report a pass"
+            exit 1
+          fi
+
+          # 'skipped' is a PASS here: this PR did not touch bench, so the smoke matrix
+          # correctly did not run. That is what lets this gate report on EVERY PR and
+          # therefore be usable as a required status check.
+          if [[ "${TEST}" != "success" && "${TEST}" != "skipped" ]]; then
+            echo "::error::the bench smoke suite did not succeed"
             exit 1
           fi
           echo "All bench required checks passed."
