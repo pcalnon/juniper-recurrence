@@ -63,3 +63,39 @@ would reopen the hole.
 
 Remaining: replicate to `model` / `client` / `bench` with uniquely-named gates, then add
 all four to the ruleset's required status checks.
+
+## Fleet parity reached (2026-08-13/14)
+
+Replication and ruleset work are complete. This repo now matches the fleet's 8-rule set:
+
+`code_quality`, `code_scanning`, `creation`, `deletion`, `non_fast_forward`,
+`pull_request`, `required_signatures`, `required_status_checks`
+
+**Required status checks (8):**
+
+```
+Analyze (python)
+App required checks
+Bench required checks
+Client required checks
+Documentation links
+Guard PR base branch
+Model required checks
+Pre-commit (all-files)
+```
+
+**`code_scanning` is scoped to `CodeQL` ONLY.** Do not add tools to that list unless they
+actually upload SARIF for this repo. A configured tool that never uploads is unsatisfiable
+and blocks every PR permanently — that is exactly how the 2026-08-10 fleet-union list (7
+tools) broke all nine repos. juniper-recurrence uploads CodeQL and nothing else.
+
+**CodeQL** (`.github/workflows/codeql.yml`, recurrence#111) is deliberately **not**
+path-filtered: the `code_scanning` rule requires analysis results *for the pull request*, so
+it must report on every PR including docs-only ones. `code_scanning` and `code_quality` had
+been removed on 2026-08-12 precisely because no analyses existed and both were unsatisfiable.
+
+**Duplicate CI runs** were eliminated fleet-wide on 2026-08-13: all four package lanes
+push-trigger on `[main, develop]` only. Topic-branch globs plus `pull_request` meant both
+events fired for the same commit and every job ran twice; the concurrency group is keyed on
+`github.ref`, which differs between a branch push and a PR, so `cancel-in-progress` never
+collapsed the pair.
