@@ -1,0 +1,88 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (monorepo: app / model / client / bench)
+# File Name:     codeql.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-08-13
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    GitHub CodeQL semantic security analysis for juniper-recurrence.
+#
+#    Added by the Tier 2 CI-hardening pass (juniper-ml
+#    notes/JUNIPER_2026-08-10_JUNIPER-ECOSYSTEM_REQUIRED-STATUS-CHECK-CONTEXT-LISTS.md).
+#    This repo publishes THREE PyPI packages and carries ~76 Python files across
+#    app / model / client / bench, yet had no static analysis whatsoever -- the last
+#    repo of the nine in that position. `security-scan.yml` runs pip-audit but is
+#    schedule + dispatch only, so nothing security-related ran on a PR at all.
+#
+#    NOT PATH-FILTERED, DELIBERATELY. The point of this workflow is to make the
+#    `code_scanning` ruleset rule satisfiable again: that rule requires code-scanning
+#    RESULTS for the pull request, so CodeQL must report on EVERY PR. A `paths:` filter
+#    would leave docs-only PRs with no analysis, and the rule would then block them
+#    forever -- the exact failure class that made all nine repos unmergeable on
+#    2026-08-10. Analysis is repo-wide, so all four packages are covered by one run.
+#
+#    `on.push` is [main, develop] only -- topic-branch globs would double every run
+#    once a PR is open (fleet-wide fix, 2026-08-13).
+#
+#    Mirrors juniper-deploy's codeql.yml so the emitted context name (`Analyze (python)`)
+#    matches the rest of the fleet.
+#
+# References:
+#    - https://codeql.github.com/docs/codeql-language-guides/codeql-for-python/
+#####################################################################################################################################################################################################
+
+name: CodeQL Analysis
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['python']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3  # v4.37.6
+        with:
+          languages: ${{ matrix.language }}
+          queries: +security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@5595ccaf912efad79be6eef63a5619ff05969be3  # v4.37.6
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3  # v4.37.6
+        with:
+          category: "/language:${{ matrix.language }}"
