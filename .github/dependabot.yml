@@ -101,3 +101,10 @@ updates:
       - "ci"
     commit-message:
       prefix: "ci"
+    groups:
+      # Keep the CodeQL sub-actions (init / autobuild / analyze) in ONE PR.
+      # Bumped individually they land at mismatched versions and the Analyze
+      # job fails, so each split PR is permanently unmergeable.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
