@@ -57,7 +57,7 @@
 #    - juniper-ml notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md (Wave 2)
 #####################################################################################################################################################################################################
 
-name: Sequence Safety (Advisory)
+name: Sequence Safety
 
 on:
   pull_request:
@@ -82,7 +82,7 @@ jobs:
   # base..HEAD. Standalone + advisory -- never a required context, never wired into a required gate.
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   sequence-safety:
-    name: Sequence Safety (Advisory)
+    name: Sequence Safety
     runs-on: ubuntu-latest
     permissions:
       contents: read
