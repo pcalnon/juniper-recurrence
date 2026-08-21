@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.4.0
-**Last Updated**: 2026-08-09
+**Last Updated**: 2026-08-21
 
 ---
 
@@ -119,14 +119,49 @@ CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 ma
 
 A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-06) runs as a `version-drift` pre-commit hook (and so via the `CI — pre-commit` gate): each package's `_version.py` must agree with its CHANGELOG top heading and the root AGENTS.md version table, and the root `**Version**` header must match the app. Pure stdlib; the git-tag check degrades gracefully on a shallow checkout.
 
-## Sequence-safety nets (advisory CI)
-
+## Sequence-safety nets (required CI)
 The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.8.0,<0.9.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`); neither is a required check.
 
 - `.github/workflows/sequence-safety.yml` — per-PR **advisory** screens over base..HEAD: AST symbol-loss + docs deletion-magnitude. Symbol scope: five monorepo trees (`juniper-recurrence/**`, `juniper-recurrence-model/**`, `juniper-recurrence-client/**`, `bench/**`, `scripts/**`; tests/ live inside each tree). Docs screen: the universal default cluster (AGENTS.md, docs/, notes/). `allow-symbol-loss` / `docs-rewrite` labels demote the screen to WARN-only; JSON reports upload as `sequence-safety-report`.
 - `.github/workflows/main-verify.yml` — post-merge, bypass-proof net on `push: main` (per-SHA concurrency, no cancel, so a merge storm never drops a verification): the same two screens over the catch-up BASE..merge (screens-only — no battery; the per-package CI lanes gate pre-merge). On failure it upserts a stable-title tracking issue (one per red streak) and posts a non-blocking Slack summary when a `SLACK_WEBHOOK_URL` secret exists (none is currently provisioned, so that step self-skips).
 
 An intentional symbol removal / docs rewrite is waived with the enumerated `Allow-Symbol-Loss: <qualified.symbol>` / `Allow-Docs-Rewrite: <path>` commit trailers, which travel in git history and clear both nets — carry them into the squash-merge commit message.
+
+### PR base-branch guard (required check)
+
+`.github/workflows/pr-base-branch-guard.yml` fails any PR whose base branch is not the
+default branch. Its job name -- **`Guard PR base branch`** -- is a **required status check**
+in this repo's ruleset, so renaming the job or deleting the file makes `main` unmergeable
+until the context is un-required first.
+
+**What it protects against.** A PR based on another feature branch can squash-merge into
+that branch, stranding its content off `main` behind a green **MERGED** badge. It has
+happened three times in this ecosystem (`juniper-recurrence#7`/`#8`, `juniper-canopy#365`).
+
+**Why it matters more than it looks.** Both rulesets here are scoped to `~DEFAULT_BRANCH`, so
+a PR whose base is a feature branch is governed by **no ruleset at all** -- it has zero
+required status checks and merges clean with nothing having run:
+
+```bash
+gh api repos/pcalnon/<repo>/rules/branches/feature%2Fanything --jq length   # -> 0
+gh api repos/pcalnon/<repo>/rules/branches/main               --jq length   # -> 9
+```
+
+This workflow carries no `branches:` filter, so it is the **only** check that runs on such a
+PR. It cannot block the merge there -- no ruleset applies -- but it turns a silent merge into
+a visibly red one.
+
+**If it fails.** Re-open the work against the default branch. The house practice is
+**close and re-open** a fresh PR titled `[retarget #NNN]`. Retargeting in place is *not*
+sufficient on its own: every `ci*.yml` here uses the default `pull_request` types
+`[opened, synchronize, reopened]`, which exclude `edited`, so a retarget re-runs this guard
+and nothing else -- the PR stays blocked on its other required contexts until a push or a
+close/re-open.
+
+**`stacked-pr` label.** Silences this guard for a deliberate stack. It does **not** make the
+PR mergeable into `main`, and it does **not** re-land the stack -- do that separately.
+
+Rollout and rationale: [juniper-ml#434](https://github.com/pcalnon/juniper-ml/issues/434).
 
 ## Status
 
