@@ -29,19 +29,33 @@
 #    The default branch is read dynamically from the event payload, so this workflow
 #    is portable to any repository without edits.
 #
-#    WHAT THIS GUARD IS AND IS NOT (measured 2026-08-20, adversarial audit
-#    notes/JUNIPER_2026-08-20_JUNIPER-ECOSYSTEM_PR-BASE-BRANCH-GUARD-AUDIT.md):
+#    WHY THIS GUARD IS THE ONLY THING WATCHING (measured 2026-08-20):
 #
-#    It is a LEGIBILITY guard, not the thing that stops the merge. On every Juniper
-#    repo `ci.yml` is scoped `pull_request: branches: [main, develop]`, so a PR whose
-#    base is a feature branch triggers NONE of that repo's 10-22 required contexts --
-#    they sit at "expected" and the PR is already unmergeable. What this workflow adds
-#    is a NAMED, ACTIONABLE failure in place of a silent stall with nothing red.
+#    Both rulesets on every Juniper repo are scoped to ``~DEFAULT_BRANCH``. A pull
+#    request whose base is a FEATURE branch is therefore governed by **no ruleset at
+#    all** -- verified live:
 #
-#    That is also why the ``stacked-pr`` label cannot make a stacked PR mergeable:
-#    the label satisfies this guard, but the other required contexts still never
-#    report. The label means "this stack is deliberate, stop flagging it" -- it does
-#    NOT mean "this PR may merge here". Re-land the stack on the default branch.
+#        gh api repos/pcalnon/juniper-ml/rules/branches/feature%2Fanything  ->  0 rules
+#        gh api repos/pcalnon/juniper-ml/rules/branches/main               ->  9 rules
+#
+#    So a stacked PR has ZERO required status checks and merges clean, with a green
+#    MERGED badge and nothing having run. That is exactly how juniper-recurrence #7
+#    and #8 and juniper-canopy #365 stranded their content.
+#
+#    This workflow has no ``branches:`` filter, so it is the ONE check that runs on
+#    such a PR. It cannot BLOCK the merge -- no ruleset applies to that base, so its
+#    failure is advisory there whatever the ruleset says -- but it turns a completely
+#    silent merge into a visibly red one with a named reason.
+#
+#    An earlier draft of this header claimed a stacked PR "is already unmergeable
+#    because the other required contexts never report". That was WRONG: required
+#    contexts do not merely fail to report on such a PR, they do not APPLY to it.
+#    The distinction matters -- it is the difference between this guard being
+#    cosmetic and being the only protection there is.
+#
+#    Requiring this context in the ruleset does a DIFFERENT job: on a PR targeting
+#    the default branch it guarantees the guard actually ran, so a deleted or broken
+#    workflow cannot silently stop protecting.
 #
 #    Roadmap reference: juniper-ml
 #    notes/JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md (guardrail G-1).
@@ -108,17 +122,18 @@ jobs:
           fi
 
           if [ "${HAS_BYPASS}" = "true" ]; then
-            echo "::warning title=Base-branch guard::PR base is '${BASE_REF}', not '${DEFAULT_BRANCH}'. Allowed via the 'stacked-pr' label. NOTE: the label silences THIS guard only -- ci.yml is scoped to the default branch, so this PR's other required contexts will never report and it still cannot merge here. Re-land the stack on ${DEFAULT_BRANCH}."
+            echo "::warning title=Base-branch guard::PR base is '${BASE_REF}', not '${DEFAULT_BRANCH}'. Allowed via the 'stacked-pr' label. NOTE: no ruleset applies to '${BASE_REF}', so this PR can merge with NO required checks at all. Re-land the stack on ${DEFAULT_BRANCH} afterwards or its content never reaches ${DEFAULT_BRANCH}."
             exit 0
           fi
 
           echo "::error title=Base-branch guard::PR base is '${BASE_REF}', not the default branch '${DEFAULT_BRANCH}'."
           echo "Merging a PR whose base is a feature branch strands its content off ${DEFAULT_BRANCH} (the 'squash-merge ships first commit only' trap)."
           echo ""
-          echo "This PR cannot merge as-is regardless of this guard: ci.yml is scoped to"
-          echo "'${DEFAULT_BRANCH}', so none of this repo's other required checks will ever"
-          echo "report on a PR based on '${BASE_REF}'. This message exists so that shows up as"
-          echo "a named failure instead of a silent stall."
+          echo "READ THIS BEFORE MERGING ANYWAY. The rulesets here are scoped to"
+          echo "'${DEFAULT_BRANCH}', so a PR based on '${BASE_REF}' is governed by NO ruleset:"
+          echo "it has zero required status checks and CAN be merged, green badge and all,"
+          echo "with nothing having run. This check is the only thing watching. That is how"
+          echo "juniper-recurrence #7/#8 and juniper-canopy #365 stranded their content."
           echo ""
           echo "Fix: re-open this work against '${DEFAULT_BRANCH}'."
           echo "  The house practice is CLOSE AND RE-OPEN a fresh PR titled '[retarget #<this PR>]'"
