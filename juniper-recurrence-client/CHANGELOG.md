@@ -8,6 +8,35 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exceptions now carry `status_code`, `detail` and `response`** (defect-register
+  `APD-RCLIENT-001`). Every exception subclassed `Exception` with nothing on it, so a 400 and a
+  422 raised the same type with the same text and the only way to tell them apart was
+  substring-matching the message. The base `JuniperRecurrenceClientError.__init__` now accepts
+  keyword-only `status_code` / `detail` / `response`, and every mapped branch (404, 409,
+  400/422, and the generic fallback) passes them. **Backward compatible**: the new parameters
+  are keyword-only, so existing single-positional-message call sites are unchanged, and locally
+  raised errors (configuration, connection, timeout) simply report `status_code=None`.
+- **A FastAPI 422 `detail` list is no longer f-string-interpolated into an unparseable repr.**
+  FastAPI answers a validation failure with a *list* of error objects; that list went straight
+  into the message, producing `Validation error: [{'type': 'missing', ...}]`. The structure is
+  now attached to `exc.detail` **unmodified** while the message renders it as
+  `body.seed: Field required` via a new `_render_error_detail` helper. This is the same defect
+  juniper-data-client tracks as `APD-DCLIENT-003`; it had never been recorded against this
+  client.
+- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` rebuilds from
+  `args`, which holds only the message, so a round-trip would have returned an exception that
+  looked correct and had silently dropped the new fields — the failure mode `B042` warns about.
+  A `__reduce__` override restores the full state.
+
+  Port of the convention established in
+  [juniper-data-client#158](https://github.com/pcalnon/juniper-data-client/pull/158) and
+  [juniper-cascor-client#123](https://github.com/pcalnon/juniper-cascor-client/pull/123). The
+  three Juniper clients are separately released packages with no shared code, so nothing
+  mechanical keeps them aligned; the alignment is a convention carried by each package's tests
+  and AGENTS.md.
+
 ### Changed
 
 - **Per-file coverage lifted to the ratified bars + a blocking gate wired into CI (per-file

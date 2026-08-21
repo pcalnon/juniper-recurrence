@@ -100,6 +100,45 @@ def _noop_request_hook(
     """Default :data:`RequestHook` — does nothing (named so the default is a real callable)."""
 
 
+def _render_error_detail(detail: Any) -> str:
+    """Render a server ``detail`` payload as readable text for an error message.
+
+    FastAPI answers a validation failure with a *list* of error objects, e.g.::
+
+        [{"type": "missing", "loc": ["body", "seed"], "msg": "Field required"}]
+
+    Interpolating that list into an f-string produced a Python repr -- valid
+    text, but nothing a caller could parse and nothing a human could read at a
+    glance. This renders the same content as ``body.seed: Field required``,
+    while the untouched structure stays available on ``exc.detail``.
+
+    Anything that is not a list of mappings is returned via ``str`` unchanged,
+    so plain-string details and unexpected shapes both survive intact.
+
+    Ported from ``juniper-data-client`` (juniper-data-client#158); see the note
+    in :mod:`juniper_recurrence_client.exceptions` on why three separately
+    released clients keep this aligned by convention rather than by tooling.
+    """
+    if not isinstance(detail, list):
+        return str(detail)
+
+    rendered: list[str] = []
+    for item in detail:
+        if not isinstance(item, dict):
+            rendered.append(str(item))
+            continue
+        msg = item.get("msg", "")
+        loc = item.get("loc")
+        if isinstance(loc, (list, tuple)) and loc:
+            location = ".".join(str(part) for part in loc)
+            rendered.append(f"{location}: {msg}" if msg else location)
+        else:
+            rendered.append(str(msg) if msg else str(item))
+    # An empty list is a degenerate but legal payload; ``str`` keeps it visible
+    # rather than collapsing it to an empty message.
+    return "; ".join(rendered) if rendered else str(detail)
+
+
 def _dataset_ref(
     *,
     dataset_id: Optional[str],
@@ -257,17 +296,53 @@ class JuniperRecurrenceClient:
             except (ValueError, KeyError):
                 error_detail = response.text
 
+            # APD-RCLIENT-001: ``error_detail`` is whatever the server sent -- a
+            # str for most handlers, but a list[dict] for FastAPI's 422. It is
+            # attached to the exception UNMODIFIED and rendered separately for
+            # the human-readable message; interpolating the list directly
+            # produced a Python repr no caller could parse, and which lost
+            # nothing only because there was nowhere else for the structure to
+            # go. Now there is: ``exc.detail``.
+            rendered_detail = _render_error_detail(error_detail)
+
+            # The context is passed explicitly at each site rather than unpacked
+            # from a shared ``**kwargs`` dict: mypy infers such a dict as
+            # ``dict[str, object]`` and cannot match it against the typed
+            # keyword-only parameters, so the dict form silently gives up the
+            # type checking on exactly the arguments being added here.
             if response.status_code == HTTP_404_NOT_FOUND:
-                outgoing_error = JuniperRecurrenceNotFoundError(f"Resource not found: {error_detail}")
+                outgoing_error = JuniperRecurrenceNotFoundError(
+                    f"Resource not found: {rendered_detail}",
+                    status_code=response.status_code,
+                    detail=error_detail,
+                    response=response,
+                )
                 raise outgoing_error
             elif response.status_code == HTTP_409_CONFLICT:
-                outgoing_error = JuniperRecurrenceConflictError(f"Conflict: {error_detail}")
+                outgoing_error = JuniperRecurrenceConflictError(
+                    f"Conflict: {rendered_detail}",
+                    status_code=response.status_code,
+                    detail=error_detail,
+                    response=response,
+                )
                 raise outgoing_error
             elif response.status_code in (HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_ENTITY):
-                outgoing_error = JuniperRecurrenceValidationError(f"Validation error: {error_detail}")
+                # The status code is what separates these two; it rides on the
+                # exception now, so a caller no longer has to substring-match.
+                outgoing_error = JuniperRecurrenceValidationError(
+                    f"Validation error ({response.status_code}): {rendered_detail}",
+                    status_code=response.status_code,
+                    detail=error_detail,
+                    response=response,
+                )
                 raise outgoing_error
             else:
-                outgoing_error = JuniperRecurrenceClientError(f"Request failed ({response.status_code}): {error_detail}")
+                outgoing_error = JuniperRecurrenceClientError(
+                    f"Request failed ({response.status_code}): {rendered_detail}",
+                    status_code=response.status_code,
+                    detail=error_detail,
+                    response=response,
+                )
                 raise outgoing_error
         finally:
             duration_ms = (time.monotonic() - start) * 1000.0
