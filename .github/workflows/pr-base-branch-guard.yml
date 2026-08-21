@@ -61,6 +61,29 @@
 #    notes/JUNIPER_RECURRENCE_STATE_ASSESSMENT_AND_ROADMAP_2026-06-17.md (guardrail G-1).
 #    Sweep + rollout: juniper-ml#434.
 #
+#    NO ``concurrency:`` GROUP -- DELIBERATE, not an oversight (audit F-5).
+#
+#    Six trigger types means a busy PR accumulates several check runs of this name, all
+#    attached to the head. That looks untidy and an audit flagged it. It is left alone,
+#    for three reasons:
+#
+#      1. Duplicates are BENIGN. GitHub counts the NEWEST run of a given name -- measured
+#         on juniper-recurrence#120, where a stale `failure` and a newer `success` sat on
+#         the same head SHA and `gh pr checks` reported the context as **pass**.
+#      2. The obvious fix is WORSE. `cancel-in-progress: true` produces `cancelled`
+#         conclusions, and `cancelled` is a NON-SUCCESS conclusion on a required context.
+#         That trades a cosmetic problem for a merge-blocking one. Whether a superseded
+#         `cancelled` run is ignored the way a superseded `failure` is has NOT been
+#         measured -- and a required-context gate is the wrong place to find out.
+#      3. Concurrency WITHOUT cancellation does not solve it. It serialises runs; it does
+#         not reduce their number. The duplicate check runs still appear.
+#
+#    The real fix was in the CONSUMER, and it shipped: `util/wait_for_checks.py` used to
+#    keep the FIRST run per context name and so reported FAILURE for a context GitHub
+#    considered passing. It now selects by timestamp.
+#
+#    Revisit only with a measurement showing a superseded `cancelled` run does not gate.
+#
 #    NOTE: GitHub evaluates ``pull_request`` workflows from the PR's MERGE REF
 #    (refs/pull/N/merge), not from the base branch -- verified live: this guard ran on
 #    its own introducing PR (juniper-recurrence#10) while the file was still absent
@@ -82,7 +105,22 @@ on:
     # the label after the guard has already failed produces no new run, so the failed
     # check stands and the PR stays blocked by its own documented remedy. Found by
     # adversarial audit 2026-08-20 (F-01).
+    #
+    # All six types are load-bearing; none is here for symmetry:
+    #   opened/reopened  -- reopened is the documented remedy for a stacked PR
+    #   synchronize      -- new commits
+    #   edited           -- fires on a BASE CHANGE (verified live, recurrence#120)
+    #   labeled/unlabeled-- the escape hatch, in both directions
     types: [opened, reopened, edited, synchronize, labeled, unlabeled]
+  # merge_group is declared so this context still reports on the queued merge commit if a
+  # merge queue is ever enabled. `ci.yml` carries the same trigger for the same reason: a
+  # required context that never posts in the queue stalls it forever.
+  #
+  # NOTE the early-exit in the step body -- it is not optional. A merge_group payload has
+  # NO `pull_request` and NO `base_ref`, so without it this job would evaluate BASE_REF=""
+  # against DEFAULT_BRANCH="main", fall past the label arm, and `exit 1` on EVERY queued
+  # merge. Declaring the trigger without handling the event is worse than omitting both.
+  merge_group:
 
 permissions:
   contents: read
@@ -98,13 +136,25 @@ jobs:
     steps:
       - name: Require PR base to be the default branch
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           HAS_BYPASS: ${{ contains(github.event.pull_request.labels.*.name, 'stacked-pr') }}
         run: |
+          echo "Event          : ${EVENT_NAME}"
           echo "PR base branch : ${BASE_REF}"
           echo "Default branch : ${DEFAULT_BRANCH}"
           echo "Bypass label   : ${HAS_BYPASS}"
+
+          # A queued merge has already been accepted into the queue for a specific target
+          # branch; there is no PR base to police, and the payload carries neither
+          # `pull_request` nor `base_ref`. Report success so the required context posts and
+          # the queue can proceed. WITHOUT this, every queued merge would reach the failure
+          # arm below with an empty BASE_REF and hard-fail.
+          if [ "${EVENT_NAME}" = "merge_group" ]; then
+            echo "::notice title=Base-branch guard::merge_group event — the queued merge targets its branch by construction; nothing to guard."
+            exit 0
+          fi
 
           # Fail OPEN on a missing default branch, never closed. An empty expansion
           # used to fall through to the failure arm, which would fail every PR on the
