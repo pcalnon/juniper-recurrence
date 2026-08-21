@@ -4,11 +4,74 @@ Mirrors juniper-data-client's flat hierarchy (one base + typed leaves), adding a
 ``JuniperRecurrenceConflictError`` for the recurrence app's ``409`` responses (a training /
 cross-validation run already in progress, or an operation that needs a trained model that does
 not yet exist) — a status the data-client surface never returns.
+
+That mirroring is the whole contract. The three Juniper clients are separately
+released packages with no shared code, so nothing mechanical keeps them
+aligned: no drift check can span them, and the alignment is a convention
+carried by each package's tests and AGENTS.md. juniper-data-client#158 is the
+reference implementation.
 """
+
+from __future__ import annotations
+
+from typing import Any
 
 
 class JuniperRecurrenceClientError(Exception):
-    """Base exception for all juniper-recurrence client errors."""
+    """Base exception for all juniper-recurrence client errors.
+
+    Carries the machine-readable context a caller needs to *act* on the error
+    rather than re-parse its message (defect-register ``APD-RCLIENT-001``).
+    Without ``status_code`` a 400 and a 422 raise the same type with the same
+    text, so the only way to tell "you sent bad input" from "the service could
+    not process it" was substring-matching the message.
+
+    Every attribute is optional and keyword-only: locally raised errors
+    (configuration, connection, timeout) have no HTTP response behind them, and
+    existing call sites that pass only a message keep working unchanged.
+
+    Attributes:
+        message: The human-readable summary, also passed to ``Exception``.
+        status_code: HTTP status of the originating response, when there was
+            one. ``None`` for errors raised before or without a response.
+        detail: The server's ``detail`` payload **exactly as decoded** -- a
+            ``str`` for most handlers, and a ``list[dict]`` for FastAPI's 422
+            validation errors. Deliberately not stringified: the structure is
+            the point, and rendering it into the message is lossy.
+        response: The originating ``requests.Response``, when available, for
+            callers that need headers or the raw body.
+    """
+
+    def __init__(  # noqa: B042 — see __reduce__ below
+        self,
+        message: str = "",
+        *,
+        status_code: int | None = None,
+        detail: Any = None,
+        response: Any = None,
+    ) -> None:
+        # B042 asks that an exception's ``__init__`` forward every argument to
+        # ``super().__init__()`` and take no kwargs, so pickle and copy
+        # round-trip. That concern is real and is honoured by ``__reduce__``
+        # below; the remedy it suggests is not available here, because "take no
+        # kwargs" is precisely the defect this class is closing. Forwarding the
+        # extras to ``super()`` instead would put them in ``args`` and make
+        # ``str(exc)`` a tuple repr, breaking every existing error message.
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.detail = detail
+        self.response = response
+
+    def __reduce__(self) -> tuple[type[JuniperRecurrenceClientError], tuple[str], dict[str, Any]]:
+        """Keep the added context across ``pickle`` and ``copy``.
+
+        ``BaseException.__reduce__`` returns ``(cls, self.args)``, and ``args``
+        holds only the message -- so a round-trip would rebuild the exception
+        with ``status_code=None``. It would still *look* correct, having
+        silently dropped exactly the fields this class exists to carry.
+        """
+        return (self.__class__, (self.message,), self.__dict__.copy())
 
 
 class JuniperRecurrenceConnectionError(JuniperRecurrenceClientError):

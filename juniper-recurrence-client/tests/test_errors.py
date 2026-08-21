@@ -80,3 +80,150 @@ def test_error_body_not_json_falls_back_to_raw_text() -> None:
     responses.add(responses.GET, f"{BASE_URL}/v1/dataset", body="upstream said no", status=501, content_type="text/plain")
     with pytest.raises(JuniperRecurrenceClientError, match="upstream said no"):
         _client().get_dataset()
+
+
+# ---------------------------------------------------------------------------
+# APD-RCLIENT-001: exceptions must carry machine-readable context.
+#
+# Every exception subclassed ``Exception`` with nothing on it, so a 400 and a
+# 422 raised the same type with the same text and the only way to tell them
+# apart was substring-matching the message. Ported from juniper-data-client#158;
+# the three clients are separately released packages with no shared code, so
+# nothing mechanical keeps them aligned -- these tests are the alignment.
+# ---------------------------------------------------------------------------
+
+#: A real FastAPI 422 body: ``detail`` is a list of error objects, not a string.
+FASTAPI_422_DETAIL = [
+    {"type": "missing", "loc": ["body", "seed"], "msg": "Field required"},
+    {"type": "int_parsing", "loc": ["body", "n_folds"], "msg": "Input should be a valid integer"},
+]
+
+
+@responses.activate
+def test_status_code_separates_400_from_422() -> None:
+    """The core of APD-RCLIENT-001: these two were byte-identical."""
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"detail": "bad"}, status=400)
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"detail": "bad"}, status=422)
+
+    client = _client()
+    with pytest.raises(JuniperRecurrenceValidationError) as first:
+        client.crossval(name="equities", n_folds=1)
+    with pytest.raises(JuniperRecurrenceValidationError) as second:
+        client.crossval(name="equities", n_folds=1)
+
+    assert {first.value.status_code, second.value.status_code} == {400, 422}
+
+
+@responses.activate
+def test_every_mapped_branch_carries_its_status() -> None:
+    """404, 409 and the generic ``else`` arm populate the context too."""
+    responses.add(responses.GET, f"{BASE_URL}/v1/model", json={"detail": "no model"}, status=404)
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"detail": "already running"}, status=409)
+    responses.add(responses.GET, f"{BASE_URL}/v1/dataset", json={"detail": "teapot"}, status=418)
+
+    client = _client()
+
+    with pytest.raises(JuniperRecurrenceNotFoundError) as not_found:
+        client.get_model()
+    assert not_found.value.status_code == 404
+    assert not_found.value.detail == "no model"
+
+    with pytest.raises(JuniperRecurrenceConflictError) as conflict:
+        client.train(name="equities")
+    assert conflict.value.status_code == 409
+
+    with pytest.raises(JuniperRecurrenceClientError) as generic:
+        client.get_dataset()
+    assert generic.value.status_code == 418
+
+
+@responses.activate
+def test_422_detail_list_is_preserved_as_structure() -> None:
+    """The caller gets the list itself, not a rendering of it."""
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"detail": FASTAPI_422_DETAIL}, status=422)
+
+    with pytest.raises(JuniperRecurrenceValidationError) as excinfo:
+        _client().crossval(name="equities", n_folds=1)
+
+    assert excinfo.value.detail == FASTAPI_422_DETAIL
+    assert excinfo.value.detail[0]["loc"] == ["body", "seed"]
+
+
+@responses.activate
+def test_422_message_is_readable_not_a_python_repr() -> None:
+    """Previously the list was f-string-interpolated, so the message was a repr.
+
+    This is the same defect juniper-data-client tracks as APD-DCLIENT-003; it
+    was never recorded against this client.
+    """
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"detail": FASTAPI_422_DETAIL}, status=422)
+
+    with pytest.raises(JuniperRecurrenceValidationError) as excinfo:
+        _client().crossval(name="equities", n_folds=1)
+
+    message = str(excinfo.value)
+    assert "body.seed: Field required" in message
+    assert "body.n_folds: Input should be a valid integer" in message
+    # Fingerprints of the old repr-of-a-list behaviour.
+    assert "'type':" not in message
+    assert "[{" not in message
+
+
+@responses.activate
+def test_response_is_attached_for_header_access() -> None:
+    """``response`` reaches headers the message cannot carry."""
+    responses.add(
+        responses.GET,
+        f"{BASE_URL}/v1/model",
+        json={"detail": "no model"},
+        status=404,
+        headers={"X-Request-ID": "abc123"},
+    )
+
+    with pytest.raises(JuniperRecurrenceNotFoundError) as excinfo:
+        _client().get_model()
+
+    assert excinfo.value.response is not None
+    assert excinfo.value.response.headers["X-Request-ID"] == "abc123"
+
+
+def test_locally_raised_errors_have_no_status_code() -> None:
+    """Backward compatibility: no HTTP response means the fields stay None."""
+    error = JuniperRecurrenceClientError("something local went wrong")
+
+    assert error.status_code is None
+    assert error.detail is None
+    assert error.response is None
+    assert str(error) == "something local went wrong"
+
+
+def test_positional_message_construction_still_works() -> None:
+    """The added parameters are keyword-only, so existing call sites are safe."""
+    for factory in (JuniperRecurrenceClientError, JuniperRecurrenceNotFoundError, JuniperRecurrenceValidationError):
+        error = factory("plain message")
+        assert str(error) == "plain message"
+        assert error.status_code is None
+
+
+def test_context_survives_pickle_and_copy() -> None:
+    """``BaseException.__reduce__`` rebuilds from ``args``, which holds only the
+    message -- so without the override a round-trip returns an exception that
+    looks correct and has lost the context (flake8-bugbear B042).
+    """
+    import copy as copy_module
+
+    # Bandit blacklists pickle (B403/B301) for UNTRUSTED data; the payload here
+    # is produced by the ``dumps`` below, in-process, from an exception this
+    # test just built. The suppressions are the trailing inline markers only --
+    # a comment line that *begins* with the marker word is itself parsed as a
+    # directive, and the following prose is read as test IDs.
+    import pickle  # nosec B403
+
+    original = JuniperRecurrenceValidationError("Validation error (422)", status_code=422, detail=[{"msg": "Field required"}])
+    round_tripped = pickle.loads(pickle.dumps(original))  # nosec B301
+
+    for rebuilt in (round_tripped, copy_module.copy(original), copy_module.deepcopy(original)):
+        assert isinstance(rebuilt, JuniperRecurrenceValidationError)
+        assert rebuilt.status_code == 422
+        assert rebuilt.detail == [{"msg": "Field required"}]
+        assert str(rebuilt) == str(original)
