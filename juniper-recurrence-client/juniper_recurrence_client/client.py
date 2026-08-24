@@ -212,14 +212,20 @@ class JuniperRecurrenceClient:
         """Normalize the base URL: ensure a scheme, drop a trailing slash and any ``/v1`` suffix.
 
         Raises :class:`JuniperRecurrenceConfigurationError` when ``base_url`` carries no host
-        (an empty string or a bare scheme) — a misconfiguration that would otherwise normalize to
+        (an empty string, a bare scheme, or a userinfo-only authority like
+        ``http://user:secret@``) — a misconfiguration that would otherwise normalize to
         a broken, hostless URL and fail opaquely on the first request.
         """
         url = url.strip()
-        if not url.startswith(URL_SCHEME_PREFIXES):
+        # Scheme matching is case-insensitive (RFC 3986 §3.1): a case-sensitive
+        # startswith would re-prefix "HTTPS://host" into "http://HTTPS://host",
+        # silently downgrading TLS and sending the API key to hostname "https".
+        if not url.lower().startswith(URL_SCHEME_PREFIXES):
             url = f"{DEFAULT_URL_SCHEME_PREFIX}{url}"
         parsed = urlparse(url)
-        if not parsed.netloc:
+        # hostname, not netloc: netloc accepts a userinfo-only authority
+        # ("user:secret@") as truthy while hostname is None for it.
+        if not parsed.hostname:
             raise JuniperRecurrenceConfigurationError(f"base_url must include a host; got {url!r}")
         normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if normalized.endswith(API_VERSION_PATH_SUFFIX):

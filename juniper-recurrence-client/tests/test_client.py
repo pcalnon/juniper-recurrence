@@ -24,6 +24,11 @@ def _client(**kwargs: object) -> JuniperRecurrenceClient:
         ("http://recurrence.test:8211/", "http://recurrence.test:8211"),
         ("http://recurrence.test:8211/v1", "http://recurrence.test:8211"),
         ("recurrence.test:8211", "http://recurrence.test:8211"),
+        # Scheme matching is case-insensitive (RFC 3986): a case-sensitive
+        # check re-prefixed "HTTPS://host" into "http://HTTPS://host" — a
+        # silent TLS downgrade sending the API key to hostname "https".
+        ("HTTPS://recurrence.test:8211", "https://recurrence.test:8211"),
+        ("Http://recurrence.test:8211", "http://recurrence.test:8211"),
     ],
 )
 def test_normalize_url(raw: str, expected: str) -> None:

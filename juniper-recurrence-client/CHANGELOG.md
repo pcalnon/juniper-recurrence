@@ -10,6 +10,13 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Fixed
 
+- **`_normalize_url` treats the scheme case-insensitively and validates `hostname`, not `netloc`.** Two flaws
+  found by a confirmed review on the cascor-client port of this client's own normalisation (this package is
+  the reference implementation, so its flaws were being copied): a case-sensitive `startswith` re-prefixed
+  `HTTPS://host` into `http://HTTPS://host` — a silent TLS downgrade sending the API key over HTTP to
+  hostname `https` (RFC 3986 makes schemes case-insensitive) — and the hostless guard read `netloc`, which
+  accepts a userinfo-only `http://user:secret@` as truthy while `hostname` is `None` for it. Uppercase and
+  mixed-case schemes are now canonicalised, and the userinfo-only form joins the hostless-rejection tests.
 - **`mypy --strict` now actually runs against the surface this package advertises** (defect-register
   `APD-RCLIENT-003`). The package ships `py.typed` and the `Typing :: Typed` classifier, but no mypy
   configuration existed anywhere in the monorepo and no lane ran mypy at all — a checked surface
