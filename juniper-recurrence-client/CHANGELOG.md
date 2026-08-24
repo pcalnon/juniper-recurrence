@@ -10,6 +10,15 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Fixed
 
+- **`mypy --strict` now actually runs against the surface this package advertises** (defect-register
+  `APD-RCLIENT-003`). The package ships `py.typed` and the `Typing :: Typed` classifier, but no mypy
+  configuration existed anywhere in the monorepo and no lane ran mypy at all — a checked surface
+  nothing checks. The package now carries `[tool.mypy]` (strict) in its own `pyproject.toml`, and the
+  repo pre-commit gate gains a mypy hook scoped to this package, so the advertisement is enforced on
+  every push. Making strict true surfaced one real looseness: `_parse_json` returned `Any`, silently
+  laundering every public method's declared `dict[str, Any]` — it now validates the body is a JSON
+  object and raises the typed client error on a syntactically valid non-object body, which previously
+  surfaced as a downstream `AttributeError` in the caller.
 - **Exceptions now carry `status_code`, `detail` and `response`** (defect-register
   `APD-RCLIENT-001`). Every exception subclassed `Exception` with nothing on it, so a 400 and a
   422 raised the same type with the same text and the only way to tell them apart was

@@ -353,13 +353,24 @@ class JuniperRecurrenceClient:
                 logger.warning("on_request hook raised; suppressed to keep request path resilient", exc_info=True)
 
     @staticmethod
-    def _parse_json(response: requests.Response) -> Any:
-        """Parse a response body as JSON, surfacing a typed error on a malformed body."""
+    def _parse_json(response: requests.Response) -> dict[str, Any]:
+        """Parse a response body as a JSON object, surfacing a typed error on a malformed or non-object body.
+
+        The declared ``dict[str, Any]`` is what makes the public methods' return
+        annotations real rather than laundered ``Any`` (defect-register
+        ``APD-RCLIENT-003``): every endpoint this client calls answers a JSON
+        object, so a syntactically valid non-object body is a broken response and
+        raises the typed error here instead of surfacing as a downstream
+        ``AttributeError`` in the caller.
+        """
         try:
-            return response.json()
+            payload = response.json()
         except ValueError as e:
             preview = (response.text or "")[:200]
             raise JuniperRecurrenceClientError(f"Malformed JSON response from {response.url}: {e}: {preview!r}") from e
+        if not isinstance(payload, dict):
+            raise JuniperRecurrenceClientError(f"Expected a JSON object from {response.url}, got {type(payload).__name__}")
+        return payload
 
     # ─── Training ─────────────────────────────────────────────────────────────
 

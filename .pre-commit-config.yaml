@@ -124,6 +124,26 @@ repos:
         stages: [pre-commit, manual]
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # Type Checking - MyPy (client package only)
+  # juniper-recurrence-client ships py.typed + the "Typing :: Typed" classifier;
+  # this hook is what makes that advertisement true (defect-register
+  # APD-RCLIENT-003). Strict, per the [tool.mypy] config in the package's own
+  # pyproject.toml. The app and model packages also ship py.typed and are NOT
+  # covered here — recorded with the register entry rather than silently.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: Type check juniper-recurrence-client with MyPy (strict)
+        args:
+          - --config-file=juniper-recurrence-client/pyproject.toml
+        files: ^juniper-recurrence-client/juniper_recurrence_client/.*\.py$
+        additional_dependencies:
+          - types-requests
+          - urllib3>=2
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # Security Scanning - Bandit
   # Scoped to the three importable source packages (app + model + client),
   # excluding their tests/ subtrees (closes PC-3).
