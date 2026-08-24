@@ -16,8 +16,10 @@ from juniper_recurrence_client import (
 )
 
 
-@pytest.mark.parametrize("bad", ["", "   ", "http://", "https://"])
+@pytest.mark.parametrize("bad", ["", "   ", "http://", "https://", "http://user:secret@"])
 def test_hostless_base_url_raises_configuration_error(bad: str) -> None:
+    # The userinfo-only form is why the guard reads parsed.hostname rather
+    # than netloc: netloc is truthy ("user:secret@") while hostname is None.
     with pytest.raises(JuniperRecurrenceConfigurationError):
         JuniperRecurrenceClient(base_url=bad)
 
