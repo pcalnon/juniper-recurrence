@@ -64,6 +64,16 @@ def test_malformed_json_raises_client_error() -> None:
 
 
 @responses.activate
+def test_non_object_json_body_raises_client_error() -> None:
+    # A syntactically valid body that is not a JSON object breaks every caller's
+    # declared dict[str, Any]; _parse_json rejects it with the typed error rather
+    # than letting it surface as an AttributeError downstream (APD-RCLIENT-003).
+    responses.add(responses.GET, f"{BASE_URL}/v1/dataset", json=[1, 2, 3], status=200)
+    with pytest.raises(JuniperRecurrenceClientError, match="Expected a JSON object"):
+        _client().get_dataset()
+
+
+@responses.activate
 def test_non_special_error_status_maps_to_base_client_error() -> None:
     # 403 is neither retryable (not in RETRYABLE_STATUS_CODES) nor one of the specially mapped
     # statuses (404/409/400/422), so the generic ``else`` arm raises the base client error with
