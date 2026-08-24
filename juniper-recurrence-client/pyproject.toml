@@ -87,6 +87,20 @@ omit = [
 ]
 branch = true
 
+[tool.mypy]
+# APD-RCLIENT-003: this package ships py.typed and the "Typing :: Typed"
+# classifier, so something must actually check the surface it advertises.
+# Enforced by the repo pre-commit mypy hook, which is scoped to this package
+# and reads this config.
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+# The X-Request-ID integration imports juniper-observability behind a runtime
+# guard; the optional dependency is absent from the hook environment.
+module = ["juniper_observability.*"]
+ignore_missing_imports = true
+
 [tool.coverage.report]
 # fail_under mirrors the CI gate (ci-recurrence-client.yml runs --cov-fail-under=90) so a local
 # ``pytest --cov=juniper_recurrence_client --cov-report=term-missing`` enforces the same bar.

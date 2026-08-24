@@ -10,6 +10,22 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Fixed
 
+- **`_normalize_url` treats the scheme case-insensitively and validates `hostname`, not `netloc`.** Two flaws
+  found by a confirmed review on the cascor-client port of this client's own normalisation (this package is
+  the reference implementation, so its flaws were being copied): a case-sensitive `startswith` re-prefixed
+  `HTTPS://host` into `http://HTTPS://host` — a silent TLS downgrade sending the API key over HTTP to
+  hostname `https` (RFC 3986 makes schemes case-insensitive) — and the hostless guard read `netloc`, which
+  accepts a userinfo-only `http://user:secret@` as truthy while `hostname` is `None` for it. Uppercase and
+  mixed-case schemes are now canonicalised, and the userinfo-only form joins the hostless-rejection tests.
+- **`mypy --strict` now actually runs against the surface this package advertises** (defect-register
+  `APD-RCLIENT-003`). The package ships `py.typed` and the `Typing :: Typed` classifier, but no mypy
+  configuration existed anywhere in the monorepo and no lane ran mypy at all — a checked surface
+  nothing checks. The package now carries `[tool.mypy]` (strict) in its own `pyproject.toml`, and the
+  repo pre-commit gate gains a mypy hook scoped to this package, so the advertisement is enforced on
+  every push. Making strict true surfaced one real looseness: `_parse_json` returned `Any`, silently
+  laundering every public method's declared `dict[str, Any]` — it now validates the body is a JSON
+  object and raises the typed client error on a syntactically valid non-object body, which previously
+  surfaced as a downstream `AttributeError` in the caller.
 - **Exceptions now carry `status_code`, `detail` and `response`** (defect-register
   `APD-RCLIENT-001`). Every exception subclassed `Exception` with nothing on it, so a 400 and a
   422 raised the same type with the same text and the only way to tell them apart was
@@ -25,10 +41,14 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `body.seed: Field required` via a new `_render_error_detail` helper. This is the same defect
   juniper-data-client tracks as `APD-DCLIENT-003`; it had never been recorded against this
   client.
-- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` rebuilds from
-  `args`, which holds only the message, so a round-trip would have returned an exception that
-  looked correct and had silently dropped the new fields — the failure mode `B042` warns about.
-  A `__reduce__` override restores the full state.
+- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` returns
+  `(cls, args, self.__dict__)` whenever the instance dict is non-empty, so the keyword-only
+  context is restored automatically — but only while `args` holds exactly the constructor's
+  positional message, which is the invariant `test_context_survives_pickle_and_copy` pins (the
+  failure mode `B042` warns about). An interim `__reduce__` override that reproduced this
+  default byte-for-byte was removed; its stated rationale — that the default rebuilds from
+  `args` alone — was wrong, and the same correction has landed in juniper-service-core,
+  juniper-data-client and juniper-cascor-client.
 
   Port of the convention established in
   [juniper-data-client#158](https://github.com/pcalnon/juniper-data-client/pull/158) and
