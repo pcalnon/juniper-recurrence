@@ -34,10 +34,14 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `body.seed: Field required` via a new `_render_error_detail` helper. This is the same defect
   juniper-data-client tracks as `APD-DCLIENT-003`; it had never been recorded against this
   client.
-- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` rebuilds from
-  `args`, which holds only the message, so a round-trip would have returned an exception that
-  looked correct and had silently dropped the new fields — the failure mode `B042` warns about.
-  A `__reduce__` override restores the full state.
+- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` returns
+  `(cls, args, self.__dict__)` whenever the instance dict is non-empty, so the keyword-only
+  context is restored automatically — but only while `args` holds exactly the constructor's
+  positional message, which is the invariant `test_context_survives_pickle_and_copy` pins (the
+  failure mode `B042` warns about). An interim `__reduce__` override that reproduced this
+  default byte-for-byte was removed; its stated rationale — that the default rebuilds from
+  `args` alone — was wrong, and the same correction has landed in juniper-service-core,
+  juniper-data-client and juniper-cascor-client.
 
   Port of the convention established in
   [juniper-data-client#158](https://github.com/pcalnon/juniper-data-client/pull/158) and

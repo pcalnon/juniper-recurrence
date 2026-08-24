@@ -216,9 +216,13 @@ def test_positional_message_construction_still_works() -> None:
 
 
 def test_context_survives_pickle_and_copy() -> None:
-    """``BaseException.__reduce__`` rebuilds from ``args``, which holds only the
-    message -- so without the override a round-trip returns an exception that
-    looks correct and has lost the context (flake8-bugbear B042).
+    """``BaseException.__reduce__`` returns ``(cls, args, self.__dict__)``
+    whenever the instance dict is non-empty, so the keyword-only context
+    survives on the default path (flake8-bugbear B042) -- but only while
+    ``args`` stays exactly the constructor's positional parameters. This test
+    pins that invariant: forwarding the keyword-only extras into
+    ``super().__init__`` (B042's own remedy) puts them in ``args``, and the
+    rebuild's ``cls(*args)`` then raises ``TypeError``.
     """
     import copy as copy_module
 
