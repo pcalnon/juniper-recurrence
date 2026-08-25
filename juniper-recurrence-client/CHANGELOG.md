@@ -8,6 +8,17 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-call `timeout` override on the synchronous `train` / `crossval` calls** (defect-register
+  `APD-RCLIENT-002`). Both endpoints run their compute *inside* the request — `train` fits the
+  model, `crossval` runs `n_folds` sequential fits — so the client-wide 30 s default is routinely
+  wrong for them and the only prior remedy was constructing a whole client with a bigger scalar.
+  The new keyword-only `timeout` parameter governs that one request; `None` (the default) keeps
+  the client-wide value and never means "no timeout". The timeout error message now reports the
+  *effective* timeout — the override when one was passed — instead of unconditionally
+  interpolating the client-wide `self.timeout`.
+
 ### Fixed
 
 - **`_normalize_url` treats the scheme case-insensitively and validates `hostname`, not `netloc`.** Two flaws

@@ -165,3 +165,49 @@ def test_is_ready_false_on_client_error() -> None:
     # reports not-ready, rather than propagating the exception to the caller.
     responses.add(responses.GET, f"{BASE_URL}/v1/health/ready", json={"detail": "no route"}, status=404)
     assert _client().is_ready() is False
+
+
+@responses.activate
+def test_train_timeout_override_reaches_transport() -> None:
+    # APD-RCLIENT-002: a per-call ``timeout`` on the synchronous ``train`` overrides the
+    # client-wide value for that request alone — asserted at the transport layer, where
+    # ``requests`` would actually enforce it.
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client(timeout=30).train(name="equities", timeout=120)
+    assert responses.calls[0].request.req_kwargs["timeout"] == 120
+
+
+@responses.activate
+def test_crossval_timeout_override_reaches_transport() -> None:
+    # APD-RCLIENT-002: same override on ``crossval``, whose n_folds sequential fits make it
+    # the longest-running synchronous call in the API.
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 2, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client(timeout=30).crossval(generator="equities_seq", n_folds=2, timeout=240)
+    assert responses.calls[0].request.req_kwargs["timeout"] == 240
+
+
+@responses.activate
+def test_train_without_override_keeps_client_timeout() -> None:
+    # Absent the kwarg, the client-wide constructor value still governs — the override is
+    # additive, not a new default.
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client(timeout=45).train(name="equities")
+    assert responses.calls[0].request.req_kwargs["timeout"] == 45
+
+
+@responses.activate
+def test_train_timeout_none_means_client_default_not_no_timeout() -> None:
+    # An explicit ``timeout=None`` falls back to the client-wide value; it must NOT reach the
+    # transport as ``None``, which ``requests`` would treat as "wait forever".
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", json={"final_metrics": {}, "n_epochs": 1, "stopped_reason": None, "dataset": {}}, status=200)
+    _client(timeout=45).train(name="equities", timeout=None)
+    assert responses.calls[0].request.req_kwargs["timeout"] == 45
+
+
+@responses.activate
+def test_timeout_error_reports_effective_timeout() -> None:
+    # The timeout error message reports the value that actually governed the request — the
+    # per-call override — not the client-wide ``self.timeout`` it previously interpolated.
+    responses.add(responses.POST, f"{BASE_URL}/v1/train", body=requests.exceptions.Timeout("slow"))
+    with pytest.raises(JuniperRecurrenceTimeoutError, match=r"after 120s"):
+        _client(timeout=30).train(name="equities", timeout=120)
