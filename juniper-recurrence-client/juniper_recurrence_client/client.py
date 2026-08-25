@@ -260,6 +260,10 @@ class JuniperRecurrenceClient:
         """
         url = f"{self.base_url}{endpoint}"
         kwargs.setdefault("timeout", self.timeout)
+        # The effective value, not ``self.timeout``: with a per-call override
+        # (APD-RCLIENT-002) the two differ, and the timeout error must report
+        # the number that actually governed the request.
+        effective_timeout = kwargs["timeout"]
 
         # Best-effort X-Request-ID propagation via juniper-observability (no-op if absent or
         # unset); a caller-supplied X-Request-ID always wins.
@@ -285,7 +289,7 @@ class JuniperRecurrenceClient:
                 outgoing_error = JuniperRecurrenceConnectionError(f"Failed to connect to juniper-recurrence at {self.base_url}: {e}")
                 raise outgoing_error from e
             except requests.exceptions.Timeout as e:
-                outgoing_error = JuniperRecurrenceTimeoutError(f"Request to {url} timed out after {self.timeout}s: {e}")
+                outgoing_error = JuniperRecurrenceTimeoutError(f"Request to {url} timed out after {effective_timeout}s: {e}")
                 raise outgoing_error from e
             except requests.exceptions.RequestException as e:
                 outgoing_error = JuniperRecurrenceClientError(f"Request failed: {e}")
@@ -399,12 +403,18 @@ class JuniperRecurrenceClient:
         mlp_lr: Optional[float] = None,
         mlp_max_epochs: Optional[int] = None,
         mlp_patience: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> dict[str, Any]:
         """``POST /v1/train`` — synchronously fit the LMU regressor on a dataset split.
 
         Supply exactly one of ``dataset_id`` / ``name`` / ``generator``. Returns the
         ``TrainResponse`` (``final_metrics``, ``n_epochs``, ``stopped_reason``, ``dataset``).
         Raises :class:`JuniperRecurrenceConflictError` (409) if a run is already in progress.
+
+        ``timeout`` overrides the client-wide request timeout for this call alone —
+        the fit runs inside the request, so a larger dataset legitimately needs more
+        than the 30 s default (defect-register ``APD-RCLIENT-002``). ``None`` (the
+        default) means the client-wide value, never "no timeout".
         """
         body: dict[str, Any] = {"dataset": _dataset_ref(dataset_id=dataset_id, name=name, generator=generator, params=params, split=split)}
         if d is not None:
@@ -429,7 +439,10 @@ class JuniperRecurrenceClient:
             body["mlp_max_epochs"] = mlp_max_epochs
         if mlp_patience is not None:
             body["mlp_patience"] = mlp_patience
-        return self._parse_json(self._request("POST", ENDPOINT_TRAIN, json=body))
+        request_kwargs: dict[str, Any] = {"json": body}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+        return self._parse_json(self._request("POST", ENDPOINT_TRAIN, **request_kwargs))
 
     def training_status(self) -> dict[str, Any]:
         """``GET /v1/training/status`` — current training state, metrics, and emitted events."""
@@ -493,11 +506,17 @@ class JuniperRecurrenceClient:
         mlp_lr: Optional[float] = None,
         mlp_max_epochs: Optional[int] = None,
         mlp_patience: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> dict[str, Any]:
         """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the ``_full`` split.
 
         Returns the ``CrossValResponse`` (per-fold ``folds`` + ``eval_aggregate`` / ``eval_std``).
         ``scheme`` is ``"expanding"`` or ``"rolling"``. Raises 409 if a CV run is already running.
+
+        ``timeout`` overrides the client-wide request timeout for this call alone —
+        ``n_folds`` sequential fits run inside the request, multiplying the single-fit
+        cost (defect-register ``APD-RCLIENT-002``). ``None`` (the default) means the
+        client-wide value, never "no timeout".
         """
         body: dict[str, Any] = {
             "dataset": _dataset_ref(dataset_id=dataset_id, name=name, generator=generator, params=params, split=split),
@@ -529,7 +548,10 @@ class JuniperRecurrenceClient:
             body["mlp_max_epochs"] = mlp_max_epochs
         if mlp_patience is not None:
             body["mlp_patience"] = mlp_patience
-        return self._parse_json(self._request("POST", ENDPOINT_CROSSVAL, json=body))
+        request_kwargs: dict[str, Any] = {"json": body}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+        return self._parse_json(self._request("POST", ENDPOINT_CROSSVAL, **request_kwargs))
 
     def crossval_status(self) -> dict[str, Any]:
         """``GET /v1/crossval/status`` — the most recent cross-validation result, if any."""
