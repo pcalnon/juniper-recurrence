@@ -12,6 +12,7 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "DEFAULT_RETRIES",
     "DEFAULT_BACKOFF_FACTOR",
+    "DEFAULT_BACKOFF_JITTER",
     "RETRYABLE_STATUS_CODES",
     "RETRY_ALLOWED_METHODS",
     "HTTP_POOL_CONNECTIONS",
@@ -47,6 +48,13 @@ DEFAULT_BASE_URL: str = "http://localhost:8211"
 DEFAULT_TIMEOUT: int = 30
 DEFAULT_RETRIES: int = 3
 DEFAULT_BACKOFF_FACTOR: float = 0.5
+# APD-ECO-002: urllib3 applies this as an ABSOLUTE additive term --
+# ``backoff_value += random.random() * backoff_jitter`` -- not a proportional
+# one. Without it every client that trips the same transient outage retries on
+# an identical schedule, so a service that is already failing is hit by a
+# synchronised herd. Matched to DEFAULT_BACKOFF_FACTOR so the spread is a full
+# window on the first retry, which is the step that carries the most callers.
+DEFAULT_BACKOFF_JITTER: float = 0.5
 RETRYABLE_STATUS_CODES: List[int] = [429, 500, 502, 503, 504]
 # Auto-retry is restricted to idempotent methods (RFC 9110 §9.2.2). The recurrence POSTs
 # (train / predict / crossval) carry server-side state — train and crossval are lock-guarded —
