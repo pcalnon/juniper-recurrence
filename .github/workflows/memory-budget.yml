@@ -11,7 +11,7 @@
 # Copyright:     Copyright (c) 2026 Paul Calnon
 #
 # Description:
-#    Memory Budget (ADVISORY, standalone) -- P5 port of juniper-ml's size ratchet for always-loaded
+#    Memory Budget (BLOCKING, standalone) -- P5 port of juniper-ml's size ratchet for always-loaded
 #    memory files (shared-session-memory plan §P5; tracker juniper-ml#1326). Governs AGENTS.md's
 #    CHARACTER count against the ceiling in conf/memory_budget.json via util/memory_budget_check.py.
 #    The ceiling was seeded at the exact size on the day this landed (zero slack, by design) and
@@ -20,9 +20,10 @@
 #    This repo has no single ci.yml with a required-checks aggregator -- its CI is one lane per
 #    package (ci-recurrence-app / -model / -client / -bench, ci-pre-commit, ci-docs) -- so, like
 #    sequence-safety.yml, this is a STANDALONE workflow: never wired into any required-checks
-#    aggregate, never a required context, and ADVISORY (`--advisory` reports and exits 0) until
-#    the three negative controls pass against the non-advisory invocation. Promotion, if ever,
-#    is an owner-only branch-protection decision; this workflow makes NO protection change.
+#    aggregate and not a required context. It shipped ADVISORY (`--advisory` reports and exits 0)
+#    on 2026-08-25 and went BLOCKING on 2026-08-26 once the three negative controls passed against
+#    the non-advisory invocation. Promotion to a required context, if ever, is an owner-only
+#    branch-protection decision; this workflow makes NO protection change.
 #
 #    No package lane collects the top-level tests/ directory, so this workflow runs the gate's
 #    own suite (tests/test_memory_budget_check.py: the no-worsening rule, the ratchet never
@@ -47,7 +48,7 @@ on:
       - main
       - develop
 
-# Per-PR ref, cancel superseded runs: an advisory signal only needs the latest push.
+# Per-PR ref, cancel superseded runs: only the latest push's verdict matters.
 concurrency:
   group: memory-budget-${{ github.ref }}
   cancel-in-progress: true
@@ -60,7 +61,7 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
-  # Memory Budget (ADVISORY, standalone): P5 port of juniper-ml's size ratchet.
+  # Memory Budget (BLOCKING, standalone): P5 port of juniper-ml's size ratchet.
   # Plan: juniper-ml notes/JUNIPER_2026-08-18_JUNIPER-ML_SHARED-SESSION-MEMORY-PLAN.md (§P5).
   #
   # WHY THE RATE AXIS SHIPS FIRST, AND ALONE. juniper-ml's AGENTS.md grew ~20x in six months
@@ -73,17 +74,23 @@ jobs:
   # STANDALONE, and deliberately ABSENT from the `required-checks` Quality Gate `needs:` (plan
   # correction C9). A `needs:` entry is the wrong promotion mechanism: it makes a skip on a
   # non-PR event fail the gate. Promotion happens in the branch RULESET, the same way Sequence
-  # Safety was promoted -- and only after the soak below.
+  # Safety was promoted -- and only after the soak below, which ended 2026-08-26.
   #
-  # ADVISORY during the soak. `--advisory` reports and always exits 0. It is removed only after
-  # three negative controls pass in this repo -- clean tree exits 0, +500 chars exits 1, and a
-  # waiver trailer exits 0 -- because a blocking gate that cannot fail is worse than none.
+  # BLOCKING as of 2026-08-26 (plan §P5 step d). The job soaked with `--advisory` from the port's merge,
+  # and the flag was removed only after three negative controls passed IN THIS REPO against the
+  # non-advisory invocation -- clean tree exits 0, growth past the ceiling exits 1, and a waiver
+  # trailer exits 0 -- because a blocking gate that cannot fail is worse than none. Whether this
+  # context is REQUIRED is decided in the branch ruleset, never here.
   #
-  # EXPECT A REPORTED VIOLATION SOON. The ceiling was seeded at the exact size on the day this
-  # landed (11,578; zero slack, by design), and recurrence's AGENTS.md grew +4,102 over the
-  # previous 30 days (~137 chars/day) with a median growing commit of 2,120 and a
-  # largest of 2,120. The first AGENTS.md-growing PR is SUPPOSED to report -- that is the soak
-  # measuring the burn, not a misconfiguration.
+  # SLACK, MEASURED HERE. The ceiling was seeded at the exact size on the day the port landed
+  # (11,578 chars, zero slack) and raised 2026-08-26 to 13,698 (+2,120) under an Allow-Ceiling-
+  # Raise: AGENTS.md trailer. The slack is the largest single AGENTS.md-growing commit re-measured
+  # over the 30 days to 2026-08-26 (2,120; median 2,120, 2 grew / 0 shrank, ~137 chars/day),
+  # floored at 2,000 because one fleet-wide docs fan-out (2026-08-21) added 1,982 chars to six
+  # repos' AGENTS.md at once -- the shape a zero-slack ceiling cannot absorb. Growth past the
+  # ceiling now FAILS this check; Allow-Budget-Overrun: AGENTS.md is the loan for a warranted
+  # overrun, and a cut is what brings the ceiling back down (hand-edit with slack, never bare
+  # --ratchet).
   memory-budget:
     name: Memory Budget
     runs-on: ubuntu-latest
@@ -110,7 +117,7 @@ jobs:
       - name: Check memory-file size budget
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║  juniper-recurrence - Memory File Size Budget (ADVISORY)   ║"
+          echo "║  juniper-recurrence - Memory File Size Budget (BLOCKING)   ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           # recurrence's PRs target more than one branch, so the base is read from the event rather
           # than hardcoded; merge_group has no github.base_ref, hence the fallback.
@@ -121,12 +128,11 @@ jobs:
           # explicit file (the checker never shells out for them) so the classifier stays pure.
           # Two-dot FETCH_HEAD..HEAD = exactly the commits this PR adds on top of base.
           git log --format=%B FETCH_HEAD..HEAD > memory-budget-trailers.txt
-          # `--advisory` is the SOAK setting and is removed to promote. Escape hatch once this
-          # blocks, when the growth is genuinely warranted: add the commit trailer
+          # BLOCKING as of 2026-08-26: `--advisory` (the soak setting) is gone, so a violation exits 1 and
+          # fails this check. Escape hatch, when the growth is genuinely warranted: add the commit trailer
           #   Allow-Budget-Overrun: AGENTS.md
           # and carry it into the SQUASH message -- squash composes from the commit messages, so
           # a trailer left only in the PR body is silently discarded.
           python3 util/memory_budget_check.py \
             --base-ref FETCH_HEAD \
-            --trailers-file memory-budget-trailers.txt \
-            --advisory
+            --trailers-file memory-budget-trailers.txt
