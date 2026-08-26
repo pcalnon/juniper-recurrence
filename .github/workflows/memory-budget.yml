@@ -1,0 +1,132 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (monorepo-wide: AGENTS.md is the governed file)
+# File Name:     memory-budget.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-08-25
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    Memory Budget (ADVISORY, standalone) -- P5 port of juniper-ml's size ratchet for always-loaded
+#    memory files (shared-session-memory plan §P5; tracker juniper-ml#1326). Governs AGENTS.md's
+#    CHARACTER count against the ceiling in conf/memory_budget.json via util/memory_budget_check.py.
+#    The ceiling was seeded at the exact size on the day this landed (zero slack, by design) and
+#    governs GROWTH only; a cut into a docs/REFERENCE.md (this repo has none yet) comes later.
+#
+#    This repo has no single ci.yml with a required-checks aggregator -- its CI is one lane per
+#    package (ci-recurrence-app / -model / -client / -bench, ci-pre-commit, ci-docs) -- so, like
+#    sequence-safety.yml, this is a STANDALONE workflow: never wired into any required-checks
+#    aggregate, never a required context, and ADVISORY (`--advisory` reports and exits 0) until
+#    the three negative controls pass against the non-advisory invocation. Promotion, if ever,
+#    is an owner-only branch-protection decision; this workflow makes NO protection change.
+#
+#    No package lane collects the top-level tests/ directory, so this workflow runs the gate's
+#    own suite (tests/test_memory_budget_check.py: the no-worsening rule, the ratchet never
+#    loosening, the waiver being a loan, and the machinery negative controls pinned to exit 2)
+#    BEFORE the check -- a gate whose machinery can break silently is the vacuous-pass class.
+#
+# Security Notes:
+#    - pull_request-triggered only; permissions are contents: read.
+#    - Pure git + stdlib; no network beyond the SHA-pinned actions/checkout and actions/setup-python.
+#
+# References:
+#    - juniper-ml notes/JUNIPER_2026-08-18_JUNIPER-ML_SHARED-SESSION-MEMORY-PLAN.md (§P5)
+#    - juniper-canopy / juniper-cascor .github/workflows/ci.yml (job `memory-budget`, the exemplar)
+#    - .github/workflows/sequence-safety.yml (the standalone-workflow shape this mirrors)
+#####################################################################################################################################################################################################
+
+name: Memory Budget
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+# Per-PR ref, cancel superseded runs: an advisory signal only needs the latest push.
+concurrency:
+  group: memory-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_TEST_VERSION: "3.14"
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Memory Budget (ADVISORY, standalone): P5 port of juniper-ml's size ratchet.
+  # Plan: juniper-ml notes/JUNIPER_2026-08-18_JUNIPER-ML_SHARED-SESSION-MEMORY-PLAN.md (§P5).
+  #
+  # WHY THE RATE AXIS SHIPS FIRST, AND ALONE. juniper-ml's AGENTS.md grew ~20x in six months
+  # WHILE UNDER FOUR ACTIVE CI GATES -- every one of them enforced structure or currency and
+  # none enforced SIZE; 172 of 200 main-line merges grew it against 14 that shrank it, by 2,628
+  # bytes between them. A cut without a ceiling is undone in ~44 days, and a ceiling set AFTER a
+  # cut locks in the inflated level. So the ceiling lands first and the cut comes later; this job
+  # carries no relocation check yet, because recurrence has not cut anything to check.
+  #
+  # STANDALONE, and deliberately ABSENT from the `required-checks` Quality Gate `needs:` (plan
+  # correction C9). A `needs:` entry is the wrong promotion mechanism: it makes a skip on a
+  # non-PR event fail the gate. Promotion happens in the branch RULESET, the same way Sequence
+  # Safety was promoted -- and only after the soak below.
+  #
+  # ADVISORY during the soak. `--advisory` reports and always exits 0. It is removed only after
+  # three negative controls pass in this repo -- clean tree exits 0, +500 chars exits 1, and a
+  # waiver trailer exits 0 -- because a blocking gate that cannot fail is worse than none.
+  #
+  # EXPECT A REPORTED VIOLATION SOON. The ceiling was seeded at the exact size on the day this
+  # landed (11,578; zero slack, by design), and recurrence's AGENTS.md grew +4,102 over the
+  # previous 30 days (~137 chars/day) with a median growing commit of 2,120 and a
+  # largest of 2,120. The first AGENTS.md-growing PR is SUPPOSED to report -- that is the soak
+  # measuring the burn, not a misconfiguration.
+  memory-budget:
+    name: Memory Budget
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need the base tip to apply the no-worsening rule
+
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+
+      - name: Run the gate's own suite (no package lane collects tests/)
+        run: |
+          # The checker's negative controls are pinned to exit 2 -- a gate whose machinery can
+          # break silently is the vacuous-pass class, so the suite runs before the check does.
+          python3 -m unittest -v tests/test_memory_budget_check.py
+
+      - name: Check memory-file size budget
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  juniper-recurrence - Memory File Size Budget (ADVISORY)   ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          # recurrence's PRs target more than one branch, so the base is read from the event rather
+          # than hardcoded; merge_group has no github.base_ref, hence the fallback.
+          BASE_REF="${{ github.base_ref || 'main' }}"
+          git fetch --no-tags origin "$BASE_REF"
+          # Allow-Budget-Overrun is a LOAN, not a pass: it suppresses the failure without moving
+          # the ceiling, so the debt still blocks the next author. Trailers are injected from an
+          # explicit file (the checker never shells out for them) so the classifier stays pure.
+          # Two-dot FETCH_HEAD..HEAD = exactly the commits this PR adds on top of base.
+          git log --format=%B FETCH_HEAD..HEAD > memory-budget-trailers.txt
+          # `--advisory` is the SOAK setting and is removed to promote. Escape hatch once this
+          # blocks, when the growth is genuinely warranted: add the commit trailer
+          #   Allow-Budget-Overrun: AGENTS.md
+          # and carry it into the SQUASH message -- squash composes from the commit messages, so
+          # a trailer left only in the PR body is silently discarded.
+          python3 util/memory_budget_check.py \
+            --base-ref FETCH_HEAD \
+            --trailers-file memory-budget-trailers.txt \
+            --advisory

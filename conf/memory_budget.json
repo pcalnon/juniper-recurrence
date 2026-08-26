@@ -1,0 +1,47 @@
+{
+  "_README": [
+    "Character ceilings for always-loaded memory files. Ported from juniper-ml as P5 of",
+    "the shared-session-memory plan (juniper-ml notes/JUNIPER_2026-08-18_JUNIPER-ML_SHARED-SESSION-MEMORY-PLAN.md).",
+    "",
+    "Enforced by util/memory_budget_check.py via the standalone 'Memory Budget' job in",
+    "ci.yml. CHARACTERS, not bytes -- the shipped Claude Code check compares",
+    "content.length.",
+    "",
+    "WHY THE RATE AXIS SHIPS FIRST. juniper-ml's AGENTS.md grew ~20x in six months WHILE",
+    "UNDER FOUR ACTIVE CI GATES: every one enforced structure or currency, none enforced",
+    "size. A cut without a ceiling is undone in ~44 days, and a ceiling set AFTER a cut",
+    "locks in the inflated level. So the ceiling lands first, and the cut comes later.",
+    "",
+    "The ceiling starts at the size on the day the gate landed, so it is satisfiable",
+    "immediately and governs only GROWTH. Ratchet it down after each cut with:",
+    "  python3 util/memory_budget_check.py --ratchet",
+    "",
+    "BUT --ratchet TIGHTENS TO THE EXACT CURRENT SIZE, leaving ZERO headroom. It SEEDS; it",
+    "does not tighten gracefully. After a real cut, prefer a hand-edit to a value with",
+    "DELIBERATE SLACK sized to this repo's own measured burn -- and RE-MEASURE rather than",
+    "reusing the figures below.",
+    "",
+    "RAISING a ceiling FAILS the gate. If a raise is genuinely intended, declare it with an",
+    "  Allow-Ceiling-Raise: <path>  commit trailer -- deliberately NOT the same trailer as",
+    "Allow-Budget-Overrun, because an overrun borrows against a ceiling that still stands",
+    "while a raise moves it and erases the debt for everyone.",
+    "",
+    "docs/REFERENCE.md is deliberately NOT governed. It is the migration DESTINATION;",
+    "capping it would penalise exactly the relocation this plan wants, and it is read on",
+    "demand rather than always loaded -- which is the entire point.",
+    "",
+    "THIS REPO'S OWN BURN, measured from git over the 30 days to 2026-08-25 (origin/main):",
+    "7,476 -> 11,578, +4,102 chars (~137/day) across 8 commits",
+    "touching the file -- 2 grew it, 0 shrank it, median growing commit 2,120,",
+    "largest 2,120. The plan orders the rollout by this RATE, not by size. A fleet-wide",
+    "docs sweep lands in every AGENTS.md at once and is exactly the shape a zero-slack ceiling",
+    "cannot absorb (the 2026-08-21 base-branch-guard sweep added 1,982 chars to every repo).",
+    "Re-measure before sizing slack; do not reuse these figures."
+  ],
+  "files": {
+    "AGENTS.md": {
+      "ceiling_chars": 11578,
+      "_note": "Seeded 2026-08-25 by `python3 util/memory_budget_check.py --ratchet` run IN THIS REPO, never transcribed. ZERO slack, deliberately: the ceiling starts at the size on the day the gate landed, so it is satisfiable immediately and governs only growth, and the job ships ADVISORY so a violation reports rather than blocks. At the measured ~137 chars/day (see _README) the next AGENTS.md-growing PR is EXPECTED to report -- that is the soak measuring the burn, not a misconfiguration. Before promoting to blocking: remove --advisory only after the three negative controls pass against the non-advisory invocation, and hand-edit slack sized to a re-measured burn (>=2,120 covers the largest single commit seen) declared with an Allow-Ceiling-Raise: AGENTS.md trailer."
+    }
+  }
+}
