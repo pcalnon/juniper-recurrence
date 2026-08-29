@@ -4,7 +4,7 @@
     "the shared-session-memory plan (juniper-ml notes/JUNIPER_2026-08-18_JUNIPER-ML_SHARED-SESSION-MEMORY-PLAN.md).",
     "",
     "Enforced by util/memory_budget_check.py via the standalone 'Memory Budget' job in",
-    "ci.yml. CHARACTERS, not bytes -- the shipped Claude Code check compares",
+    "memory-budget.yml. CHARACTERS, not bytes -- the shipped Claude Code check compares",
     "content.length.",
     "",
     "WHY THE RATE AXIS SHIPS FIRST. juniper-ml's AGENTS.md grew ~20x in six months WHILE",
@@ -40,8 +40,8 @@
   ],
   "files": {
     "AGENTS.md": {
-      "ceiling_chars": 13698,
-      "_note": "Seeded 2026-08-25 at 11,578 chars, the size of AGENTS.md IN THIS REPO on the day the port landed (zero slack; the job shipped ADVISORY for the soak). RAISED 2026-08-26 to 13,698 (+2,120) under an Allow-Ceiling-Raise: AGENTS.md trailer when --advisory was removed (plan P5 step d): the slack is the largest single AGENTS.md-growing commit re-measured here over the 30 days to 2026-08-26 (max 2,120, median 2,120, ~137 chars/day), floored at 2,000 for the fleet-wide fan-out class that added 1,982 chars to six repos' AGENTS.md at once on 2026-08-21. Growth past the ceiling now FAILS the check; Allow-Budget-Overrun: AGENTS.md is the loan. After a cut, lower it by hand to a value with RE-MEASURED slack -- never bare --ratchet, which leaves zero headroom."
+      "ceiling_chars": 20000,
+      "_note": "Seeded 2026-08-25 at 11,578 chars (zero slack, advisory soak); raised 2026-08-26 to 13,698 (+2,120 measured slack) when --advisory was removed (plan P5 step d). RAISED AGAIN 2026-08-28 to 20,000 under an Allow-Ceiling-Raise: AGENTS.md trailer. This raise is a POLICY ceiling, not a slack-derived one: it is the size at which a cut becomes worthwhile in this repo -- below ~20K there is too little reference material to be worth splitting into a docs/REFERENCE.md this repo does not yet have. The owner chose a raise over a cut for this repo on 2026-08-28 (plan P5 step e scoping). At the re-measured burn the headroom is ~61 days; revisit with a real cut if AGENTS.md approaches 20,000. Growth past the ceiling FAILS the check; Allow-Budget-Overrun: AGENTS.md is the loan. After a cut, lower by hand with re-measured slack -- never bare --ratchet, which leaves zero headroom."
     }
   }
 }
