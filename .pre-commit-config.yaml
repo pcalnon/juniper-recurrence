@@ -138,7 +138,9 @@ repos:
         name: Type check juniper-recurrence-client with MyPy (strict)
         args:
           - --config-file=juniper-recurrence-client/pyproject.toml
-        files: ^juniper-recurrence-client/juniper_recurrence_client/.*\.py$
+        # Widened to reach typing_probe/ -- the consumer-shaped probe that verifies the
+        # PUBLISHED type surface is usable from outside the package (APD-ECO-006).
+        files: ^juniper-recurrence-client/(juniper_recurrence_client|typing_probe)/.*\.py$
         additional_dependencies:
           - types-requests
           - urllib3>=2
