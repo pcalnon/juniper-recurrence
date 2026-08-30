@@ -105,10 +105,13 @@ jobs:
       # own pins (juniper-recurrence-model, juniper-model-core[crossval]) and [test]
       # (pytest). Installing the app from its subdirectory resolves all of these from
       # PyPI; the harness code itself stays at the repo root.
+      # [bench-plots] is included so bench/test_plots.py EXECUTES rather than skipping: its
+      # matplotlib guard is a skipif, so omitting the extra would turn the G-5 plotting module
+      # into untested code that still reports a green lane. Small pure wheel, no network.
       - name: Install app extras for the bench harness
         run: |
           pip install --upgrade "pip>=26.1.1"
-          pip install "./juniper-recurrence[test,bench]"
+          pip install "./juniper-recurrence[test,bench,bench-plots]"
 
       # Run from the repo root (python -m puts the cwd on sys.path so `import bench`
       # resolves); -p no:dash/playwright is the ecosystem-standard autoload-SIGSEGV
