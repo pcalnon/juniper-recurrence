@@ -39,3 +39,8 @@ env/
 # Data / artifacts (datasets are juniper-data's responsibility, never vendored here)
 data/
 *.npz
+
+# G-5 benchmark figures (bench.plots). Regenerable from the committed results JSON + the
+# dataset seeds, so the PNGs are outputs, not baselines — bench/results/ stays the tracked
+# baseline home. Point --out-dir elsewhere for a run you want to keep.
+bench/plots/

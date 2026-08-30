@@ -111,6 +111,15 @@ bench-equities = [
 bench-torch = [
     "juniper-recurrence-model[torch]>=0.1.5,<0.3.0",
 ]
+# G-5 benchmark figures (bench.plots): forecast-vs-truth, residuals, Δt distribution, and the
+# per-model r2 comparison. Kept out of [bench] like [bench-equities] / [bench-torch] so the
+# published dist and a numbers-only bench run stay plot-free — bench/plots.py exits with an
+# install hint rather than an ImportError when the extra is absent. Unlike [bench-torch] this is
+# a small pure-wheel dependency and no network is needed, so the bench CI lane DOES install it:
+# otherwise bench/test_plots.py would silently skip and the module would be untested.
+bench-plots = [
+    "matplotlib>=3.9",
+]
 
 [project.scripts]
 juniper-recurrence = "juniper_recurrence.main:main"
