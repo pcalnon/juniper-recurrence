@@ -21,6 +21,17 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Fixed
 
+- **The README now documents the monorepo layout and the three-way name split** (defect-register
+  `APD-RCLIENT-005`). This package is published from the `juniper-recurrence-client/` subdirectory of
+  `pcalnon/juniper-recurrence`, so its repository, distribution (`juniper-recurrence-client`) and import
+  (`juniper_recurrence_client`) names are three different strings. The README — which is what PyPI
+  renders, and the only page a consumer of the published wheel sees — said none of this, while linking
+  its two sibling clients to their own standalone repositories, reinforcing the expectation that this one
+  has a standalone repository too. The filed defect is a **documentation** problem, not a metadata error:
+  `[project.urls]` pointing at the monorepo is correct and is deliberately unchanged, and the
+  hyphen-to-underscore import transform is conventional rather than drift. A reader who hits
+  `ModuleNotFoundError` on the import name can now find the distribution to install, and knows which
+  repository takes issues and PRs for this client.
 - **`_normalize_url` treats the scheme case-insensitively and validates `hostname`, not `netloc`.** Two flaws
   found by a confirmed review on the cascor-client port of this client's own normalisation (this package is
   the reference implementation, so its flaws were being copied): a case-sensitive `startswith` re-prefixed

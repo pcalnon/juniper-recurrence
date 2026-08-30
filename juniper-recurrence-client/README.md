@@ -13,6 +13,20 @@ pip install juniper-recurrence-client          # once published
 pip install -e ".[test]"                        # local development
 ```
 
+> **Names and source layout.** Unlike its two sibling clients, this package is published from the
+> `juniper-recurrence-client/` **subdirectory of the [`pcalnon/juniper-recurrence`](https://github.com/pcalnon/juniper-recurrence)
+> monorepo** — there is no standalone `juniper-recurrence-client` repository. Three names are in play and
+> all three differ:
+>
+> | What | Value |
+> |------|-------|
+> | Install (distribution name) | `pip install juniper-recurrence-client` |
+> | Import (module name) | `import juniper_recurrence_client` |
+> | Source (repository) | [`pcalnon/juniper-recurrence`](https://github.com/pcalnon/juniper-recurrence), path `juniper-recurrence-client/` |
+>
+> So if `import juniper_recurrence_client` raises `ModuleNotFoundError`, the distribution to install is
+> `juniper-recurrence-client`; and issues or PRs for this client belong on the `juniper-recurrence` repository.
+
 `requests`-only at the core; `pip install juniper-recurrence-client[observability]` adds the
 optional `juniper-observability` integration (X-Request-ID propagation + the `on_request` hook).
 
