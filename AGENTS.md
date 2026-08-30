@@ -5,11 +5,34 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.4.0
-**Last Updated**: 2026-08-21
+**Last Updated**: 2026-08-30
 
 ---
 
 This file guides Claude Code (and other agents) working in this repository. `CLAUDE.md` is a symlink to this file.
+
+## Hazards (resident — do not relocate)
+
+Directives whose **non-application destroys work**. Everything else in this file may be demoted to
+a `docs/` reference under the memory budget; these may not, because a pointer only helps an agent
+that already knows to look. Adding a new hazard here is legitimate — ratchet space out of a
+reference section in the same PR rather than waiving the budget gate.
+
+- **Do not rename or delete the `Guard PR base branch` job.** That exact job name is a **required
+  status check** in this repo's ruleset, so renaming it or deleting
+  `.github/workflows/pr-base-branch-guard.yml` makes `main` **unmergeable** until the context is
+  un-required first. The failure is silent in the worst way: the aggregate rollup can still read
+  SUCCESS while every required context sits at "expected" forever. Full context:
+  § Sequence-safety nets.
+- **Never vendor or generate datasets in this repo — `data/` is gitignored.** Dataset capability
+  belongs to `juniper-data`, and the `bench/` harness pulls through `juniper-data` /
+  `juniper-data-client`. Anything written under `data/` is invisible to `git status`, survives no
+  review, and is **deleted without warning by `git worktree remove`**. Full context: § Conventions.
+- **`/tmp/` is prohibited** as the home for any script that produces, modifies or analyzes
+  repository content — it is reaped when sessions, sandboxes or containers end, and the scripts are
+  irrecoverable. Scratch *data* there is fine; source files are not. This is an ecosystem-wide rule
+  from the parent `Juniper/AGENTS.md` "Cross-Project Conventions"; permanent utilities live in
+  `util/`, single-use ones in `util/ad-hoc/`.
 
 ## What this is
 
