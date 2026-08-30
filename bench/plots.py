@@ -80,9 +80,11 @@ def _pyplot() -> Any:
     The backend is forced BEFORE pyplot is imported: CI and the experiment host are headless,
     and matplotlib's default backend selection would otherwise try (and fail) to find a display.
     """
+    # pragma: no cover — the absent-matplotlib path is exercised by monkeypatching __import__
+    # in test_plots.py rather than by uninstalling the extra.
     try:
         import matplotlib
-    except ModuleNotFoundError as exc:  # pragma: no cover - exercised via test monkeypatch
+    except ModuleNotFoundError as exc:  # pragma: no cover
         raise PlotsUnavailable(_INSTALL_HINT) from exc
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -136,7 +138,9 @@ def plot_dataset(ds: datasets.Dataset, out_dir: Path) -> Path:
     return path
 
 
-def plot_forecast_and_residuals(ds: datasets.Dataset, out_dir: Path, d: int = _HEADLINE_D) -> Path:
+def plot_forecast_and_residuals(
+    ds: datasets.Dataset, out_dir: Path, d: int = _HEADLINE_D
+) -> Path:
     """Predicted vs true and residuals on the LAST walk-forward fold.
 
     Deliberately one fold, and deliberately re-fitted: see the module docstring. The estimator,
@@ -162,13 +166,19 @@ def plot_forecast_and_residuals(ds: datasets.Dataset, out_dir: Path, d: int = _H
         dt=ds.dt[train_idx],
         target_dt=ds.target_dt[train_idx],
     )
-    y_pred = np.asarray(model.predict(ds.X[eval_idx], dt=ds.dt[eval_idx], target_dt=ds.target_dt[eval_idx]))
+    y_pred = np.asarray(
+        model.predict(
+            ds.X[eval_idx], dt=ds.dt[eval_idx], target_dt=ds.target_dt[eval_idx]
+        )
+    )
 
     truth = _flat(ds.y[eval_idx])
     pred = _flat(y_pred)
     resid = pred - truth
 
-    fig, (ax_f, ax_r) = plt.subplots(2, 1, figsize=(10, 6), constrained_layout=True, sharex=True)
+    fig, (ax_f, ax_r) = plt.subplots(
+        2, 1, figsize=(10, 6), constrained_layout=True, sharex=True
+    )
     idx = np.arange(truth.shape[0])
     # Truth is drawn thick underneath and prediction thin on top. Equal weights make a good fit
     # look like ONE line and a reader cannot tell whether truth was plotted at all — on
@@ -186,7 +196,9 @@ def plot_forecast_and_residuals(ds: datasets.Dataset, out_dir: Path, d: int = _H
     ax_r.plot(idx, resid, lw=0.9, color="#4C78A8")
     # ``g`` not ``f``: a well-fit row has residuals around 1e-7, and %.4f renders those as
     # "0.0000" beside an axis labelled 1e-7 — a caption that contradicts its own plot.
-    ax_r.set_title(f"residual (pred − truth) — mean {resid.mean():+.3g}, sd {resid.std():.3g}")
+    ax_r.set_title(
+        f"residual (pred − truth) — mean {resid.mean():+.3g}, sd {resid.std():.3g}"
+    )
     ax_r.set_xlabel("eval-slice index (chronological)")
     ax_r.set_ylabel("residual")
 
@@ -196,7 +208,9 @@ def plot_forecast_and_residuals(ds: datasets.Dataset, out_dir: Path, d: int = _H
     return path
 
 
-def plot_model_comparison(results_dir: Path, out_dir: Path, metric: str = "r2") -> Path | None:
+def plot_model_comparison(
+    results_dir: Path, out_dir: Path, metric: str = "r2"
+) -> Path | None:
     """Per-model ``metric`` across every dataset JSON in ``results_dir``.
 
     Returns ``None`` when there is nothing to plot, rather than writing an empty figure that
@@ -232,7 +246,9 @@ def plot_model_comparison(results_dir: Path, out_dir: Path, metric: str = "r2") 
     ds_names = sorted(per_dataset)
     width = 0.8 / max(len(model_names), 1)
 
-    fig, ax = plt.subplots(figsize=(max(10, 1.6 * len(ds_names)), 6), constrained_layout=True)
+    fig, ax = plt.subplots(
+        figsize=(max(10, 1.6 * len(ds_names)), 6), constrained_layout=True
+    )
     base = np.arange(len(ds_names))
     for i, model in enumerate(model_names):
         # NaN (not 0.0) for a model a dataset never ran: 0.0 is a legitimate r2 value, so
@@ -274,14 +290,24 @@ def main(argv: list[str] | None = None) -> int:
     # argv threads explicitly rather than falling through to sys.argv — the cascor#486 class,
     # where an importing test runner's own arguments get parsed as the tool's.
     parser = argparse.ArgumentParser(description="Render benchmark figures (G-5).")
-    parser.add_argument("--out-dir", type=Path, default=_PLOTS, help="Directory for the PNGs (default: bench/plots).")
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=_PLOTS,
+        help="Directory for the PNGs (default: bench/plots).",
+    )
     parser.add_argument(
         "--results-dir",
         type=Path,
         default=_RESULTS,
         help="Committed per-dataset JSON to read for the comparison figure (default: bench/results).",
     )
-    parser.add_argument("--datasets", nargs="*", default=None, help="Subset of dataset names (default: all).")
+    parser.add_argument(
+        "--datasets",
+        nargs="*",
+        default=None,
+        help="Subset of dataset names (default: all).",
+    )
     parser.add_argument(
         "--skip-forecast",
         action="store_true",
@@ -300,7 +326,10 @@ def main(argv: list[str] | None = None) -> int:
     if comparison is not None:
         written.append(comparison)
     else:
-        print(f"[plots] no usable results under {args.results_dir} — comparison figure skipped", flush=True)
+        print(
+            f"[plots] no usable results under {args.results_dir} — comparison figure skipped",
+            flush=True,
+        )
 
     wanted = args.datasets if args.datasets else list(datasets.DATASETS)
     for name in wanted:
@@ -318,7 +347,10 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 written.append(plot_forecast_and_residuals(ds, args.out_dir))
             except Exception as exc:  # noqa: BLE001 — one unfittable row must not lose the others
-                print(f"[plots] {name} forecast SKIPPED — {type(exc).__name__}: {exc}", flush=True)
+                print(
+                    f"[plots] {name} forecast SKIPPED — {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
 
     for path in written:
         print(f"[plots] wrote {path}", flush=True)
