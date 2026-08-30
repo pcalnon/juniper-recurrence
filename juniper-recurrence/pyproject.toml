@@ -42,7 +42,11 @@ dependencies = [
     "pydantic-settings>=2.2",
     "PyYAML>=6.0",
     "numpy>=1.24",
-    "juniper-service-core>=0.5.0,<0.7.0",
+    # Floor raised to 0.6.0: 0.6.0 narrowed EXEMPT_PATHS to health + metrics, removing
+    # /docs and /openapi.json. Under the old >=0.5.0 range the auth posture of the docs
+    # routes -- and therefore tests/test_app_smoke.py -- depended on which service-core
+    # pip happened to resolve. A security-relevant behaviour must not be resolution-dependent.
+    "juniper-service-core>=0.6.0,<0.7.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
     "juniper-recurrence-model>=0.1.5,<0.3.0",
     "juniper-data-client>=0.4.2,<0.5.0",

@@ -87,8 +87,30 @@ def test_auth_disabled_by_default_open_access():
     assert client.get("/v1/does-not-exist").status_code == 404
 
 
-def test_docs_reachable_and_exempt():
+def test_docs_require_auth_when_enabled():
+    """``/docs`` and ``/openapi.json`` are NOT exempt — they need a key like any other path.
+
+    This asserted the opposite until service-core 0.6.0. ``EXEMPT_PATHS`` used to contain the
+    two documentation routes, so an auth-enabled service published its own OpenAPI schema and
+    Swagger UI to unauthenticated callers; 0.6.0 narrowed the set to health + metrics, and
+    ``/metrics`` is separately gated by ``MetricsAuthMiddleware``'s IP allowlist.
+
+    The old test asserted 200 and therefore encoded the defect as the contract. It is rewritten
+    rather than deleted because the ABSENCE of an exemption is the thing worth pinning: a future
+    re-add would silently republish the schema, and only an assertion like this one would catch it.
+    """
     client = TestClient(build_app(Settings(api_keys=["s3cret"])))
-    # /docs and /openapi.json are in the service-core EXEMPT_PATHS set.
+
+    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/docs").status_code == 401
+
+    # Still reachable WITH a key — the routes are mounted, merely protected.
+    assert client.get("/openapi.json", headers={"X-API-Key": "s3cret"}).status_code == 200
+    assert client.get("/docs", headers={"X-API-Key": "s3cret"}).status_code == 200
+
+
+def test_docs_open_when_auth_disabled():
+    """With no keys configured the middleware is inactive, so the docs stay open."""
+    client = TestClient(build_app(Settings(api_keys=None)))
     assert client.get("/openapi.json").status_code == 200
     assert client.get("/docs").status_code == 200
