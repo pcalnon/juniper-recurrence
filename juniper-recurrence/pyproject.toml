@@ -144,6 +144,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# G-17 / CLI-experimentation plan 12.2 item 2: register the `performance` marker for the
+# micro-benchmarks that lane will add. Registration is a PREREQUISITE, not bookkeeping --
+# `--strict-markers` below turns an unregistered `@pytest.mark.performance` into a collection
+# error for the WHOLE suite, so the marker has to exist before the first test can carry one.
+# Nothing is marked yet; tests/test_markers.py pins that the registration works.
+markers = [
+    "performance: micro-benchmarks and timing-sensitive tests; excluded from the default run with `-m 'not performance'`",
+]
 # Ecosystem-standard autoload SIGSEGV defense (dash/playwright plugins are not used here).
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", "-p", "no:playwright"]
 # Warnings-as-errors gate (TST-5): any warning fails the suite so dependency deprecations
