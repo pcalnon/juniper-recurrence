@@ -12,7 +12,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 ### Changed
 
 - **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
-  `WorkerCoordinator.release_worker_tasks`, which reclaims a worker'''s in-flight tasks on a clean
+  `WorkerCoordinator.release_worker_tasks`, which reclaims a worker's in-flight tasks on a clean
   `/ws/workers` disconnect or a mid-result abort rather than waiting out
   `task_reassignment_timeout`. This app imports only `SettingsBase` / `get_secret`
   (`juniper_recurrence/settings.py:32`), `TrainingLifecycle`
