@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from juniper_recurrence_model import LMURegressor, SequenceData, load_sequence_npz, sequence_data_from_arrays
+from juniper_recurrence_model.data import derive_full_split
 
 
 def _make_equities_seq_arrays(splits=("train", "test"), w=40, lookback=12, n_features=4, seed=0):
@@ -163,3 +164,138 @@ def test_loader_rejects_negative_dt():
     }
     with pytest.raises(ValueError):
         sequence_data_from_arrays(arrays, "train")
+
+
+# --------------------------------------------------------------------------------------
+# Decision 11: juniper-data stopped emitting the *_full family (juniper-data#369), and
+# POST /v1/crossval derives its walk-forward folds from it (D-CV-4). The loader now
+# rebuilds it. The property that matters is ROW ORDER, not membership: crossval slices by
+# row index, so a reconstruction holding the right rows in the wrong order silently changes
+# which windows land in which fold.
+# --------------------------------------------------------------------------------------
+
+
+def _assemble_like_juniper_data(per_ticker, keys=("X", "y_reg", "dt", "ticker_code")):
+    """Build an artifact exactly the way ``equities_seq._assemble`` does.
+
+    Split arrays are SPLIT-major (every ticker's train, then every ticker's val, ...);
+    ``_full`` is ENTITY-major (each ticker's train, val, test in turn). Same rows, different
+    permutation -- reproducing that asymmetry is the entire point of this fixture.
+    """
+    splits = ("train", "val", "test")
+    arrays = {}
+    for split in splits:
+        for key in keys:
+            arrays[f"{key}_{split}"] = np.concatenate([t[split][key] for t in per_ticker], axis=0)
+    for key in keys:
+        blocks = [t[split][key] for t in per_ticker for split in splits]
+        arrays[f"{key}_full"] = np.concatenate(blocks, axis=0)
+    return arrays
+
+
+def _ticker_windows(ticker_code, counts, lookback=4, n_features=2, start=0):
+    """One ticker's per-split window blocks, with globally unique row values."""
+    out, cursor = {}, start
+    for split, n in zip(("train", "val", "test"), counts, strict=True):
+        ids = np.arange(cursor, cursor + n, dtype=np.float32)
+        out[split] = {
+            # Every row carries its own globally unique id, so a permutation is visible
+            # in the VALUES rather than only in the shapes.
+            "X": np.broadcast_to(ids[:, None, None], (n, lookback, n_features)).astype(np.float32).copy(),
+            "y_reg": ids[:, None].copy(),
+            "dt": np.zeros((n, lookback), dtype=np.float32),
+            "ticker_code": np.full(n, ticker_code, dtype=np.int64),
+        }
+        cursor += n
+    return out
+
+
+def _three_ticker_artifact():
+    return _assemble_like_juniper_data(
+        [
+            _ticker_windows(10, (3, 2, 2), start=0),
+            _ticker_windows(20, (4, 1, 2), start=100),
+            _ticker_windows(30, (2, 2, 3), start=200),
+        ]
+    )
+
+
+class TestDeriveFullSplit:
+    """The derived ``*_full`` must equal the array juniper-data used to ship, row for row."""
+
+    def test_multi_ticker_reconstruction_is_exact(self):
+        artifact = _three_ticker_artifact()
+        expected_X = artifact["X_full"].copy()
+        expected_y = artifact["y_reg_full"].copy()
+
+        post_369 = {k: v for k, v in artifact.items() if not k.endswith("_full")}
+        derived = derive_full_split(post_369)
+
+        assert np.array_equal(derived["X_full"], expected_X)
+        assert np.array_equal(derived["y_reg_full"], expected_y)
+
+    def test_a_plain_concatenation_would_not_have_worked(self):
+        """Prove the stable sort is load-bearing rather than incidental.
+
+        If ``concat(train, val, test)`` already equalled ``X_full``, the reordering above
+        would be untested ceremony and could be deleted without a failure. It does not.
+        """
+        artifact = _three_ticker_artifact()
+        naive = np.concatenate([artifact["X_train"], artifact["X_val"], artifact["X_test"]], axis=0)
+
+        assert naive.shape == artifact["X_full"].shape
+        assert not np.array_equal(naive, artifact["X_full"]), "fixture is not multi-ticker enough to exercise the reordering"
+        assert sorted(naive[:, 0, 0].tolist()) == sorted(artifact["X_full"][:, 0, 0].tolist()), "same rows, different order"
+
+    def test_a_producer_full_array_is_never_overwritten(self):
+        """A legacy artifact keeps the producer's own arrays, byte for byte."""
+        artifact = _three_ticker_artifact()
+        sentinel = np.full_like(artifact["X_full"], -7.0)
+        artifact["X_full"] = sentinel
+
+        derived = derive_full_split(artifact)
+        assert np.array_equal(derived["X_full"], sentinel)
+
+    def test_single_ticker_is_a_plain_concatenation(self):
+        artifact = _assemble_like_juniper_data([_ticker_windows(10, (4, 2, 3))])
+        post_369 = {k: v for k, v in artifact.items() if not k.endswith("_full")}
+
+        derived = derive_full_split(post_369)
+        assert np.array_equal(derived["X_full"], artifact["X_full"])
+        assert np.array_equal(derived["X_full"], np.concatenate([artifact["X_train"], artifact["X_val"], artifact["X_test"]], axis=0))
+
+    def test_an_artifact_without_ticker_codes_still_derives(self):
+        artifact = _assemble_like_juniper_data([_ticker_windows(10, (3, 2, 2))], keys=("X", "y_reg", "dt"))
+        post_369 = {k: v for k, v in artifact.items() if not k.endswith("_full")}
+
+        derived = derive_full_split(post_369)
+        assert np.array_equal(derived["X_full"], artifact["X_full"])
+
+    def test_a_legacy_two_way_artifact_derives_without_val(self):
+        """No val partition: the whole set is train | test, as the old two-way ``_full`` was."""
+        arrays = _make_equities_seq_arrays(splits=("train", "test"))
+        derived = derive_full_split(arrays)
+        assert derived["X_full"].shape[0] == arrays["X_train"].shape[0] + arrays["X_test"].shape[0]
+
+
+class TestCrossvalReadSurvivesDecision11:
+    """``POST /v1/crossval`` passes ``split="full"``. That read must not fail post-#369."""
+
+    def test_full_split_loads_from_an_artifact_that_has_no_full_family(self):
+        arrays = _make_equities_seq_arrays(splits=("train", "val", "test"))
+        assert "X_full" not in arrays  # the post-#369 shape
+
+        data = sequence_data_from_arrays(arrays, "full")
+        assert data.X.shape[0] == sum(arrays[f"X_{s}"].shape[0] for s in ("train", "val", "test"))
+        assert data.dt.shape[0] == data.X.shape[0]
+        assert data.y.shape[0] == data.X.shape[0]
+
+    def test_full_split_still_loads_from_a_legacy_artifact(self):
+        arrays = _three_ticker_artifact()
+        data = sequence_data_from_arrays(arrays, "full")
+        assert np.array_equal(data.X, arrays["X_full"])
+
+    def test_a_missing_partition_still_raises_rather_than_deriving_a_partial_set(self):
+        """The fallback must not paper over a genuinely broken artifact."""
+        with pytest.raises(ValueError, match="X_full"):
+            sequence_data_from_arrays({"y_reg_train": np.zeros((2, 1), dtype=np.float32)}, "full")
