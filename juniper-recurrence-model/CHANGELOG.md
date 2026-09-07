@@ -8,6 +8,24 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The regression target is now checked for finiteness, as `X` and `dt` already were.**
+  `sequence_data_from_arrays` rejected non-finite features and non-finite `dt`, but read the target
+  and passed it through unchecked. That asymmetry is the defect: a guard written to stop non-finite
+  values reaching the model left the **target** open, and a NaN there produces a NaN loss on the
+  first backward pass — the exact failure the `X` check prevents, arriving through the one door left
+  unguarded.
+
+  Worth closing rather than merely tidy because of the producer side: juniper-data#378 defaults
+  `equities` to `fundamentals_fill="nan"`, and `y_reg` is derived from a price column, so a target
+  built over a pre-filing span is NaN **by construction** rather than by accident.
+
+  Pinned across **both** target keys — the loader prefers `y_reg_{split}` and falls back to
+  `y_{split}`, and guarding only the preferred key would leave the fallback path unchecked. The
+  fallback arm removes `y_reg_train` so it genuinely reaches that branch rather than skipping.
+  Verified non-vacuous: neutering the check turns all four arms red.
+
 ## [0.2.0] - 2026-07-28
 
 ### Changed

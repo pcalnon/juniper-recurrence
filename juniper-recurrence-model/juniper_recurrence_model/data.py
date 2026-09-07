@@ -153,6 +153,18 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
         raise ValueError(f"missing regression target: neither 'y_reg_{split}' nor 'y_{split}' present")
     if y.ndim == 1:
         y = y[:, None]
+    # ``X`` and ``dt`` are both checked for finiteness; ``y`` was not. That
+    # asymmetry is the whole point of this line: a guard that exists to stop
+    # non-finite values entering the model left the TARGET unguarded, so a NaN
+    # there produced a NaN loss on the first backward pass -- the exact failure
+    # the X check is written to prevent, arriving by the one door left open.
+    #
+    # The producer side made this worth closing rather than merely tidy:
+    # juniper-data#378 defaults `equities` to `fundamentals_fill="nan"`, and
+    # `y_reg` is derived from a price column, so a target built over a
+    # pre-filing span is NaN by construction rather than by accident.
+    if not np.all(np.isfinite(y)):
+        raise ValueError(f"regression target for split '{split}' has non-finite values (NaN/Inf)")
 
     # Timing: dt directly, or derived from absolute t (matches the contract's t/dt consistency).
     dt_key, t_key = f"dt_{split}", f"t_{split}"
