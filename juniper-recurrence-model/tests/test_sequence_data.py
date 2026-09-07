@@ -60,6 +60,32 @@ def test_sequence_data_rejects_nonfinite_features():
         sequence_data_from_arrays(arrays, split="train")
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf])
+@pytest.mark.parametrize("key", ["y_reg_train", "y_train"])
+def test_sequence_data_rejects_nonfinite_target(bad, key):
+    """The TARGET must be rejected too -- X and dt were guarded, y was not.
+
+    That asymmetry is the defect: this guard exists to stop non-finite values
+    reaching the model, and a NaN in the target produces a NaN loss on the first
+    backward pass -- the very failure the X check prevents, arriving through the
+    one door left open.
+
+    Both target keys are covered because the loader prefers ``y_reg_*`` and falls
+    back to ``y_*``; guarding only the preferred key would leave the fallback
+    path unchecked.
+    """
+    arrays = _make_equities_seq_arrays(splits=("train",))
+    if key == "y_train":
+        # Exercise the FALLBACK branch for real rather than skipping it: the
+        # loader prefers ``y_reg_*``, so the fallback is only reached once the
+        # preferred key is gone. A skip here would have pinned nothing.
+        arrays["y_train"] = np.asarray(arrays.pop("y_reg_train"), dtype=float).copy()
+    arrays[key] = np.asarray(arrays[key], dtype=float).copy()
+    arrays[key][0] = bad
+    with pytest.raises(ValueError, match="non-finite|finite"):
+        sequence_data_from_arrays(arrays, split="train")
+
+
 def test_end_to_end_fit_predict_on_sequence_npz(tmp_path):
     """The irregular-Δt consumer path: load a 3-D NPZ and train/predict LMURegressor end-to-end."""
     path = tmp_path / "equities_seq.npz"
