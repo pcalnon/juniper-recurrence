@@ -351,13 +351,27 @@ jobs:
           ref="$(jq -r '.tags[0]' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
 
           echo "--- digest identity"
+          # Each build job pushed its arch BY DIGEST, and with provenance attestations on (the
+          # build-push-action default) that digest names a per-arch OCI INDEX -- image manifest plus
+          # attestation -- which `imagetools create` FLATTENS into the published list. So the list's
+          # entries are the IMAGE manifests, not the pushed index digests, and comparing the two
+          # directly fails on every publish (worker dispatch run 34292278641, 2026-09-08). Resolve
+          # each verified digest to the image manifest(s) it carries first; a digest that already IS
+          # an image manifest (provenance off) has no `.manifests` and stands for itself.
           listed="$(jq -r '[.manifests[]? | select(.platform.os=="linux") | .digest] | sort | join(" ")' /tmp/manifest.json)"
-          verified="$(cat /tmp/digests/* | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          verified=""
+          for f in /tmp/digests/*; do
+            pushed="$(cat "${f}")"
+            images="$(docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}@${pushed}" --format '{{ json .Manifest }}' \
+              | jq -r '[.manifests[]? | select(.platform.os=="linux") | .digest] | join(" ")')"
+            verified="${verified} ${images:-${pushed}}"
+          done
+          verified="$(tr ' ' '\n' <<< "${verified}" | sed '/^$/d' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
           if [ "${listed}" != "${verified}" ]; then
-            echo "::error::manifest list references [${listed}] but the verified build digests are [${verified}]"
+            echo "::error::manifest list references [${listed}] but the verified build digests resolve to [${verified}]"
             exit 1
           fi
-          echo "  ${ref} references exactly the verified digests"
+          echo "  ${ref} references exactly the verified images"
 
           echo "--- CPU-only contract (linux/amd64, native pull of ${ref})"
           docker run --rm -i -e EXPECT_TORCH=absent \
