@@ -45,7 +45,7 @@ keys are configured; health + docs are always exempt):
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
 | `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`. |
 | `/v1/training/status` | GET | `idle` / `trained` + last metrics + training events. |
-| `/v1/crossval` | POST | Walk-forward cross-validation over the dataset's `_full` split (synchronous); returns aggregated per-fold metrics. |
+| `/v1/crossval` | POST | Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's own `*_full` when present, otherwise rebuilt from `train \| val \| test`) (synchronous); returns aggregated per-fold metrics. |
 | `/v1/crossval/status` | GET | Most recent cross-validation result (aggregate + per-fold). |
 | `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref. |
 | `/v1/model` | GET | Current model topology + regression metrics. |

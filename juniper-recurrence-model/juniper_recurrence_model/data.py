@@ -5,7 +5,9 @@ The authoritative, full-contract validator is juniper-data-client's
 This module is the lean, **numpy-only model-side reader**: it pulls the per-split arrays
 :class:`~juniper_recurrence_model.LMURegressor` consumes (``X`` / ``y`` / ``dt`` /
 ``target_dt`` / ``seq_lengths``) out of the NPZ key layout (per-split suffixes
-``_train`` / ``_test`` / ``_full``) and applies the minimal ``dt`` rules the model relies on.
+``_train`` / ``_val`` / ``_test`` / ``_full``, the last **derived** from the partitions by
+:func:`derive_full_split` when the artifact does not carry it — decision 11 retired the
+``*_full`` family, juniper-data#369) and applies the minimal ``dt`` rules the model relies on.
 It deliberately takes **no** juniper-data-client dependency, keeping this package numpy-only.
 
 The WS-1 3-D contract (juniper-data#168; ``DELTA_T_HANDLING`` §6): ``X_{split}`` is ``(W, L, F)``;
@@ -49,7 +51,11 @@ class SequenceData:
 
 
 def load_sequence_npz(path: Any, split: str = "train") -> SequenceData:
-    """Read one ``split`` (``"train"`` / ``"test"`` / ``"full"``) of a 3-D sequence ``.npz``."""
+    """Read one ``split`` (``"train"`` / ``"val"`` / ``"test"`` / ``"full"``) of a 3-D sequence ``.npz``.
+
+    ``"full"`` is served from the artifact's own ``*_full`` family when it has one and is
+    otherwise derived by :func:`derive_full_split` — see :func:`sequence_data_from_arrays`.
+    """
     with np.load(path, allow_pickle=False) as handle:
         arrays = {key: handle[key] for key in handle.files}
     return sequence_data_from_arrays(arrays, split)

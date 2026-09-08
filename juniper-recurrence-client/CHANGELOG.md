@@ -21,6 +21,17 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Fixed
 
+- **Documentation: the `crossval` docstring and the README described a split the producer no longer
+  emits.** Both said cross-validation runs "over the dataset's `_full` split", naming an NPZ key
+  that decision 11 retired (§9.5 of juniper-ml
+  `notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md`; juniper-data#369
+  stopped emitting the `*_full` family). The endpoint still cross-validates the whole dataset — the
+  service serves that from the artifact's own `*_full` arrays when present and otherwise rebuilds it
+  from `train | val | test` (juniper-recurrence#150) — so a reader who went looking for `X_full` in a
+  current artifact would not find it and would reasonably conclude the endpoint was broken. The
+  docstring now also states that `crossval`'s `split` argument is not used by that endpoint, which
+  always cross-validates the whole set. **Documentation only: no client behaviour changes.**
+
 - **The README now documents the monorepo layout and the three-way name split** (defect-register
   `APD-RCLIENT-005`). This package is published from the `juniper-recurrence-client/` subdirectory of
   `pcalnon/juniper-recurrence`, so its repository, distribution (`juniper-recurrence-client`) and import

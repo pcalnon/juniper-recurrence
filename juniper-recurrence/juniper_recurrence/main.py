@@ -50,7 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--dataset", default=None, help="Dataset id to train on.")
     train.add_argument("--name", default=None, help="Dataset name (uses the latest version).")
     train.add_argument("--generator", default=None, help="Generator to create a dataset from (e.g. equities_seq).")
-    train.add_argument("--split", default="train", help="Split to train on (train/test/full; default: train).")
+    train.add_argument("--split", default="train", help="Split to train on: 'train', 'val', 'test', or 'full' — the whole dataset, served from the artifact's own *_full arrays when present and otherwise rebuilt from the partitions (default: train).")
     train.add_argument("--d", type=int, default=None, help="LMU memory order (default: settings.default_d).")
     train.add_argument("--theta", type=float, default=None, help="LMU window length θ (default: data-driven).")
     train.add_argument("--ridge", type=_ridge_arg, default=None, help="Readout L2 penalty: a float or 'gcv' for closed-form GCV selection (default: settings.default_ridge).")

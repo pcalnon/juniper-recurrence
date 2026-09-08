@@ -20,6 +20,29 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `juniper_service_core.workers` / `.websocket` returns zero hits, so this is a ceiling raise for
   adoptability, not a behaviour change here.
 
+- **A request naming a split outside `train` / `val` / `test` / `full` is now a 422 at the request
+  boundary**, instead of a `ValueError` raised much later and much deeper, inside the model loader,
+  as a missing-NPZ-key error. `DatasetRef.split` was a bare `str`, so the HTTP edge accepted any
+  string and the failure surfaced far from its cause — a 500-shaped outcome for what is simply a
+  malformed request. It is now `Literal["train", "val", "test", "full"]`, which also lets the
+  published OpenAPI schema advertise the four names rather than an open `string`. The default is
+  unchanged (`train`), and a survey of the app, its tests and the client found **no** call site
+  passing any other value, so nothing that worked before stops working.
+
+- **`val` is now documented on `--split` and `DatasetRef.split`.** The three-way partition
+  (`train` / `val` / `test`) has been the NPZ contract since juniper-data added `X_val`, but the
+  CLI help advertised only `train/test/full` and the schema documented nothing at all — so the
+  in-loop split was reachable but undiscoverable.
+
+- **`full` remains valid, and is now described accurately.** It is served from the artifact's own
+  `*_full` arrays when it has them, and otherwise rebuilt by
+  `juniper_recurrence_model.data.derive_full_split` — which requires a `juniper-recurrence-model`
+  carrying juniper-recurrence#150. Decision 11 (§9.5 of juniper-ml
+  `notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md`, implemented
+  producer-side by juniper-data#369) retired the `*_full` family, so the rebuilt case is now the
+  ordinary one; `POST /v1/crossval` depends on it (decision D-CV-4). The README's `/v1/crossval` row
+  said "over the dataset's `_full` split", naming a key the producer no longer emits.
+
 ## [0.4.0] - 2026-08-08
 
 ### Added

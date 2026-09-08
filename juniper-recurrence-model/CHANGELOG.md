@@ -8,6 +8,31 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Added
+
+- **`derive_full_split` — public (exported in `__all__`), rebuilds the whole-dataset view that
+  decision 11 retired** (juniper-recurrence#150; decision 11 is §9.5 of juniper-ml
+  `notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md`, implemented
+  producer-side by juniper-data#369). It synthesizes the `*_full` family from whichever of
+  `train` / `val` / `test` the artifact actually carries, composing only those base keys present in
+  **every** present partition — a key missing from any one of them is skipped rather than
+  half-built.
+
+  **Row order is the whole difficulty, and it is not a concatenation.** juniper-data's `equities` /
+  `equities_seq` generators wrote `*_full` **entity-major** (each ticker's train, then its val, then
+  its test, ticker after ticker) while the partitions themselves are **split-major** (every ticker's
+  train, then every ticker's val, …). A plain `concat(train, val, test)` therefore holds the same
+  rows in a *different* order for any multi-ticker artifact, and cross-validation slices by **row
+  index** — so the naive version would silently redistribute windows across folds, changing what the
+  science measures rather than merely refactoring. So: concatenate, then **stable**-sort by
+  `ticker_code`, which restores exactly the entity-major order the producer wrote. The sort is
+  applied only when the artifact carries `ticker_code_<split>` for *every* present partition; the
+  stability is load-bearing (numpy's default quicksort would permute equal keys arbitrarily).
+
+  Where no `ticker_code` is present the plain concatenation is used — exact for any single-entity
+  artifact, and the best available reconstruction otherwise. A producer-supplied `*_full` is
+  **never overwritten**, so a legacy artifact keeps its own arrays byte for byte.
+
 ### Fixed
 
 - **The regression target is now checked for finiteness, as `X` and `dt` already were.**
@@ -25,6 +50,13 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `y_{split}`, and guarding only the preferred key would leave the fallback path unchecked. The
   fallback arm removes `y_reg_train` so it genuinely reaches that branch rather than skipping.
   Verified non-vacuous: neutering the check turns all four arms red.
+
+- **`sequence_data_from_arrays(split="full")` / `load_sequence_npz(…, "full")` now derive the
+  `*_full` family when the artifact does not carry it** (juniper-recurrence#150), instead of raising
+  `NPZ artifact is missing required key 'X_full'`. juniper-data#369 stopped emitting that family, so
+  without the fallback **every** artifact minted after it would fail this read — which is precisely
+  how `POST /v1/crossval` (walk-forward folds over the `full` split, decision D-CV-4) would have
+  died on every request. An artifact that still ships `*_full` takes the path it always took.
 
 ## [0.2.0] - 2026-07-28
 
