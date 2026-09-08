@@ -167,6 +167,15 @@ addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", 
 filterwarnings = [
     "error",
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
+    # anyio 4.15 (2026-09-02) deprecated the ``anyio.abc.BlockingPortal`` alias, and starlette
+    # 1.6.0's TestClient still reaches it, so the warning fires at COLLECTION of every module that
+    # imports ``fastapi.testclient`` -- under ``error`` above that killed the whole app lane on
+    # 2026-09-08 (run 34226103509: nine collection errors, zero tests run) on a PR that touched no
+    # test-client code. Same class as the httpx->httpx2 ignore: third-party + transitional, matched
+    # by MESSAGE + builtin category for the reason given there. Drop it once starlette imports
+    # ``anyio.from_thread.BlockingPortal``; if anyio rewords the message the warning surfaces as a
+    # loud collection failure again, which is the intended failure mode.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
