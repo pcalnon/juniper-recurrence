@@ -72,6 +72,7 @@ juniper-recurrence/
 │       ├── ci-recurrence-model.yml
 │       ├── ci-recurrence-client.yml
 │       ├── publish-recurrence-app.yml
+│       ├── publish-image.yml        # GHCR multi-arch image of the APP on juniper-recurrence-v* releases (Wave 2)
 │       ├── publish-recurrence-model.yml
 │       ├── publish-recurrence-client.yml
 │       ├── pr-base-branch-guard.yml

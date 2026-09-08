@@ -1,0 +1,365 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (application subdirectory of juniper-recurrence)
+# File Name:     publish-image.yml
+# Author:        Paul Calnon
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:   Publish the juniper-recurrence APPLICATION container image to the GitHub
+#                Container Registry (GHCR) as a multi-arch manifest (linux/amd64 + linux/arm64).
+#
+#    Wave 2 of the container-registry rollout (juniper-ml
+#    notes/JUNIPER_2026-09-05_JUNIPER-ECOSYSTEM_CONTAINER-REGISTRY-PUBLISHING-PLAN.md, D-1..D-5).
+#    Template: juniper-cascor-worker/.github/workflows/publish-image.yml, whose header carries the
+#    full rationale -- native runners per arch and no QEMU, push BY DIGEST with tags written exactly
+#    once by the merge job, a pull_request arm that builds both arches and pushes nothing, and no
+#    credential beyond the job's GITHUB_TOKEN. What is DIFFERENT here:
+#
+#      * MULTI-PACKAGE REPO. Three release-tag families fire `release: published`
+#        (`juniper-recurrence-v*`, `juniper-recurrence-model-v*`, `juniper-recurrence-client-v*`).
+#        Both jobs are guarded to `juniper-recurrence-v` -- the discriminator
+#        publish-recurrence-app.yml already uses (`-v` is what excludes `-client-v` and `-model-v`)
+#        -- because `latest` below is gated on the EVENT, not the tag: an unguarded run on a model
+#        release would republish `juniper-recurrence:latest` from the wrong release, and the run
+#        would read SUCCESS.
+#      * PREFIXED TAGS. The semver rules carry `match=juniper-recurrence-v(.*)`, so metadata-action
+#        strips the prefix BEFORE parsing (meta.ts applies `match` and takes group 1 ahead of its
+#        `semver.valid` gate). `type=match` is the wrong instrument -- it has no semver logic and
+#        cannot emit `{{major}}.{{minor}}`. A rule that does not parse only WARNS, never fails, which
+#        is why the merge job asserts that a version tag was actually produced.
+#      * BUILD CONTEXT is the app subdirectory `juniper-recurrence/` (monorepo). The version is a
+#        static attr in `juniper_recurrence/_version.py` (`dynamic = ["version"]` in pyproject), so
+#        provenance reads that file, not `[project].version`.
+#      * NO TORCH, BY DESIGN. The LMU is numpy-only. The CPU-only check runs with
+#        `EXPECT_TORCH=absent`, so torch or any nvidia-*/triton wheel creeping into the image fails
+#        the build instead of shipping 3 GB to a Pi (the worker's 2026-09-07 image did exactly that).
+#      * python:3.13-slim, so the arm64 argument is about cp313 wheels: every one of the 31
+#        distributions `.[observability]` resolves to on 3.13 ships a cp313/abi3 manylinux aarch64
+#        wheel or is pure Python (checked 2026-09-08 against PyPI). Nothing is built on arm64.
+#####################################################################################################################################################################################################
+
+name: Publish Container Image
+
+on:
+  release:
+    types: [published]
+  # Build-only validation. Anything that can change what the image contains, plus this file
+  # itself -- a workflow that only runs on release must be exercised on the PR that edits it, or
+  # its first real run is also its first run. The Dockerfile installs from PyPI (no lock), so the
+  # image ALSO changes when PyPI does; the PR arm cannot see that, the smoke test on release can.
+  pull_request:
+    paths:
+      - "juniper-recurrence/Dockerfile"
+      - "juniper-recurrence/pyproject.toml"
+      - "juniper-recurrence/juniper_recurrence/**"
+      - "util/check_image_cpu_only.py"
+      - ".github/workflows/publish-image.yml"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Push to GHCR (false = build-only dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # ``github.repository`` is ``pcalnon/juniper-recurrence``, so the image lands at
+  # ghcr.io/pcalnon/juniper-recurrence -- the application's name, matching PyPI and the deploy
+  # compose service. The model and client packages have no image.
+  IMAGE_NAME: ${{ github.repository }}
+  APP_DIR: juniper-recurrence
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Build one arch per NATIVE runner. No QEMU.
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    # Release-tag guard -- LOAD-BEARING in this multi-package repo (see header). PRs and
+    # dispatches are unaffected.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'juniper-recurrence-v')
+    strategy:
+      fail-fast: false # one arch failing must not hide the other arch's result
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve build provenance
+        id: prov
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       juniper-recurrence - Image Build Provenance          ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          # The Dockerfile stamps these as OCI labels AND exports them as env vars so the
+          # running service reports them (provenance.* / build_info metric). Empty values
+          # read back as None, so they must be set. The version is a static attr, not
+          # [project].version -- pyproject declares it dynamic.
+          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "${APP_DIR}/juniper_recurrence/_version.py" | head -n1)"
+          if [ -z "${version}" ]; then
+            echo "::error::could not read __version__ from ${APP_DIR}/juniper_recurrence/_version.py"
+            exit 1
+          fi
+          echo "app_version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+          # This image never ships torch; the CPU-only check asserts its ABSENCE.
+          echo "expect_torch=absent" >> "${GITHUB_OUTPUT}"
+          echo "  APP_VERSION = ${version}"
+          echo "  GIT_SHA     = ${GITHUB_SHA}"
+          echo "  TORCH       = absent (numpy-only image)"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Only a real publish needs credentials. A PR build must not authenticate.
+      - name: Log in to GHCR
+        if: github.event_name == 'release' || inputs.push
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two build steps, deliberately: the publish and validation paths need OPPOSITE `tags`
+      # handling, and `${{ cond && '' || 'x' }}` is NOT a ternary when the true branch is ''.
+      # Publish: push BY DIGEST with NO tag (buildx rejects a tagged ref on a digest push).
+      - name: Build and push ${{ matrix.platform }}
+        id: build
+        if: github.event_name == 'release' || inputs.push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ env.APP_DIR }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.prov.outputs.build_date }}
+            APP_VERSION=${{ steps.prov.outputs.app_version }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      # Validation: `type=docker` LOADS the image into this runner's daemon (needs a tag) so the
+      # smoke test runs the artifact just built. Nothing is pushed; no credential is present.
+      - name: Build ${{ matrix.platform }} (validation only)
+        if: github.event_name != 'release' && !inputs.push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ env.APP_DIR }}
+          platforms: ${{ matrix.platform }}
+          tags: recurrence-smoke:${{ matrix.arch }}
+          outputs: type=docker
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.prov.outputs.build_date }}
+            APP_VERSION=${{ steps.prov.outputs.app_version }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      # Smoke-test the arch just built, on a runner of that same arch (a real execution, not
+      # emulation). The native wheels that must resolve per arch here are numpy and
+      # pydantic-core; importing the app package proves the install itself.
+      - name: Smoke test (build-only runs)
+        if: github.event_name != 'release' && !inputs.push
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       juniper-recurrence - ${{ matrix.platform }} smoke test"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          img='recurrence-smoke:${{ matrix.arch }}'
+
+          # The Dockerfile sets `ENTRYPOINT ["juniper-recurrence"]`, so a bare
+          # `docker run IMG python -c ...` passes `python -c ...` as ARGUMENTS to the console
+          # script rather than running python. --entrypoint is required.
+          echo "--- interpreter + native wheels + app package"
+          docker run --rm --entrypoint python "${img}" -c \
+            'import platform, numpy, pydantic_core, juniper_recurrence; print("machine:", platform.machine(), "| numpy:", numpy.__version__, "| pydantic_core:", pydantic_core.__version__, "| juniper_recurrence:", juniper_recurrence.__version__)'
+
+          # CPU-only contract: this image ships no torch and nothing from the CUDA stack.
+          echo "--- CPU-only contract"
+          docker run --rm -i -e EXPECT_TORCH='${{ steps.prov.outputs.expect_torch }}' \
+            --entrypoint python "${img}" - < util/check_image_cpu_only.py
+
+          # The real entrypoint: `juniper-recurrence --help` (argparse) proves the console
+          # script is installed and runs on this arch.
+          echo "--- entrypoint"
+          docker run --rm "${img}" --help > /dev/null
+          echo "    juniper-recurrence --help OK"
+
+      # The smoke test never runs on a publish, so the CPU-only contract is ALSO asserted on the
+      # path that ships: pull the image just pushed -- by digest, on this same native arch. A
+      # failure fails this arch's job, the merge job is skipped, and no tag is ever written.
+      - name: Verify pushed image is CPU-only (publish runs)
+        if: github.event_name == 'release' || inputs.push
+        run: |
+          digest='${{ steps.build.outputs.digest }}'
+          if [ -z "${digest}" ]; then
+            echo "::error::build produced no digest -- nothing to verify"
+            exit 1
+          fi
+          ref="${REGISTRY}/${IMAGE_NAME}@${digest}"
+          echo "verifying ${ref} on ${{ matrix.platform }}"
+          docker run --rm -i -e EXPECT_TORCH='${{ steps.prov.outputs.expect_torch }}' \
+            --entrypoint python "${ref}" - < util/check_image_cpu_only.py
+
+      - name: Export digest
+        if: github.event_name == 'release' || inputs.push
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          if [ -z "${digest}" ]; then
+            echo "::error::build produced no digest -- the push-by-digest output is missing"
+            exit 1
+          fi
+          echo "${digest}" > "/tmp/digests/${{ matrix.arch }}"
+          echo "  ${{ matrix.arch }} -> ${digest}"
+
+      - name: Upload digest
+        if: github.event_name == 'release' || inputs.push
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Merge the per-arch digests into ONE manifest list and apply the tags -- the only job that
+  # writes a tag, so a tag can never point at a half-published set.
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  merge:
+    name: Publish manifest
+    runs-on: ubuntu-24.04
+    needs: [build]
+    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'juniper-recurrence-v')) || inputs.push
+
+    steps:
+      # Needed for util/check_image_cpu_only.py.
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag scheme (D-3): X.Y.Z + X.Y + latest, release-only. The release tag here is
+      # `juniper-recurrence-vX.Y.Z`, so the semver rules carry `match=` to strip the prefix --
+      # the `match` ATTRIBUTE on type=semver, not type=match (see header). `latest` fires only on
+      # a real release; `dispatch-<sha>` keeps the merge job testable from a workflow_dispatch,
+      # where the semver rules produce nothing and an empty tag set would fail `imagetools create`.
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},match=juniper-recurrence-v(.*)
+            type=semver,pattern={{major}}.{{minor}},match=juniper-recurrence-v(.*)
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=dispatch-{{sha}},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Create manifest list
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       juniper-recurrence - Publish Multi-Arch Manifest     ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          cd /tmp/digests
+          echo "digests found:"
+          for f in *; do echo "  ${f}: $(cat "${f}")"; done
+
+          # `imagetools create` with no -t is an error, and an empty tag set means the metadata
+          # rules did not match this event -- fail with that reason rather than docker's.
+          tag_count="$(jq -r '.tags | length' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
+          if [ "${tag_count}" -eq 0 ]; then
+            echo "::error::metadata-action produced no tags for event '${{ github.event_name }}' -- nothing to publish"
+            exit 1
+          fi
+          echo "tags to apply: ${tag_count}"
+          # shellcheck disable=SC2046  # intentional word-splitting: one -t per tag, one ref per digest
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "${DOCKER_METADATA_OUTPUT_JSON}") \
+            $(for f in *; do printf '%s@%s ' "${REGISTRY}/${IMAGE_NAME}" "$(cat "${f}")"; done)
+
+      # A manifest that exists is not a manifest that lists both arches -- inspect it and fail
+      # loudly if an arch is missing, rather than discovering it on a Pi.
+      - name: Verify both architectures are present
+        run: |
+          # Inspect a tag we KNOW was applied (the metadata action's first tag), not
+          # `steps.meta.outputs.version`, which is empty for some event/rule combinations.
+          ref="$(jq -r '.tags[0]' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
+          if [ -z "${ref}" ] || [ "${ref}" = "null" ]; then
+            echo "::error::no tag to verify -- metadata-action produced an empty tag list"
+            exit 1
+          fi
+          echo "inspecting ${ref}"
+          docker buildx imagetools inspect "${ref}" --format '{{ json .Manifest }}' > /tmp/manifest.json
+          arches="$(jq -r '[.manifests[]?.platform | select(.os=="linux") | .architecture] | sort | join(",")' /tmp/manifest.json)"
+          echo "  architectures: ${arches}"
+          if [ "${arches}" != "amd64,arm64" ]; then
+            echo "::error::expected 'amd64,arm64' in the manifest list, got '${arches}'"
+            exit 1
+          fi
+          echo "::notice::published ${ref} for linux/amd64 + linux/arm64"
+
+      # On a release the semver rules MUST have produced the X.Y.Z tag. metadata-action only WARNS
+      # when a tag does not parse (meta.ts: core.warning + return, never setFailed), and `latest`
+      # still fires on the release event -- so without this check a release whose tag the `match`
+      # did not strip correctly would publish `:latest` with no version tag, pass the zero-tag guard
+      # above with exactly one tag, and read SUCCESS. This is the check that makes the prefixed-tag
+      # rules above safe to get wrong once.
+      - name: Verify the release produced a version tag
+        if: github.event_name == 'release'
+        run: |
+          versioned="$(jq -r '[.tags[] | select(test(":[0-9]+\\.[0-9]+\\.[0-9]+$"))] | length' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
+          if [ "${versioned}" -eq 0 ]; then
+            echo "::error::release '${{ github.event.release.tag_name }}' produced no X.Y.Z image tag -- the semver match rules did not parse it; tags: $(jq -c '.tags' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
+            exit 1
+          fi
+          echo "  version tag present ($(jq -c '.tags' <<< "${DOCKER_METADATA_OUTPUT_JSON}"))"
+
+      # Each arch's build job already ran the CPU-only check against the DIGEST it pushed. This
+      # closes the loop on the TAG a consumer pulls: the manifest list must reference exactly the
+      # verified digests, and the amd64 image behind the tag is pulled and checked natively here.
+      - name: Verify published image is CPU-only
+        run: |
+          ref="$(jq -r '.tags[0]' <<< "${DOCKER_METADATA_OUTPUT_JSON}")"
+
+          echo "--- digest identity"
+          listed="$(jq -r '[.manifests[]? | select(.platform.os=="linux") | .digest] | sort | join(" ")' /tmp/manifest.json)"
+          verified="$(cat /tmp/digests/* | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          if [ "${listed}" != "${verified}" ]; then
+            echo "::error::manifest list references [${listed}] but the verified build digests are [${verified}]"
+            exit 1
+          fi
+          echo "  ${ref} references exactly the verified digests"
+
+          echo "--- CPU-only contract (linux/amd64, native pull of ${ref})"
+          docker run --rm -i -e EXPECT_TORCH=absent \
+            --entrypoint python "${ref}" - < util/check_image_cpu_only.py
+          echo "::notice::${ref} is CPU-only: no torch, no CUDA stack"
