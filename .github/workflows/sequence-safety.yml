@@ -104,6 +104,25 @@ jobs:
           # The sequence-safety screens ship in juniper-ci-tools (rollout plan Wave 0/1);
           # >=0.8.0 is the first release carrying both console scripts + --scope.
           pip install "juniper-ci-tools>=0.8.0,<0.9.0"
+          # tests/test_main_verify_catchup_base.py (next step) parses main-verify.yml.
+          # This repo has no root pyproject to carry the dep -- it is a multi-package
+          # monorepo -- so the guard's one requirement is installed explicitly here.
+          pip install "pyyaml>=6.0.1"
+
+      # ---------------------------------------------------------------------------------
+      # The catch-up-base guard lives HERE, not in a package lane, for two reasons:
+      #   * no package lane collects the top-level tests/ directory (the same reason
+      #     memory-budget.yml runs its own suite), and
+      #   * every package lane is path-filter gated on its own subtree, so a PR that
+      #     touches ONLY .github/workflows/main-verify.yml -- exactly the change this
+      #     test exists to catch -- would skip every one of them. A guard that cannot
+      #     run on the change it guards is vacuous.
+      # This workflow is pull_request-triggered with NO path filter, so it always runs.
+      # ---------------------------------------------------------------------------------
+      - name: Guard the main-verify verdict-step contract
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests/test_main_verify_catchup_base.py
 
       - name: Run sequence-safety screens (symbol + docs)
         env:
