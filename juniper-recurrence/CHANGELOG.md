@@ -9,6 +9,22 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **`publish-image.yml` -- the application container image is published to GHCR on every
+  `juniper-recurrence-v*` release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, native
+  runners, no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly
+  once by the merge job. Wave 2 of the container-registry rollout (juniper-ml
+  `notes/JUNIPER_2026-09-05_JUNIPER-ECOSYSTEM_CONTAINER-REGISTRY-PUBLISHING-PLAN.md`); template
+  `juniper-cascor-worker/.github/workflows/publish-image.yml`. Both jobs are guarded to the
+  `juniper-recurrence-v` tag family (the discriminator `publish-recurrence-app.yml` uses), because
+  the model and client releases fire the same event and would otherwise republish
+  `juniper-recurrence:latest`; the semver tag rules carry `match=juniper-recurrence-v(.*)` to strip
+  the prefix, and the merge job fails a release that produced no `X.Y.Z` tag (metadata-action only
+  warns on a tag it cannot parse). Build context is `juniper-recurrence/`; the version is read from
+  `juniper_recurrence/_version.py`. The image ships no torch, and `util/check_image_cpu_only.py`
+  asserts exactly that on the PR arm and on the publish path. Not a required status check.
+
 ### Changed
 
 - **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
