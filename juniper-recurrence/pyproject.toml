@@ -164,9 +164,22 @@ addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", 
 # 2026-06-30 — the class is version-dependent: absent in the 2026-06-30 resolution, present in
 # 1.3.1). If starlette rewords the message, the warning surfaces as a loud test failure at the
 # warn site (the TST-5-intended failure mode), never as a collection death.
+#
+# Second targeted ignore (2026-09-08): anyio 4.15.x deprecates the ``anyio.abc.BlockingPortal``
+# alias via a lazy-import shim, and starlette 1.6.0's ``testclient`` still evaluates
+# ``AbstractContextManager[anyio.abc.BlockingPortal]`` at MODULE IMPORT -- so under ``error`` the
+# warning fires while pytest collects every test that imports TestClient, and the whole suite dies
+# with 8 collection errors on every Python before a single test runs (CI — juniper-recurrence-app,
+# 2026-09-08, two unrelated PRs; the two green runs before them had SKIPPED the app tests via the
+# changes filter, so this was the first execution since anyio 4.15 shipped). Third-party +
+# transitional (starlette must move to
+# ``anyio.from_thread.BlockingPortal``); nothing in juniper_recurrence uses the alias. Same
+# message + builtin-category shape as the filter above, for the same DISC-1 reason. Drop it once
+# the resolved starlette no longer imports the alias.
 filterwarnings = [
     "error",
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
