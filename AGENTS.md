@@ -44,7 +44,7 @@ It is a live **4-sub-project monorepo** — a FastAPI + CLI application, its mod
 |---|---|---|---|
 | Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.4.0 |
 | Model core (Δt-native LMU + `LMURegressor`) | `juniper-recurrence-model/` | `juniper-recurrence-model` | 0.3.0 |
-| HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.2.0 |
+| HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.3.0 |
 | Benchmark / evaluation harness | `bench/` | _(not a package)_ | n/a |
 
 The application is the first real consumer of the shared `juniper-service-core` framework (`create_app` + `TrainingLifecycle`), and the model passes the shared `juniper-model-core` `TrainableModel` conformance kit unchanged. The model, the data foundation, and the service framework all ship as separate PyPI packages; the app is the glue + the HTTP/CLI surface.
