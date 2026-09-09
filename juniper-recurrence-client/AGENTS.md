@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.2.0
-**Last Updated**: 2026-08-21
+**Version**: 0.3.0
+**Last Updated**: 2026-09-09
 
 ---
 
