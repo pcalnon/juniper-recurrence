@@ -511,7 +511,13 @@ class JuniperRecurrenceClient:
         mlp_patience: Optional[int] = None,
         timeout: Optional[float] = None,
     ) -> dict[str, Any]:
-        """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the ``_full`` split.
+        """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the whole dataset.
+
+        The folds are cut from the ``full`` split: the artifact's own ``*_full`` arrays when it has
+        them, and otherwise a view rebuilt server-side from ``train | val | test``. juniper-data
+        stopped emitting the ``*_full`` family, so the rebuilt case is now the ordinary one; the
+        ``split`` argument below is not used by this endpoint, which always cross-validates the
+        whole set.
 
         Returns the ``CrossValResponse`` (per-fold ``folds`` + ``eval_aggregate`` / ``eval_std``).
         ``scheme`` is ``"expanding"`` or ``"rolling"``. Raises 409 if a CV run is already running.
