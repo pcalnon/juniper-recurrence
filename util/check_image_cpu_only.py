@@ -22,12 +22,12 @@ for images whose Dockerfile sets an ENTRYPOINT, as the worker's does)::
 
 ``<major>.<minor>.<patch>+cpu``
     torch must import, ``torch.__version__`` must equal this value exactly,
-    ``torch.version.cuda`` must be ``None``, and no ``nvidia-*`` or ``triton``
-    distribution may be installed.
+    ``torch.version.cuda`` must be ``None``, and no ``nvidia-*``, ``cuda-*`` or
+    ``triton`` distribution may be installed.
 
 ``absent``
-    torch must not be importable, and no ``nvidia-*`` / ``triton`` distribution may
-    be installed (for images that never ship torch).
+    torch must not be importable, and no ``nvidia-*`` / ``cuda-*`` / ``triton``
+    distribution may be installed (for images that never ship torch).
 
 Why the distribution census is a separate check from the version string
 ------------------------------------------------------------------------
@@ -54,7 +54,10 @@ import re
 import sys
 
 _CPU_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\+cpu$")
-_FORBIDDEN_PREFIX = "nvidia-"
+# The whole CUDA stack as it actually appeared in the 2026-09-07 image: the nvidia-* runtime
+# libraries, triton, AND the cuda-* packages (cuda-toolkit, cuda-bindings, cuda-pathfinder).
+# The first census forbade only the first two families and would have passed the third.
+_FORBIDDEN_PREFIXES = ("nvidia-", "cuda-")
 _FORBIDDEN_NAMES = frozenset({"triton"})
 
 
@@ -75,7 +78,7 @@ def installed_distributions() -> set[str]:
 
 def forbidden_distributions(names: set[str]) -> list[str]:
     """The installed distributions that belong to the CUDA stack."""
-    return sorted(n for n in names if n.startswith(_FORBIDDEN_PREFIX) or n in _FORBIDDEN_NAMES)
+    return sorted(n for n in names if n.startswith(_FORBIDDEN_PREFIXES) or n in _FORBIDDEN_NAMES)
 
 
 def torch_importable() -> bool:
