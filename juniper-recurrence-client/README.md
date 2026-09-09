@@ -45,7 +45,8 @@ client.train(name="equities", d=16)
 # Predict — inline X with Δt, or a dataset reference
 client.predict(dataset_id="ds-1")
 
-# Walk-forward cross-validation over the dataset's _full split
+# Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's
+# own *_full arrays when present, otherwise rebuilt from train | val | test)
 result = client.crossval(name="equities", n_folds=4, scheme="expanding", embargo=2)
 print(result["eval_aggregate"])
 

@@ -69,6 +69,19 @@ def _validate_readout_fields(
         raise ValueError("ridge is not applicable to readout='mlp' (the MLP regularises via weight decay; set mlp_weight_decay)")
 
 
+# The four splits a dataset ref may name. ``train`` / ``val`` / ``test`` are the three partitions of
+# the NPZ contract (decision 11, juniper-ml
+# ``notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md`` §9.5); ``full``
+# is the whole dataset, served from the artifact's own ``*_full`` arrays when it has them and
+# otherwise rebuilt by ``juniper_recurrence_model.data.derive_full_split``.
+#
+# This was a bare ``str``, so a misspelled split was accepted at the edge and only failed later, deep
+# in the model loader, as a ``ValueError`` on a missing NPZ key — a 500-shaped failure for what is a
+# malformed request. Naming the four here moves the rejection to the request boundary (422), which is
+# also where the OpenAPI schema can advertise them.
+SplitName = Literal["train", "val", "test", "full"]
+
+
 class DatasetRef(BaseModel):
     """Reference to a 3-D sequence dataset to fetch via juniper-data-client.
 
@@ -80,7 +93,7 @@ class DatasetRef(BaseModel):
     name: str | None = None
     generator: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
-    split: str = "train"
+    split: SplitName = "train"
 
     @model_validator(mode="after")
     def _require_one_ref(self) -> DatasetRef:
