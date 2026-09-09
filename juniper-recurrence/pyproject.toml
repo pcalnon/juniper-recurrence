@@ -170,8 +170,9 @@ addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "-p", "no:dash", 
 # ``AbstractContextManager[anyio.abc.BlockingPortal]`` at MODULE IMPORT -- so under ``error`` the
 # warning fires while pytest collects every test that imports TestClient, and the whole suite dies
 # with 8 collection errors on every Python before a single test runs (CI — juniper-recurrence-app,
-# 2026-09-08, two unrelated PRs; the two green runs before them had SKIPPED the app tests via the
-# changes filter, so this was the first execution since anyio 4.15 shipped). Third-party +
+# 2026-09-08, three unrelated PRs; the three green runs before them -- 09-06 x2 and 09-07 -- had
+# SKIPPED the app tests via the changes filter, and the last real execution was 08-31, before
+# anyio 4.15.0 shipped on 09-02). Third-party +
 # transitional (starlette must move to
 # ``anyio.from_thread.BlockingPortal``); nothing in juniper_recurrence uses the alias. Same
 # message + builtin-category shape as the filter above, for the same DISC-1 reason. Drop it once

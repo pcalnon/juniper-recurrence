@@ -362,8 +362,19 @@ jobs:
           verified=""
           for f in /tmp/digests/*; do
             pushed="$(cat "${f}")"
-            images="$(docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}@${pushed}" --format '{{ json .Manifest }}' \
-              | jq -r '[.manifests[]? | select(.platform.os=="linux") | .digest] | join(" ")')"
+            arch_file="$(basename "${f}")"
+            manifest_json="$(docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}@${pushed}" --format '{{ json .Manifest }}')"
+            images="$(jq -r '[.manifests[]? | select(.platform.os=="linux") | .digest] | join(" ")' <<< "${manifest_json}")"
+            if [ -n "${images}" ]; then
+              # A pushed index must carry exactly ONE linux image, and it must be the arch the build
+              # job (and its census) ran on -- the digest file is named after that arch. Otherwise a
+              # multi-platform index would count an image the census never saw as "verified".
+              image_arch="$(jq -r '[.manifests[]? | select(.platform.os=="linux") | .platform.architecture] | join(" ")' <<< "${manifest_json}")"
+              if [ "$(wc -w <<< "${images}")" -ne 1 ] || [ "${image_arch}" != "${arch_file}" ]; then
+                echo "::error::pushed digest ${pushed} (digest file '${arch_file}') carries linux image(s) for [${image_arch}] -- expected exactly one, for ${arch_file}"
+                exit 1
+              fi
+            fi
             verified="${verified} ${images:-${pushed}}"
           done
           verified="$(tr ' ' '\n' <<< "${verified}" | sed '/^$/d' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
