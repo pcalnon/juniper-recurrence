@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-10
+
 ### Added
 
 - **`requirements.lock` -- the container image's dependencies are pinned.** The `Dockerfile` ran a

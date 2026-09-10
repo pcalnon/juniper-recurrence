@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.4.0
-**Last Updated**: 2026-09-09
+**Version**: 0.5.0
+**Last Updated**: 2026-09-10
 
 ---
 
@@ -42,7 +42,7 @@ It is a live **4-sub-project monorepo** — a FastAPI + CLI application, its mod
 
 | Sub-project | Directory | PyPI package | Version |
 |---|---|---|---|
-| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.4.0 |
+| Application (FastAPI + CLI service) | `juniper-recurrence/` | `juniper-recurrence` | 0.5.0 |
 | Model core (Δt-native LMU + `LMURegressor`) | `juniper-recurrence-model/` | `juniper-recurrence-model` | 0.3.0 |
 | HTTP client | `juniper-recurrence-client/` | `juniper-recurrence-client` | 0.3.0 |
 | Benchmark / evaluation harness | `bench/` | _(not a package)_ | n/a |
