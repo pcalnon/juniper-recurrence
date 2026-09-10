@@ -24,16 +24,29 @@ WORKDIR /build
 
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 
+# Dependencies come from requirements.lock, NOT from a bare `pip install ".[extra]"`.
+# Unpinned, the image's contents were whatever PyPI served at build time: two builds of
+# the same commit could ship different versions, and a bad upstream release reached the
+# image with nothing to stop it. The lock's header carries the regeneration recipe and
+# the arm64 wheel-availability pre-flight this image depends on (no gcc, no Rust here, so
+# a pin with no aarch64 wheel is a hard build failure on that arch).
+#
+# Copied and installed BEFORE the app source so a source-only change reuses this layer.
+COPY requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
+
 # Copy only what the build needs (pyproject reads README.md; version is a static
 # attr in juniper_recurrence/_version.py, so no git / setuptools-scm required).
 COPY pyproject.toml README.md ./
 COPY juniper_recurrence/ ./juniper_recurrence/
 
-# Install the app with the [observability] extra so the Prometheus /metrics
-# endpoint is available in the deployed image (WS-7 monitoring). Deps resolve
-# from PyPI: fastapi, uvicorn[standard], pydantic, numpy, juniper-service-core,
-# juniper-model-core[crossval], juniper-recurrence-model, juniper-data-client.
-RUN pip install --no-cache-dir ".[observability]"
+# The app itself, with deps already satisfied above. --no-deps keeps pip from
+# re-resolving anything the lock pinned; `pip check` then proves the installed set is
+# mutually consistent, so a lock that has drifted from pyproject.toml (a dependency
+# added but not re-locked) fails HERE, at build time, rather than at import on a Pi.
+# The [observability] extra's contents are in the lock -- it is compiled with
+# `--extra observability` -- so installing without the extra marker loses nothing.
+RUN pip install --no-cache-dir --no-deps . && pip check
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime — minimal production image

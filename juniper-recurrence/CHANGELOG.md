@@ -11,6 +11,26 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **`requirements.lock` -- the container image's dependencies are pinned.** The `Dockerfile` ran a
+  bare `pip install ".[observability]"`, so the image's contents were whatever PyPI served at build
+  time: two builds of the same commit could ship different dependency versions, and a bad upstream
+  release reached the image with nothing pinned to stop it. The builder now installs
+  `-r requirements.lock` (31 pins), then the app itself with `--no-deps` followed by `pip check`, so
+  a dependency added to `pyproject.toml` but never re-locked fails at **build** time rather than at
+  import on a Raspberry Pi. The lock is copied and installed before the app source so a source-only
+  change reuses the layer. Its header carries the regeneration recipe (`uv pip compile pyproject.toml
+  --extra observability --python-version 3.13`, run inside `juniper-recurrence/`) and the arm64
+  pre-flight note. `publish-image.yml`'s `paths:` filter now covers the lock, and nine new tests in
+  `tests/test_dockerfile_image_lock.py` pin the contract -- including that a bare extras install
+  cannot come back. Every pin was verified to have an installable `cp313`/`abi3` manylinux **aarch64**
+  wheel or be pure Python (juniper-ml `util/ad-hoc/2026-09-08_lock_wheel_availability.py`, 31/31 OK);
+  the image has no gcc and no Rust, so a pin without one is a hard arm64 build failure. Follow-up 6e
+  of juniper-ml
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
+  **Known staleness**: `juniper-recurrence-model` pins **0.2.0**, not the 0.3.0 whose Release was cut
+  2026-09-09 07:22 UTC -- that release's PyPI publish run (34323535743) is still `waiting` on the
+  `pypi` environment approval gate, so 0.3.0 is not on PyPI and cannot be resolved. Regenerate the
+  lock once it publishes.
 - **`publish-image.yml` -- the application container image is published to GHCR on every
   `juniper-recurrence-v*` release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, native
   runners, no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly

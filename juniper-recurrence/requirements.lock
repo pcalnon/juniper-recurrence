@@ -1,0 +1,132 @@
+# Dependency lock for the juniper-recurrence CONTAINER IMAGE (container-registry rollout, 6e).
+#
+# Before this file existed the Dockerfile ran a bare ``pip install ".[observability]"``, so the
+# image's contents were whatever PyPI happened to serve at build time: two builds of the same
+# commit could ship different dependency versions, and a bad upstream release reached the image
+# with nothing pinned to stop it. That is the reproducibility hole this closes.
+#
+# There is deliberately NO torch here. The LMU memory is a fixed linear recurrence (numpy only),
+# so ``util/check_image_cpu_only.py`` runs against this image with ``EXPECT_TORCH=absent`` --
+# which also means this repo cannot exhibit the CUDA-by-re-resolution shape that cost
+# juniper-cascor-worker its 2026-09-07 image, because torch is never in scope for the resolution.
+#
+# Regeneration command (run from INSIDE juniper-recurrence/, the image's build context):
+#   rm -f requirements.lock          # uv reads an existing -o file as extra constraints
+#   uv pip compile pyproject.toml \
+#     --extra observability \
+#     --python-version 3.13 \
+#     -o requirements.lock
+#   (then restore this header: uv overwrites it with the command line)
+#
+# ``--python-version 3.13`` matches ``FROM python:3.13-slim``; the repo's other packages are not
+# in scope because the image installs only this app. The ``[observability]`` extra is what the
+# Dockerfile installs (WS-7 monitoring: the Prometheus /metrics endpoint).
+#
+# arm64: every pin above was checked for an installable ``cp313``/``abi3`` manylinux aarch64 wheel
+# (or pure Python) with juniper-ml ``util/ad-hoc/2026-09-08_lock_wheel_availability.py --python 3.13
+# --arch aarch64`` -- 31 pins, all OK. The image has no gcc and no Rust, so a pin with no matching
+# binary wheel is a hard arm64 build failure. Re-run that pre-flight after regenerating.
+#
+# KNOWN STALENESS at creation (2026-09-09): ``juniper-recurrence-model`` pins **0.2.0**, not the
+# 0.3.0 whose Release the owner cut at 07:22 UTC -- that release's PyPI publish run (34323535743)
+# is still ``waiting`` on the ``pypi`` environment's approval gate, so 0.3.0 is not on PyPI and
+# cannot be resolved. Regenerate this lock once it publishes.
+annotated-doc==0.0.5
+    # via fastapi
+annotated-types==0.8.0
+    # via pydantic
+anyio==4.15.1
+    # via
+    #   starlette
+    #   watchfiles
+certifi==2026.7.22
+    # via requests
+charset-normalizer==3.5.1
+    # via requests
+click==8.5.0
+    # via uvicorn
+fastapi==0.141.1
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   juniper-service-core
+h11==0.16.0
+    # via uvicorn
+httptools==0.8.0
+    # via uvicorn
+idna==3.19
+    # via
+    #   anyio
+    #   requests
+juniper-data-client==0.4.2
+    # via juniper-recurrence (pyproject.toml)
+juniper-model-core==0.3.1
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   juniper-recurrence-model
+    #   juniper-service-core
+juniper-observability==0.4.0
+    # via juniper-recurrence (pyproject.toml)
+juniper-recurrence-model==0.2.0
+    # via juniper-recurrence (pyproject.toml)
+juniper-service-core==0.7.0
+    # via juniper-recurrence (pyproject.toml)
+numpy==2.5.3
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   juniper-data-client
+    #   juniper-model-core
+    #   juniper-recurrence-model
+    #   juniper-service-core
+prometheus-client==0.26.0
+    # via juniper-observability
+pydantic==2.13.5
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   fastapi
+    #   juniper-observability
+    #   juniper-service-core
+    #   pydantic-settings
+pydantic-core==2.46.5
+    # via pydantic
+pydantic-settings==2.15.0
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   juniper-service-core
+python-dotenv==1.2.3
+    # via
+    #   pydantic-settings
+    #   uvicorn
+pyyaml==6.0.3
+    # via
+    #   juniper-recurrence (pyproject.toml)
+    #   uvicorn
+requests==2.34.2
+    # via juniper-data-client
+starlette==1.6.0
+    # via
+    #   fastapi
+    #   juniper-observability
+typing-extensions==4.16.0
+    # via
+    #   anyio
+    #   fastapi
+    #   pydantic
+    #   pydantic-core
+    #   typing-inspection
+typing-inspection==0.4.4
+    # via
+    #   fastapi
+    #   pydantic
+    #   pydantic-settings
+urllib3==2.7.0
+    # via
+    #   juniper-data-client
+    #   requests
+uvicorn==0.52.4
+    # via juniper-recurrence (pyproject.toml)
+uvloop==0.22.1
+    # via uvicorn
+watchfiles==1.2.0
+    # via uvicorn
+websockets==17.1
+    # via uvicorn
