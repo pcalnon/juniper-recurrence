@@ -27,10 +27,13 @@
 # --arch aarch64`` -- 31 pins, all OK. The image has no gcc and no Rust, so a pin with no matching
 # binary wheel is a hard arm64 build failure. Re-run that pre-flight after regenerating.
 #
-# KNOWN STALENESS at creation (2026-09-09): ``juniper-recurrence-model`` pins **0.2.0**, not the
-# 0.3.0 whose Release the owner cut at 07:22 UTC -- that release's PyPI publish run (34323535743)
-# is still ``waiting`` on the ``pypi`` environment's approval gate, so 0.3.0 is not on PyPI and
-# cannot be resolved. Regenerate this lock once it publishes.
+# REGENERATED 2026-09-10, after the owner approved the six ``pypi`` environment gates.
+# ``juniper-recurrence-model`` now pins **0.3.0** -- the release carrying decision 11's
+# ``derive_full_split``, which ``sequence_data_from_arrays`` calls to rebuild the whole-dataset
+# view on a post-juniper-data#369 artifact, and on which ``POST /v1/crossval`` depends -- and
+# ``juniper-data-client`` moves 0.4.2 -> **0.5.0**. Those two are the ONLY pin changes; the count
+# is unchanged at 31. The KNOWN STALENESS this header recorded at creation (2026-09-09, when
+# 0.3.0 had been released but was still parked at the approval gate) is CLOSED.
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -57,7 +60,7 @@ idna==3.19
     # via
     #   anyio
     #   requests
-juniper-data-client==0.4.2
+juniper-data-client==0.5.0
     # via juniper-recurrence (pyproject.toml)
 juniper-model-core==0.3.1
     # via
@@ -66,7 +69,7 @@ juniper-model-core==0.3.1
     #   juniper-service-core
 juniper-observability==0.4.0
     # via juniper-recurrence (pyproject.toml)
-juniper-recurrence-model==0.2.0
+juniper-recurrence-model==0.3.0
     # via juniper-recurrence (pyproject.toml)
 juniper-service-core==0.7.0
     # via juniper-recurrence (pyproject.toml)

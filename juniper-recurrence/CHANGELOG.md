@@ -47,6 +47,31 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Changed
 
+- **`juniper-recurrence-model` floor raised to `>=0.3.0` — `derive_full_split` is what keeps
+  `POST /v1/crossval` alive on post-decision-11 artifacts.** juniper-data#369 stopped emitting the
+  `*_full` family (decision 11, §9.5 of juniper-ml
+  `notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md`), so the whole
+  dataset view a walk-forward fold slices by row index now has to be *rebuilt* rather than read.
+  `juniper_recurrence_model.data.derive_full_split` is that reconstruction, and
+  `sequence_data_from_arrays` calls it (`data.py:143`) on the path this app already uses
+  (`juniper_recurrence/data.py:78`). It ships in juniper-recurrence-model 0.3.0. The ceiling was
+  already `<0.4.0` (#159); this raises the floor off `0.1.5` in `dependencies`, `[torch]` and
+  `[bench-torch]`, so the resolver can no longer pick a model that would 500 on `full`.
+
+  **The row order is the load-bearing part, not the concatenation.** juniper-data's `equities` /
+  `equities_seq` wrote `*_full` entity-major while their partitions are split-major, so a naive
+  `concat(train, val, test)` holds the same rows in a different permutation — and cross-validation
+  slices by row index, which would silently redistribute windows across folds. 0.3.0 stable-sorts on
+  `ticker_code` to restore the producer's order.
+
+- **`requirements.lock` regenerated** — `juniper-recurrence-model` 0.2.0 → **0.3.0** and
+  `juniper-data-client` 0.4.2 → **0.5.0**. The lock's own header recorded this as KNOWN STALENESS at
+  creation ("Regenerate this lock once it publishes"); both are now on PyPI, so that note is closed.
+  Those two pins are the only changes and the count is unchanged at 31; the mandated arm64
+  pre-flight (`util/ad-hoc/2026-09-08_lock_wheel_availability.py --python 3.13 --arch aarch64`)
+  re-run clean, both new pins being pure-Python wheels. Without this the image build would fail
+  `pip check`, since the lock pinned a version the bumped floor forbids.
+
 - **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
   `WorkerCoordinator.release_worker_tasks`, which reclaims a worker's in-flight tasks on a clean
   `/ws/workers` disconnect or a mid-result abort rather than waiting out
