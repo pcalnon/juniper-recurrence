@@ -53,6 +53,7 @@ on:
     paths:
       - "juniper-recurrence/Dockerfile"
       - "juniper-recurrence/pyproject.toml"
+      - "juniper-recurrence/requirements.lock"
       - "juniper-recurrence/juniper_recurrence/**"
       - "util/check_image_cpu_only.py"
       - ".github/workflows/publish-image.yml"
