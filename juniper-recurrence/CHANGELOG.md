@@ -29,10 +29,12 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   the image has no gcc and no Rust, so a pin without one is a hard arm64 build failure. Follow-up 6e
   of juniper-ml
   `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
-  **Known staleness**: `juniper-recurrence-model` pins **0.2.0**, not the 0.3.0 whose Release was cut
-  2026-09-09 07:22 UTC -- that release's PyPI publish run (34323535743) is still `waiting` on the
-  `pypi` environment approval gate, so 0.3.0 is not on PyPI and cannot be resolved. Regenerate the
-  lock once it publishes.
+  The lock as first written pinned `juniper-recurrence-model` **0.2.0**, because the 0.3.0 Release cut
+  2026-09-09 07:22 UTC was still parked on the `pypi` environment approval gate (publish run
+  34323535743) and 0.3.0 could not be resolved. **That is closed, and 0.5.0 ships the resolved lock**:
+  the owner approved the gate, and the re-lock landed in this same release, moving
+  `juniper-recurrence-model` 0.2.0 -> **0.3.0** and `juniper-data-client` 0.4.2 -> **0.5.0** with the
+  pin count unchanged at 31. Both arches built green on that change.
 - **`publish-image.yml` -- the application container image is published to GHCR on every
   `juniper-recurrence-v*` release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, native
   runners, no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly
