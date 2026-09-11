@@ -23,7 +23,7 @@
 #
 #    Like the other Wave-2 consumers (and unlike the two pioneers, which formerly invoked
 #    in-repo util/sequence_safety/ modules), this workflow installs the screens from PyPI
-#    (`juniper-ci-tools>=0.8.0,<0.10.0`) and drives the `juniper-symbol-loss-check` /
+#    (`juniper-ci-tools>=0.9.0,<0.10.0`) and drives the `juniper-symbol-loss-check` /
 #    `juniper-docs-additions-check` console scripts. The symbol screen is scoped to the
 #    five monorepo code trees -- `juniper-recurrence/**` (app), `juniper-recurrence-model/**`,
 #    `juniper-recurrence-client/**`, `bench/**`, `scripts/**` -- which cover every package
@@ -117,7 +117,7 @@ jobs:
           python -m pip install --upgrade "pip>=26.1.1"
           # The sequence-safety screens ship in juniper-ci-tools (rollout plan Wave 0/1);
           # >=0.8.0 is the first release carrying both console scripts + --scope.
-          pip install "juniper-ci-tools>=0.8.0,<0.10.0"
+          pip install "juniper-ci-tools>=0.9.0,<0.10.0"
           # tests/test_main_verify_catchup_base.py (next step) parses main-verify.yml.
           # This repo has no root pyproject to carry the dep -- it is a multi-package
           # monorepo -- so the guard's one requirement is installed explicitly here.
