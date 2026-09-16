@@ -1,0 +1,171 @@
+---
+#####################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence
+# File Name:     pr-budget-alarm.yml
+# Author:        Paul Calnon
+# Version:       0.1.0
+#
+# Date Created:  2026-07-30
+# Last Modified: 2026-07-30
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Scheduled open-PR budget alarm -- a flood-remediation guardrail (Cursor-fleet
+#    PR flood, analysis-of-record §4 item 9; recommendation P1 §5). On a daily
+#    schedule (and on manual dispatch) a single job counts the total open PRs and
+#    the count of `cursor/`-headed open PRs, compares both to the repo variables
+#    PR_BUDGET_WARN (default 15) / PR_BUDGET_ALARM (default 30), always writes a
+#    step-summary table, and -- only on a breach -- posts a compact notice to the
+#    Juniper Slack channel via the owner-provisioned SLACK_WEBHOOK_URL secret.
+#
+#    Report-only by construction: a budget breach is a GREEN run (this is an alarm,
+#    not a merge gate -- it never blocks a PR and never turns the cron red). Only a
+#    hard `gh`/`jq` failure to query the PR set would fail the run, and even that is
+#    downgraded to a `::warning::` annotation + a green run so a transient API blip
+#    cannot page the owner. The Slack step mirrors the strictly-non-blocking
+#    contract of release-train.yml (Q-CHANNEL): a missing secret skips the step and
+#    a POST failure never fails the run (continue-on-error).
+#
+# Security Notes:
+#    - Runs on schedule/dispatch only (never on PRs or forks).
+#    - Workflow permissions are minimal read-only: `contents: read` +
+#      `pull-requests: read` (exactly what `gh pr list` needs; the token never
+#      writes -- no PRs, comments, labels, or Releases).
+#    - GH_TOKEN is the built-in GITHUB_TOKEN, used only for the read-only
+#      `gh pr list` query. The one secret consumed, SLACK_WEBHOOK_URL, is
+#      referenced ONLY in the Slack step and only when a breach fired; the
+#      notice carries counts + the run URL, no diff content and no secrets.
+#
+# References:
+#    - notes/JUNIPER_2026-07-28_JUNIPER-ML_CURSOR-PR-FLOOD-REMEDIATION-ANALYSIS.md (§4 item 9, P1 §5)
+#    - .github/workflows/release-train.yml (the non-blocking Slack contract, Q-CHANNEL)
+#####################################################################################################
+
+name: PR Budget Alarm
+
+on:
+  schedule:
+    # Daily 14:00 UTC. Offset from the 06:00 UTC Monday pile-up
+    # (docs-full-check.yml, security-scan.yml) and the 13:00 UTC release train.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+# Minimal read-only scope: listing PRs needs `pull-requests: read`; the job never
+# writes. No job elevates above this (report-only, R7-style least privilege).
+permissions:
+  contents: read
+  pull-requests: read
+
+# Never run two budget reports at once (a manual dispatch racing the daily cron);
+# the latest state is the only one that matters.
+concurrency:
+  group: pr-budget-alarm
+  cancel-in-progress: true
+
+jobs:
+  budget-alarm:
+    name: Open-PR budget alarm (report-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Count open PRs and evaluate the budget
+        id: count
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # Empty when the repo variable is unset -> the shell default below applies.
+          PR_BUDGET_WARN: ${{ vars.PR_BUDGET_WARN }}
+          PR_BUDGET_ALARM: ${{ vars.PR_BUDGET_ALARM }}
+        run: |
+          set -euo pipefail
+
+          warn="${PR_BUDGET_WARN:-15}"
+          alarm="${PR_BUDGET_ALARM:-30}"
+
+          # Query once (read-only). A hard failure is downgraded to a warning +
+          # a green run so the report-only alarm can never page the owner on a
+          # transient API blip (it stays visible as a yellow ::warning:: though).
+          if ! prs_json="$(gh pr list --repo "$GH_REPO" --state open --limit 500 --json number,headRefName 2> gh_err.txt)"; then
+            echo "::warning title=pr-budget-alarm::Could not list open PRs: $(tr '\n' ' ' < gh_err.txt)"
+            {
+              echo "## Open-PR budget alarm"
+              echo ""
+              echo "_Could not query open PRs (\`gh\` error) -- report-only, run stays green. See the step log._"
+            } >> "$GITHUB_STEP_SUMMARY"
+            # level=OK keeps the Slack step skipped (a failed query is not a breach).
+            echo "level=OK" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          total="$(printf '%s' "$prs_json" | jq 'length')"
+          cursor="$(printf '%s' "$prs_json" | jq '[.[] | select(.headRefName | startswith("cursor/"))] | length')"
+
+          # Breach on EITHER the total open-PR count or the cursor/ subset
+          # crossing the threshold (analysis §5: "the total -- or the count of
+          # open cursor/ PRs -- exceeds a threshold").
+          level="OK"
+          if [ "$total" -ge "$alarm" ] || [ "$cursor" -ge "$alarm" ]; then
+            level="ALARM"
+          elif [ "$total" -ge "$warn" ] || [ "$cursor" -ge "$warn" ]; then
+            level="WARN"
+          fi
+
+          {
+            echo "total=$total"
+            echo "cursor=$cursor"
+            echo "warn=$warn"
+            echo "alarm=$alarm"
+            echo "level=$level"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Open-PR budget alarm"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| Open PRs (total) | $total |"
+            echo "| Open \`cursor/\` PRs | $cursor |"
+            echo "| Warn threshold (\`PR_BUDGET_WARN\`) | $warn |"
+            echo "| Alarm threshold (\`PR_BUDGET_ALARM\`) | $alarm |"
+            echo "| Status | **$level** |"
+            echo ""
+            case "$level" in
+              ALARM) echo "_ALARM: open-PR budget exceeded. Triage the queue before same-file clusters fan out into merge damage (flood analysis §4 item 9). Report-only -- this run stays green._" ;;
+              WARN) echo "_WARN: open-PR budget approaching the alarm ceiling. Consider draining the queue._" ;;
+              *) echo "_OK: open-PR budget within range. Report-only; nothing to do._" ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "PR budget: total=$total cursor=$cursor warn=$warn alarm=$alarm level=$level"
+
+      - name: Slack notification on breach (non-blocking, Q-CHANNEL)
+        # Mirrors release-train.yml's strictly-non-blocking Slack contract: a
+        # missing secret skips the step (exit 0) and a POST failure never fails
+        # the run (continue-on-error). Fires only on a WARN/ALARM breach.
+        if: steps.count.outputs.level != 'OK'
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LEVEL: ${{ steps.count.outputs.level }}
+          TOTAL: ${{ steps.count.outputs.total }}
+          CURSOR: ${{ steps.count.outputs.cursor }}
+          WARN: ${{ steps.count.outputs.warn }}
+          ALARM: ${{ steps.count.outputs.alarm }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            # Louder than juniper-ml's copy, on purpose. This repo has no webhook, so a
+            # breach would otherwise be indistinguishable from a quiet week -- the exact
+            # shape the alarm exists to rule out. Annotate the run; never fail it.
+            echo "::warning title=PR budget ${LEVEL} with no Slack webhook::${TOTAL} open PR(s), ${CURSOR} on cursor/ branches (warn=${WARN} alarm=${ALARM}). SLACK_WEBHOOK_URL is not set on this repository, so no notification was sent. Set it to make this alarm reachable."
+            echo "SLACK_WEBHOOK_URL secret not set -- annotated instead of notifying (non-blocking by design)."
+            exit 0
+          fi
+          text="PR budget ${LEVEL}: ${TOTAL} open PR(s), ${CURSOR} on cursor/ branches (thresholds warn=${WARN} / alarm=${ALARM}). Run: ${RUN_URL}"
+          payload="$(jq -n --arg text "$text" '{text: $text}')"
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$payload" "$SLACK_WEBHOOK_URL" > /dev/null
+          echo "Slack notification posted."
