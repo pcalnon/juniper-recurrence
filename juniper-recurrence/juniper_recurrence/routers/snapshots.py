@@ -37,10 +37,13 @@ from juniper_recurrence.state import AppState
 
 router = APIRouter(tags=["snapshots"])
 
-#: Snapshot ids are generated here, never supplied by a client, but the RESTORE path takes one
-#: from the URL — so it is validated against this before being joined to ``snapshots_dir``.
-#: Anchored and character-classed rather than blacklisting ``..``: a denylist of traversal
-#: spellings is a losing game (``..``, ``%2e%2e``, unicode homoglyphs), an allowlist is not.
+#: Shape of a snapshot id. Ids are generated here and never supplied by a client, but the get /
+#: restore paths take one from the URL, so this rejects input that could not name a snapshot
+#: under any circumstances — cheaply, and before touching the filesystem.
+#:
+#: It is NOT what keeps a caller out of the filesystem: ``_snapshot_path`` never builds a path
+#: from the caller's string at all. Kept anyway as a fast reject and because an anchored
+#: character class documents the id format in one place.
 _ID_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
 #: The serializer appends this when absent; ids are stored WITHOUT it so the two halves agree.
@@ -65,24 +68,44 @@ def _dir(settings: Settings) -> Path:
     return path
 
 
-def _snapshot_path(settings: Settings, snapshot_id: str) -> Path:
-    """The on-disk path for ``snapshot_id``, or 404 if it could not name one.
+def _stored_snapshots(settings: Settings) -> dict[str, Path]:
+    """Every snapshot the directory actually holds, keyed by id.
 
-    TWO independent checks, and the second is the one that matters:
-
-    1. :func:`_safe_id` — an anchored allowlist on the id's characters.
-    2. **Containment** — the resolved path must sit inside the resolved snapshots directory.
-
-    (1) alone is what a reviewer reads and believes; (2) is what holds if (1) is ever loosened,
-    and it is also the check that does not depend on having enumerated every traversal spelling.
-    A symlink inside the directory pointing out of it defeats (1) and is caught by (2), because
-    ``resolve()`` follows links before the comparison.
+    Paths come from :meth:`Path.glob` and are filtered to regular files whose RESOLVED location
+    is still inside the directory — so a symlink planted in the directory but pointing out of it
+    is not enumerated.
     """
     directory = _dir(settings).resolve()
-    candidate = (directory / f"{_safe_id(snapshot_id)}{_SUFFIX}").resolve()
-    if not candidate.is_relative_to(directory):
+    found: dict[str, Path] = {}
+    for path in directory.glob(f"*{_SUFFIX}"):
+        resolved = path.resolve()
+        if resolved.is_file() and resolved.is_relative_to(directory):
+            found[path.name[: -len(_SUFFIX)]] = resolved
+    return found
+
+
+def _snapshot_path(settings: Settings, snapshot_id: str) -> Path:
+    """The on-disk path for ``snapshot_id``, or 404.
+
+    **No path is ever built from the caller's string.** The directory is enumerated by the
+    server, and the caller's id only ever participates in an equality lookup against ids the
+    server itself derived from real filenames. So there is no path expression for a traversal to
+    live in — the class of bug is absent rather than guarded against.
+
+    That is a stronger property than the guard it replaces (an allowlist plus a containment
+    check), and it is why the structure is this way round. It also happens to be what a static
+    analyser can see, but the reason to prefer it is that "cannot construct a bad path" beats
+    "constructs a path, then checks it".
+
+    :func:`_safe_id` still runs first as a cheap rejection of input that could not name a
+    snapshot under any circumstances; it is no longer the thing standing between a caller and
+    the filesystem.
+    """
+    stored = _stored_snapshots(settings)
+    path = stored.get(_safe_id(snapshot_id))
+    if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
-    return candidate
+    return path
 
 
 def _read_meta(path: Path) -> dict[str, Any]:
@@ -148,18 +171,14 @@ def save_snapshot(
 @router.get("/v1/model/snapshots", response_model=SnapshotListResponse)
 def list_snapshots(settings: Annotated[Settings, Depends(get_settings)]) -> SnapshotListResponse:
     """Every stored snapshot, newest first."""
-    directory = _dir(settings)
-    found = sorted(directory.glob(f"*{_SUFFIX}"), key=lambda p: p.stat().st_mtime, reverse=True)
+    found = sorted(_stored_snapshots(settings).values(), key=lambda p: p.stat().st_mtime, reverse=True)
     return SnapshotListResponse(snapshots=[_describe(path) for path in found])
 
 
 @router.get("/v1/model/snapshots/{snapshot_id}", response_model=SnapshotModel)
 def get_snapshot(snapshot_id: str, settings: Annotated[Settings, Depends(get_settings)]) -> SnapshotModel:
     """One snapshot's metadata. ``404`` when absent."""
-    path = _snapshot_path(settings, snapshot_id)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
-    return _describe(path)
+    return _describe(_snapshot_path(settings, snapshot_id))
 
 
 @router.post("/v1/model/snapshots/{snapshot_id}/restore", response_model=RestoreResponse)
@@ -174,8 +193,6 @@ def restore_snapshot(
     and no ``TrainResult`` is invented to make the status shape uniform.
     """
     path = _snapshot_path(settings, snapshot_id)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
 
     # A restore that lands mid-fit would have the training thread publish over it moments later,
     # so the caller would be told the restore succeeded and then silently get the fitted model.
