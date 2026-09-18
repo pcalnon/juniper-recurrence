@@ -9,6 +9,49 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **Model snapshots: `POST`/`GET /v1/model/snapshots`, `GET`/`POST /v1/model/snapshots/{id}[/restore]`.**
+  The service's **first persisted artifact** — until now it wrote nothing to disk.
+
+  This closes **Y2** of the canopy selection-reachability arc, where canopy's snapshot workflow
+  reported success at **both ends** while never touching model state: its h5py fallback wrote
+  timestamps and cascor-shaped `nn_*`/`cn_*` params, `stat()`ed the file and returned a real byte
+  size; restore read it back, rewound canopy's *display* counters, and reported
+  *"Restored from snapshot X"*. The trained LMU was never written and never read.
+
+  **No serialisation was written here.** `LMUSerializer` already round-trips an `LMURegressor`
+  losslessly (versioned `schema: 2`, `allow_pickle=False`, memory eigendecomposition recomputed
+  from `d`/θ on load). These routes are HTTP surface over it.
+
+  Design of record: `JUNIPER_2026-09-16_JUNIPER-RECURRENCE_MODEL-PERSISTENCE-DESIGN.md` (juniper-ml).
+
+- **`JUNIPER_RECURRENCE_SNAPSHOTS_DIR`** (`Settings.snapshots_dir`, default `recurrence-snapshots`).
+  In the container this is a **bind mount** of the host's snapshot store, not a named volume —
+  juniper-deploy tried a named volume for cascor and retired it: it mounted where cascor never
+  wrote, so it held nothing while real snapshots died with the container. The bind mount survives
+  `docker compose down -v`, is the same directory the host CLI and systemd tiers use, and sits
+  inside the Juniper tree so the offline backup captures it.
+
+  **Retention is inherited, not invented**: §6.4 of the ecosystem snapshot-lifecycle design was
+  ratified no-deletion (juniper-ml#1296), which also says do not build deletion tooling. Nothing
+  here prunes, ages out or caps, and a test pins that absence.
+
+### Changed
+
+- **`GET /v1/training/status` gains a third `state`: `restored`, plus a `restored_from` field.**
+  A model loaded from a snapshot is present and predictable, but **this process never fitted it** —
+  so `final_metrics`, `stopped_reason` and `events` are absent rather than carried over or
+  synthesised. Inventing a `TrainResult` to keep the status shape uniform would report a run that
+  never happened, which is the defect class Y2 is about. `restored_from` names *which* snapshot,
+  because "loaded from disk" without an id is precise about the wrong thing.
+
+  A fit **supersedes** a restore: `set_trained` clears the marker, so a freshly-fitted model never
+  keeps reporting itself as loaded from disk.
+
+  `state` remains a bare `str` rather than a `Literal`, matching the field as it shipped — widening
+  it would be a contract change for every consumer.
+
 ## [0.5.0] - 2026-09-10
 
 ### Added

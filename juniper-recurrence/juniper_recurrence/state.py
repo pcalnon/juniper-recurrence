@@ -37,6 +37,9 @@ class AppState:
     def __init__(self) -> None:
         self.train_lock = threading.Lock()
         self._model: LMURegressor | None = None
+        # Snapshot id this model was RESTORED from, or None when it came from a fit in this
+        # process. Drives the third ``status()`` value -- see set_restored.
+        self._restored_from: str | None = None
         self._result: TrainResult | None = None
         self._events: EventSink | None = None
         self._dataset: DatasetDescriptor | None = None
@@ -56,6 +59,30 @@ class AppState:
         self._result = result
         self._events = events
         self._dataset = dataset
+        # A fit SUPERSEDES a restore: this model came from a run in this process, so the
+        # restored-from marker must not survive and report the new model as loaded from disk.
+        self._restored_from = None
+        self._model = model  # published last
+
+    def set_restored(self, model: LMURegressor, snapshot_id: str) -> None:
+        """Publish a model LOADED FROM DISK, with no training run behind it.
+
+        Deliberately does **not** synthesise a :class:`TrainResult`. This process did not fit
+        this model, and inventing epoch/timing fields to make the status shape uniform would
+        report a run that never happened -- the defect class this whole feature exists to close
+        (design §6/§11.3 of juniper-ml
+        ``notes/JUNIPER_2026-09-16_JUNIPER-RECURRENCE_MODEL-PERSISTENCE-DESIGN.md``).
+
+        ``_result`` / ``_events`` / ``_dataset`` are cleared rather than left stale: a previous
+        fit's result beside a restored model would be the same misattribution in a subtler form.
+        The model's own metrics survive on the model and are served by ``GET /v1/model``.
+
+        Sets ``_model`` last, like :meth:`set_trained` (publish-the-pointer-last).
+        """
+        self._result = None
+        self._events = None
+        self._dataset = None
+        self._restored_from = snapshot_id
         self._model = model  # published last
 
     @property
@@ -67,11 +94,25 @@ class AppState:
         return self._dataset
 
     def status(self) -> tuple[str, TrainResult | None, list]:
-        """``("idle"|"trained", last_result, ordered_events)`` for ``/v1/training/status``."""
+        """``("idle"|"trained"|"restored", last_result, ordered_events)`` for ``/v1/training/status``.
+
+        ``restored`` is a THIRD state, not a flavour of ``trained``: a model loaded from a
+        snapshot is present and predictable, but **this process never fitted it**, so there is no
+        result and no event stream to report. Collapsing it into ``trained`` would lose exactly
+        that distinction. The snapshot id is available from :attr:`restored_from` so a consumer
+        can say *which* model, not merely that one was loaded.
+        """
         if self._model is None:
             return ("idle", None, [])
+        if self._restored_from is not None:
+            return ("restored", None, [])
         events = self._events.snapshot() if self._events is not None else []
         return ("trained", self._result, events)
+
+    @property
+    def restored_from(self) -> str | None:
+        """Snapshot id the current model was restored from, or ``None`` if it was fitted here."""
+        return self._restored_from
 
     def set_crossval(self, result: CrossValResult, dataset: DatasetDescriptor) -> None:
         """Publish a completed cross-validation run. Sets ``_crossval_result`` last (publish-the-pointer-last)."""

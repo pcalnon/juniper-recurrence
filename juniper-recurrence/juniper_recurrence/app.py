@@ -36,7 +36,7 @@ from juniper_service_core import (
 from juniper_recurrence import provenance
 from juniper_recurrence._version import __version__
 from juniper_recurrence.logging_config import init_logging
-from juniper_recurrence.routers import crossval_router, dataset_router, model_router, predict_router, training_router
+from juniper_recurrence.routers import crossval_router, dataset_router, model_router, predict_router, snapshots_router, training_router
 from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
@@ -86,7 +86,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     application = create_app(
         title="Juniper Recurrence",
         version=__version__,
-        routers=(training_router, predict_router, model_router, dataset_router, crossval_router),
+        routers=(training_router, predict_router, model_router, dataset_router, crossval_router, snapshots_router),
         lifespan=lifespan,
     )
 

@@ -25,6 +25,10 @@ __all__ = [
     "CrossValFoldModel",
     "CrossValResponse",
     "CrossValStatusResponse",
+    "SnapshotRequest",
+    "SnapshotModel",
+    "SnapshotListResponse",
+    "RestoreResponse",
 ]
 
 # DP-3 (P1): ``ridge`` accepts a non-negative float, the literal ``"gcv"`` (closed-form GCV
@@ -175,10 +179,21 @@ class EventModel(BaseModel):
 class StatusResponse(BaseModel):
     """``GET /v1/training/status``: synchronous, instant (no background job)."""
 
-    state: str  # "idle" | "trained"
+    # "idle" | "trained" | "restored".
+    #
+    # ``restored`` is a THIRD state, not a flavour of ``trained``: the model is present and
+    # predictable, but THIS PROCESS NEVER FITTED IT, so ``final_metrics`` / ``stopped_reason`` /
+    # ``events`` are absent rather than carried over or invented. ``restored_from`` names which
+    # snapshot, because "loaded from disk" without an id is precise about the wrong thing.
+    #
+    # Deliberately a bare ``str`` rather than a ``Literal``, matching the field as it shipped --
+    # widening it here would be a contract change for every consumer. Worth promoting to a
+    # ``Literal`` one day; that is not decided here (design §11.3).
+    state: str
     final_metrics: dict[str, float] | None = None
     stopped_reason: str | None = None
     events: list[EventModel] = Field(default_factory=list)
+    restored_from: str | None = None
 
 
 class PredictRequest(BaseModel):
@@ -283,3 +298,43 @@ class CrossValStatusResponse(BaseModel):
 
     state: str  # "idle" | "done"
     result: CrossValResponse | None = None
+
+
+class SnapshotRequest(BaseModel):
+    """Body for ``POST /v1/model/snapshots``. All fields optional."""
+
+    description: str = ""
+
+
+class SnapshotModel(BaseModel):
+    """One stored LMU snapshot.
+
+    ``meta`` is the serializer's own descriptor, echoed verbatim rather than re-derived: the
+    ``.npz`` is the source of truth for what was saved, and a second copy computed here would be
+    free to disagree with it.
+    """
+
+    id: str
+    created: str
+    size_bytes: int
+    description: str = ""
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class SnapshotListResponse(BaseModel):
+    """``GET /v1/model/snapshots``: every stored snapshot, newest first."""
+
+    snapshots: list[SnapshotModel] = Field(default_factory=list)
+
+
+class RestoreResponse(BaseModel):
+    """``POST /v1/model/snapshots/{id}/restore``.
+
+    ``state`` is always ``"restored"`` -- the model is present and predictable but this process
+    never fitted it, so there is no result or event stream. See ``StatusResponse.state``.
+    """
+
+    state: str
+    restored_from: str
+    topology: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, float] = Field(default_factory=dict)
