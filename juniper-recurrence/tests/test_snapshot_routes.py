@@ -119,6 +119,25 @@ def test_the_id_guard_accepts_a_real_id(ok):
     assert _safe_id(ok) == ok
 
 
+def test_a_symlink_out_of_the_directory_is_refused(client, fake_data, tmp_path):
+    """The containment check, which the NAME check cannot do.
+
+    A legal-looking id whose file is a symlink pointing outside ``snapshots_dir`` passes
+    ``_safe_id`` — the name is fine, it is the target that is not. ``_snapshot_path`` resolves
+    before comparing, so the link is followed and the escape caught. This is why there are two
+    checks rather than one, and it is the half that survives the allowlist being loosened.
+    """
+    _train(client)
+    outside = tmp_path / "outside.npz"
+    outside.write_bytes(b"not yours")
+    snaps = tmp_path / "snaps"
+    snaps.mkdir(parents=True, exist_ok=True)
+    (snaps / "lmu-escape.npz").symlink_to(outside)
+
+    assert client.get("/v1/model/snapshots/lmu-escape").status_code == 404
+    assert client.post("/v1/model/snapshots/lmu-escape/restore").status_code == 404
+
+
 def test_an_unroutable_id_is_refused_at_the_route_too(client):
     """The end-to-end half, using an id that survives URL normalisation.
 

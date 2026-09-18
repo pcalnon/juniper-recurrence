@@ -65,6 +65,26 @@ def _dir(settings: Settings) -> Path:
     return path
 
 
+def _snapshot_path(settings: Settings, snapshot_id: str) -> Path:
+    """The on-disk path for ``snapshot_id``, or 404 if it could not name one.
+
+    TWO independent checks, and the second is the one that matters:
+
+    1. :func:`_safe_id` — an anchored allowlist on the id's characters.
+    2. **Containment** — the resolved path must sit inside the resolved snapshots directory.
+
+    (1) alone is what a reviewer reads and believes; (2) is what holds if (1) is ever loosened,
+    and it is also the check that does not depend on having enumerated every traversal spelling.
+    A symlink inside the directory pointing out of it defeats (1) and is caught by (2), because
+    ``resolve()`` follows links before the comparison.
+    """
+    directory = _dir(settings).resolve()
+    candidate = (directory / f"{_safe_id(snapshot_id)}{_SUFFIX}").resolve()
+    if not candidate.is_relative_to(directory):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
+    return candidate
+
+
 def _read_meta(path: Path) -> dict[str, Any]:
     """Return the serializer's own ``meta`` descriptor from a snapshot, or ``{}``.
 
@@ -136,7 +156,7 @@ def list_snapshots(settings: Annotated[Settings, Depends(get_settings)]) -> Snap
 @router.get("/v1/model/snapshots/{snapshot_id}", response_model=SnapshotModel)
 def get_snapshot(snapshot_id: str, settings: Annotated[Settings, Depends(get_settings)]) -> SnapshotModel:
     """One snapshot's metadata. ``404`` when absent."""
-    path = _dir(settings) / f"{_safe_id(snapshot_id)}{_SUFFIX}"
+    path = _snapshot_path(settings, snapshot_id)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
     return _describe(path)
@@ -153,7 +173,7 @@ def restore_snapshot(
     The resulting state is ``restored``, never ``trained``: this process did not fit the model,
     and no ``TrainResult`` is invented to make the status shape uniform.
     """
-    path = _dir(settings) / f"{_safe_id(snapshot_id)}{_SUFFIX}"
+    path = _snapshot_path(settings, snapshot_id)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such snapshot: {snapshot_id}")
 
