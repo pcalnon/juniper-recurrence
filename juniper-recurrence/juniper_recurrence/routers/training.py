@@ -114,4 +114,7 @@ def training_status(state: Annotated[AppState, Depends(get_state)]) -> StatusRes
         final_metrics=result.final_metrics if result is not None else None,
         stopped_reason=result.stopped_reason if result is not None else None,
         events=[EventModel(type=event.type, seq=event.seq, payload=event.payload) for event in events],
+        # Names WHICH snapshot under state="restored"; None otherwise. "Loaded from disk" without
+        # an id is precise about the wrong thing (design §11.3).
+        restored_from=state.restored_from,
     )

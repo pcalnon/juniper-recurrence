@@ -182,6 +182,27 @@ class Settings(SettingsBase):
     default_theta: float | None = None
     default_ridge: float | Literal["gcv"] = 0.0
 
+    # --- model snapshots (design §4/§11.1) --------------------------------------------
+    #
+    # The service's FIRST persisted artifact -- until this, it wrote nothing to disk.
+    #
+    # In the container this path is a BIND MOUNT of the host's snapshot store, not a named
+    # volume. juniper-deploy tried a named volume for cascor and RETIRED it: it mounted where
+    # cascor never wrote, so it held nothing while real snapshots died with the container. The
+    # bind mount has three properties a named volume does not -- it survives
+    # ``docker compose down -v`` (a routine dev reflex), it is the same directory the host's
+    # direct-CLI and systemd tiers use so a container-saved model restores from a host run, and
+    # it sits inside the Juniper tree so the offline backup captures it.
+    #
+    # Retention is the ecosystem's, INHERITED not invented: §6.4 of
+    # JUNIPER_2026-08-16_JUNIPER-ECOSYSTEM_SNAPSHOT-LIFECYCLE-MANAGEMENT-DESIGN.md was ratified
+    # no-deletion (juniper-ml#1296), which also says do not build deletion tooling. Nothing here
+    # prunes, ages out, or caps.
+    snapshots_dir: Path = Field(
+        default=Path("recurrence-snapshots"),
+        description="Directory for LMU model snapshots (.npz). Relative paths resolve against the process CWD; the container binds the host's snapshot store here.",
+    )
+
     # --- observability: Prometheus /metrics (IP-allowlist gated) ----------------------
     metrics_enabled: bool = True
     # Loopback-only by default (mirrors juniper-data); Docker / Compose deployments
