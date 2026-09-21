@@ -164,3 +164,38 @@ def test_dataset_registry_covers_primary_and_extensions():
         "ar_p" not in datasets.PRIMARY_DATASETS
     )  # W-5: linear-floor extension, never scored
     assert sum("noise" in k for k in datasets.DATASETS) == 4
+
+
+def test_full_view_is_derived_from_the_three_partitions():
+    """Decision 11 retired ``*_full``; ``_full`` must rebuild it, not read a producer key.
+
+    juniper-data#369 stopped every generator emitting ``X_full`` / ``y_full``, and
+    ``bench/datasets.py`` read those keys directly -- so all seven datasets raised
+    ``KeyError: 'X_full'``. The path-scoped bench CI lane never saw it, because the
+    change that broke bench landed in juniper-data, not under ``bench/``.
+
+    Pins both halves of the contract: the derived view is exactly the three partitions
+    concatenated, and a producer's own ``*_full`` is preserved rather than recomputed.
+    """
+    from juniper_data.generators.irregular_sine import (
+        IrregularSineGenerator,
+        IrregularSineParams,
+    )
+
+    out = IrregularSineGenerator.generate(
+        IrregularSineParams(n_steps=200, lookback=8, jitter=0.6, noise_std=0.0, seed=0)
+    )
+    assert "X_full" not in out, (
+        "generator emitted a retired *_full key -- decision 11 regressed upstream"
+    )
+    partitions = [out[f"X_{s}"] for s in ("train", "val", "test")]
+
+    derived = datasets._full(dict(out), "X")
+    assert len(derived) == sum(len(p) for p in partitions)
+    assert np.array_equal(derived, np.concatenate(partitions, axis=0))
+
+    # A legacy artifact keeps the producer's own array, byte for byte.
+    sentinel = np.arange(3, dtype=np.float32).reshape(3, 1, 1)
+    legacy = dict(out)
+    legacy["X_full"] = sentinel
+    assert np.array_equal(datasets._full(legacy, "X"), sentinel)
