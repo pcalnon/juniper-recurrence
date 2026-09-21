@@ -56,6 +56,7 @@ on:
       - "juniper-recurrence/requirements.lock"
       - "juniper-recurrence/juniper_recurrence/**"
       - "util/check_image_cpu_only.py"
+      - "util/check_image_no_secrets.py"
       - ".github/workflows/publish-image.yml"
   workflow_dispatch:
     inputs:
