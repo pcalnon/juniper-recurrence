@@ -49,7 +49,34 @@ class Dataset:
 
 
 def _full(out: dict[str, np.ndarray], key: str) -> np.ndarray:
-    return np.asarray(out[f"{key}_full"])
+    """Read one array from the whole-dataset view, deriving it on first use.
+
+    Decision 11 (juniper-data#369) retired the ``*_full`` family from the NPZ contract,
+    so the generators below emit only ``train`` / ``val`` / ``test`` and this used to be
+    a bare ``KeyError`` on every dataset.
+
+    ``derive_full_split`` rebuilds the view ENTITY-major, stable-sorting on
+    ``ticker_code`` when the artifact carries one. That is load-bearing for
+    ``equities_seq``: juniper-data laid its ``_full`` down entity-major while the
+    partitions are split-major, so a plain ``np.concatenate`` would hold the same rows in
+    a DIFFERENT order for any multi-ticker request, and walk-forward CV slices by row
+    index -- a change to what the benchmark measures, not a refactor. A legacy artifact
+    that still ships ``*_full`` keeps the producer's own arrays, byte for byte.
+
+    The derived keys are merged back into ``out`` so the reconstruction runs once per
+    dataset rather than once per call.
+    """
+    full_key = f"{key}_full"
+    if full_key not in out:
+        from juniper_recurrence_model.data import derive_full_split
+
+        out.update(derive_full_split(out))
+    if full_key not in out:
+        available = ", ".join(sorted(out)) or "<empty>"
+        raise KeyError(
+            f"{full_key!r} could not be derived; generator emitted: {available}"
+        )
+    return np.asarray(out[full_key])
 
 
 def irregular_sine(
