@@ -4,10 +4,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+**/.pytest_cache/
 .ruff_cache/
+**/.ruff_cache/
 .coverage
+**/.coverage
 .coverage.*
 htmlcov/
+**/htmlcov/
 tests/
 CHANGELOG.md
 .git/
@@ -15,3 +19,21 @@ CHANGELOG.md
 *.md.bak
 dist/
 build/
+
+# -- Credentials. Docker does NOT honour .gitignore, and this image is PUBLIC.
+#    The Dockerfile copies a DIRECTORY allowlist, which is not a file allowlist:
+#    `COPY <pkg>/ ./<pkg>/` ships everything tracked beneath it. Patterns are
+#    root-anchored (Go filepath.Match), so the `**/` twins are load-bearing.
+secrets/
+**/secrets/
+*.key
+**/*.key
+*.pem
+**/*.pem
+*.p12
+*.pfx
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
