@@ -22,6 +22,15 @@
 #    CI runs in working-directory juniper-recurrence/ with testpaths=["tests"] and
 #    bench/ is a sibling of that directory.
 #
+#    A juniper-data release also runs it (#178), via repository_dispatch from
+#    juniper-data's notify-consumers.yml. The path filter cannot see a break that
+#    arrives through a dependency, and one hid here for 15 days: decision 11 retired
+#    X_full in juniper-data and every bench dataset raised KeyError (#177), while
+#    every run skipped the matrix and reported success. A dispatched run installs
+#    the released version EXACTLY and fails if it cannot. The run also fails when
+#    the release lies outside the [bench] extra's range, which is how juniper-data
+#    0.15.0 went unadmitted.
+#
 #####################################################################################################################################################################################################
 
 name: CI — bench harness
@@ -42,12 +51,21 @@ on:
     # on every PR. `on.push` keeps its filter — a push has no base ref to diff against.
     branches: [main]
   workflow_dispatch:
+  # A juniper-data release (#178). juniper-data's notify-consumers.yml sends
+  # client_payload.version once the release is on PyPI. The bench exercises juniper-data's
+  # generators, so a break they introduce touches no path under bench/ and the
+  # path-scoped triggers above can never see it.
+  repository_dispatch:
+    types: [juniper-data-released]
 
 concurrency:
   # Cancel superseded in-flight runs of THIS workflow on the same ref. Keyed on
   # github.workflow so each path-scoped CI lane has its own group (lanes never
-  # cancel each other); the publish workflows are deliberately excluded.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # cancel each other); the publish workflows are deliberately excluded. A
+  # repository_dispatch run also sits on refs/heads/main, so it gets its own group.
+  # Otherwise a bench push to main would cancel the one run that checks a juniper-data
+  # release, and nothing would fire it again.
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'repository_dispatch' && '-juniper-data-release' || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -72,7 +90,9 @@ jobs:
         run: |
           set -euo pipefail
           # push / workflow_dispatch keep the historical behaviour: `on.push` already
-          # path-filters, and a push has no base ref to diff against.
+          # path-filters, and a push has no base ref to diff against. repository_dispatch
+          # (a juniper-data release, #178) lands here too, deliberately: the whole point of
+          # that trigger is to run the suite when nothing under bench/ changed.
           if [[ "${EVENT_NAME}" != "pull_request" ]]; then
             changed=true
           elif git diff --name-only "origin/${BASE_REF}...HEAD" \
@@ -112,6 +132,57 @@ jobs:
         run: |
           pip install --upgrade "pip>=26.1.1"
           pip install "./juniper-recurrence[test,bench,bench-plots]"
+
+      # A juniper-data release run (#178) must test THAT release. Left to the resolver, the
+      # install above could pick an older cached version, or, if the release is outside
+      # the [bench] extra's range, pick the newest admitted one and report a green run that
+      # never touched the release. Pin it exactly and fail loudly in both failure modes.
+      - name: Pin the released juniper-data (repository_dispatch only)
+        if: github.event_name == 'repository_dispatch'
+        env:
+          RELEASED_VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-]?[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::client_payload.version '${RELEASED_VERSION}' is not a release version"
+            exit 1
+          fi
+          # PyPI's CDN can lag a fresh upload by minutes. Wait for it rather than calling it absent.
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if pip download --no-deps --dest "${RUNNER_TEMP}/jd" "juniper-data==${RELEASED_VERSION}" > /dev/null 2>&1; then
+              break
+            fi
+            if [[ "${attempt}" == 10 ]]; then
+              echo "::error::juniper-data ${RELEASED_VERSION} was still not downloadable from PyPI after 10 attempts"
+              exit 1
+            fi
+            sleep 30
+          done
+          # Is the release inside the [bench] extra's range? Asked of the specifier directly, so
+          # "not admitted" is never confused with a transient install failure. `packaging` is
+          # present: pytest, installed by the step above, depends on it.
+          python - "${RELEASED_VERSION}" <<'PY'
+          import sys
+          import tomllib
+
+          from packaging.requirements import Requirement
+
+          version = sys.argv[1]
+          with open("juniper-recurrence/pyproject.toml", "rb") as fh:
+              bench = tomllib.load(fh)["project"]["optional-dependencies"]["bench"]
+          spec = next(Requirement(r).specifier for r in bench if Requirement(r).name == "juniper-data")
+          if not spec.contains(version, prereleases=True):
+              print(f"::error::juniper-data {version} is on PyPI but outside the [bench] extra's range ({spec}) in juniper-recurrence/pyproject.toml -- widen the ceiling, or record why this release is not admitted")
+              sys.exit(1)
+          print(f"juniper-data {version} is inside the [bench] range {spec}")
+          PY
+          pip install "./juniper-recurrence[test,bench,bench-plots]" "juniper-data==${RELEASED_VERSION}"
+          installed="$(python -c 'import importlib.metadata as m; print(m.version("juniper-data"))')"
+          if [[ "${installed}" != "${RELEASED_VERSION}" ]]; then
+            echo "::error::asked for juniper-data ${RELEASED_VERSION}, have ${installed}"
+            exit 1
+          fi
+          echo "Bench runs against juniper-data ${installed} (dispatched by its release)."
 
       # Run from the repo root (python -m puts the cwd on sys.path so `import bench`
       # resolves); -p no:dash/playwright is the ecosystem-standard autoload-SIGSEGV
