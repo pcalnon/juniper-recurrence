@@ -66,7 +66,13 @@ concurrency:
   # cancel each other); the publish workflows are deliberately excluded.
   # Also keyed on the event: a dispatch run and a push run both land on main, and
   # without this a push touching bench/ cancels the release check in flight.
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  # A dispatch run is also keyed on the RELEASED VERSION (#178). Every dispatch lands on
+  # main with the same event name, so without it a second release, or a manual
+  # re-announce while the first run waits out PyPI's CDN lag, cancelled the first
+  # release's check and nothing fired it again. Two dispatches of the same version still
+  # share a group. The later one supersedes the earlier, which tested the same thing. For
+  # every other event the payload is absent and the last segment is empty.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event.client_payload.version || '' }}
   cancel-in-progress: true
 
 permissions:
