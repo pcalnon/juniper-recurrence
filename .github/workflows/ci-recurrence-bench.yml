@@ -22,6 +22,17 @@
 #    CI runs in working-directory juniper-recurrence/ with testpaths=["tests"] and
 #    bench/ is a sibling of that directory.
 #
+#    A path-scoped lane cannot see a break that arrives through a dependency (#178:
+#    decision 11 broke all seven bench datasets and every run for 15 days reported
+#    success, because the matrix never ran). Two triggers close that:
+#      - `repository_dispatch: juniper-data-published`, fired by juniper-data's
+#        publish workflow after a release reaches PyPI. The run tests the bench against
+#        the EXACT dispatched version, past the [bench] cap if need be, so a release
+#        that would break the bench is known before anyone raises the cap to admit it.
+#      - `juniper-recurrence/pyproject.toml` in the path filter: the [bench] extras,
+#        and therefore the juniper-data version the bench resolves, are declared there.
+#        #179 raised that cap to admit juniper-data 0.15.0 and the matrix was skipped.
+#
 #####################################################################################################################################################################################################
 
 name: CI — bench harness
@@ -34,6 +45,8 @@ on:
     paths:
       - "bench/**"
       - ".github/workflows/ci-recurrence-bench.yml"
+      # The [bench] extras live here, so a pin change moves what the bench installs.
+      - "juniper-recurrence/pyproject.toml"
   pull_request:
     # Deliberately UNFILTERED (2026-08-12). Previously a `paths:` filter here meant the
     # whole workflow — gate included — never ran on a PR that did not touch bench, so
@@ -42,12 +55,18 @@ on:
     # on every PR. `on.push` keeps its filter — a push has no base ref to diff against.
     branches: [main]
   workflow_dispatch:
+  # juniper-data's notify-consumers workflow, after a release reaches PyPI (#178).
+  # client_payload: {source, version, sha}. Runs on the default branch.
+  repository_dispatch:
+    types: [juniper-data-published]
 
 concurrency:
   # Cancel superseded in-flight runs of THIS workflow on the same ref. Keyed on
   # github.workflow so each path-scoped CI lane has its own group (lanes never
   # cancel each other); the publish workflows are deliberately excluded.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Also keyed on the event: a dispatch run and a push run both land on main, and
+  # without this a push touching bench/ cancels the release check in flight.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -72,11 +91,12 @@ jobs:
         run: |
           set -euo pipefail
           # push / workflow_dispatch keep the historical behaviour: `on.push` already
-          # path-filters, and a push has no base ref to diff against.
+          # path-filters, and a push has no base ref to diff against. A
+          # repository_dispatch is a dependency release: always run.
           if [[ "${EVENT_NAME}" != "pull_request" ]]; then
             changed=true
           elif git diff --name-only "origin/${BASE_REF}...HEAD" \
-               | grep -qE '^(bench/|\.github/workflows/ci-recurrence-bench\.yml$)'; then
+               | grep -qE '^(bench/|\.github/workflows/ci-recurrence-bench\.yml$|juniper-recurrence/pyproject\.toml$)'; then
             changed=true
           else
             changed=false
@@ -100,6 +120,30 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # A dispatch fires when the publish job finishes, which can beat the new version
+      # onto PyPI's CDN. Wait until it is actually installable rather than quietly
+      # testing the previous release. Payload values reach the shell only through env.
+      - name: Wait for the dispatched juniper-data release to be installable
+        if: github.event_name == 'repository_dispatch'
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::client_payload.version must be a plain X.Y.Z release, got '${VERSION}'"
+            exit 1
+          fi
+          probe="$(mktemp -d)"
+          for attempt in $(seq 1 30); do
+            if pip download --no-deps --only-binary=:all: --quiet --dest "${probe}" "juniper-data==${VERSION}"; then
+              echo "juniper-data ${VERSION} is installable (attempt ${attempt})"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::juniper-data ${VERSION} did not become installable from PyPI within 10 minutes"
+          exit 1
+
       # bench/ is imported from the checkout root (not installed); its runtime deps
       # come from the app's [bench] extra (juniper-data generators) plus the app's
       # own pins (juniper-recurrence-model, juniper-model-core[crossval]) and [test]
@@ -112,6 +156,36 @@ jobs:
         run: |
           pip install --upgrade "pip>=26.1.1"
           pip install "./juniper-recurrence[test,bench,bench-plots]"
+
+      # On a dispatch, test the version that was released, not the one the [bench] cap
+      # happens to admit. A cap that excludes it keeps consumers safe today; this run
+      # says whether lifting the cap would break the bench, before anyone lifts it.
+      # pip installs past an extra's cap silently -- neither the install nor `pip check`
+      # re-evaluates a requirement conditional on an extra (measured, pip 26.2.1) -- so
+      # the version assertion below is the only check that the swap took effect.
+      - name: Pin the dispatched juniper-data release
+        if: github.event_name == 'repository_dispatch'
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SOURCE_SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          set -euo pipefail
+          resolved="$(python -c 'import importlib.metadata as m; print(m.version("juniper-data"))')"
+          if [[ "${resolved}" != "${VERSION}" ]]; then
+            echo "::notice::the [bench] pin resolved juniper-data ${resolved}; installing the dispatched ${VERSION} over it. juniper-recurrence[bench] consumers do not get ${VERSION} until that pin admits it."
+            pip install "juniper-data==${VERSION}"
+          fi
+          tested="$(python -c 'import importlib.metadata as m; print(m.version("juniper-data"))')"
+          if [[ "${tested}" != "${VERSION}" ]]; then
+            echo "::error::asked for juniper-data ${VERSION}, but ${tested} is installed"
+            exit 1
+          fi
+          {
+            echo "### juniper-data-published: ${VERSION}"
+            echo ""
+            echo "- tested against: \`juniper-data ${tested}\` (source sha \`${SOURCE_SHA}\`)"
+            echo "- the \`[bench]\` pin alone resolves: \`${resolved}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       # Run from the repo root (python -m puts the cwd on sys.path so `import bench`
       # resolves); -p no:dash/playwright is the ecosystem-standard autoload-SIGSEGV
