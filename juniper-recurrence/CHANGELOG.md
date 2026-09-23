@@ -52,6 +52,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `state` remains a bare `str` rather than a `Literal`, matching the field as it shipped — widening
   it would be a contract change for every consumer.
 
+- **The `[bench]` and `[bench-equities]` extras admit `juniper-data` 0.15.0** (ceiling `<0.15.0` →
+  `<0.16.0`; floor unchanged at `>=0.9.0`). juniper-data 0.15.0 (PyPI, 2026-09-22) is the first
+  release to publish `equities` / `equities_seq` at `generator_version` **5.0.0** — the owner-ruled
+  causal share history and 15-column feature set (juniper-data#395) plus the fix for #395's
+  scale-typo regression (juniper-data#404). The old ceiling excluded exactly that release, so a
+  fresh `.[bench,bench-equities]` install resolved 0.14.0 and its **3.0.0** equities generator,
+  never the corrected one — and the bench's `equities_seq` row is the in-process consumer of it.
+  The synthetic generators the offline bench runs are all still at 3.0.0 in 0.15.0; nothing in
+  its changelog touches them. **The bench lane does not check a change like this on its own**:
+  its `test` job runs only when `bench/` or its workflow changes (#178), so a ceiling move
+  reaches it through `workflow_dispatch` on the branch, or not at all.
+
 ## [0.5.0] - 2026-09-10
 
 ### Added
