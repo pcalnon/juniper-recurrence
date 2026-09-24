@@ -38,6 +38,13 @@
 #      * python:3.13-slim, so the arm64 argument is about cp313 wheels: every one of the 31
 #        distributions `.[observability]` resolves to on 3.13 ships a cp313/abi3 manylinux aarch64
 #        wheel or is pure Python (checked 2026-09-08 against PyPI). Nothing is built on arm64.
+#      * SERVE AND VERSION (2026-09-23). ``util/check_image_serves.py`` starts the image as deployed
+#        (``juniper-recurrence serve``) and requires liveness on :8210 plus ONE version on every
+#        surface it has: installed metadata and ``juniper_recurrence.__version__``. Its
+#        ``/v1/health`` body is ``{"status": "ok"}`` with no version field, so the check runs with
+#        ``--health-version optional``: an absent field passes, a disagreeing one fails. On a
+#        release the version is the TAG's -- ``${RELEASE_TAG#juniper-recurrence-v}``. Runs on the
+#        PR arm and against each pushed digest, before the digest is exported.
 #####################################################################################################################################################################################################
 
 name: Publish Container Image
@@ -57,6 +64,7 @@ on:
       - "juniper-recurrence/juniper_recurrence/**"
       - "util/check_image_cpu_only.py"
       - "util/check_image_no_secrets.py"
+      - "util/check_image_serves.py"
       - ".github/workflows/publish-image.yml"
   workflow_dispatch:
     inputs:
@@ -204,6 +212,21 @@ jobs:
           docker run --rm "${img}" --help > /dev/null
           echo "    juniper-recurrence --help OK"
 
+      # `--help` proves the console script resolves; it does not prove the service SERVES, or that
+      # it says what it is. This starts the image exactly as a deployment does -- `juniper-recurrence
+      # serve` -- and requires liveness on :8210 plus one version: metadata and __version__ (the
+      # /v1/health body carries none, hence --health-version optional). The same script runs on the
+      # publish path below; running it here too means the PR that edits it exercises it.
+      - name: Serve and version check (build-only runs)
+        if: github.event_name != 'release' && !inputs.push
+        env:
+          APP_VERSION: ${{ steps.prov.outputs.app_version }}
+        run: |
+          python3 util/check_image_serves.py \
+            --image 'recurrence-smoke:${{ matrix.arch }}' \
+            --dist juniper-recurrence --module juniper_recurrence --port 8210 \
+            --health-version optional --expect-version "${APP_VERSION}"
+
       # The smoke test never runs on a publish, so the CPU-only contract is ALSO asserted on the
       # path that ships: pull the image just pushed -- by digest, on this same native arch. A
       # failure fails this arch's job, the merge job is skipped, and no tag is ever written.
@@ -236,6 +259,36 @@ jobs:
           # zero tests for six months.
           echo "--- the application imports"
           docker run --rm --entrypoint python "${ref}" -c 'import juniper_recurrence; print("    juniper_recurrence imports")'
+
+      # "It imports" is not "it serves", and neither is "it is the version it claims": the worker's
+      # 0.5.0 and 0.6.0 images imported fine while their package reported 0.4.0. So the image just
+      # pushed must start as deployed, answer liveness, and report ONE version; on a release, the
+      # TAG's, because the merge job names the image after the tag. This repo's app tags are
+      # `juniper-recurrence-v<X.Y.Z>`, so that prefix is stripped. Before Export digest, so a
+      # failing arch never reaches the merge job and no tag is written.
+      - name: Verify pushed image serves and reports its version (publish runs)
+        if: github.event_name == 'release' || inputs.push
+        env:
+          APP_VERSION: ${{ steps.prov.outputs.app_version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          digest='${{ steps.build.outputs.digest }}'
+          if [ -z "${digest}" ]; then
+            echo "::error::build produced no digest -- nothing to verify"
+            exit 1
+          fi
+          expect="${APP_VERSION}"
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            expect="${RELEASE_TAG#juniper-recurrence-v}"
+            if [ "${expect}" != "${APP_VERSION}" ]; then
+              echo "::error::release ${RELEASE_TAG} names ${expect}, but ${APP_DIR}/juniper_recurrence/_version.py says ${APP_VERSION} -- the image would be tagged ${expect} and report ${APP_VERSION}"
+              exit 1
+            fi
+          fi
+          python3 util/check_image_serves.py \
+            --image "${REGISTRY}/${IMAGE_NAME}@${digest}" \
+            --dist juniper-recurrence --module juniper_recurrence --port 8210 \
+            --health-version optional --expect-version "${expect}"
 
       - name: Export digest
         if: github.event_name == 'release' || inputs.push
