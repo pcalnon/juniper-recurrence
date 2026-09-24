@@ -11,6 +11,20 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **The image's publish path asserts that it serves, and that it is the version it is tagged**
+  (`util/check_image_serves.py` at the repo root, new; `.github/workflows/publish-image.yml`). The
+  existing checks cover what the image contains and that `juniper_recurrence` imports. Neither can
+  see a stale version: the worker's 0.5.0 and 0.6.0 images imported fine while their package
+  reported `0.4.0`. The script starts the image as deployed (`juniper-recurrence serve`). It requires
+  liveness on :8210, plus one version across the installed metadata and
+  `juniper_recurrence.__version__`. On a release, that version is the one in the **tag**, and the
+  step strips `juniper-recurrence-v` from it. This service's `/v1/health` body is
+  `{"status": "ok"}`, with no version field, so the check runs with `--health-version optional`. An
+  absent field passes, and a present one that disagrees fails. The check runs on the PR arm against
+  the image just built, and on the publish path against each pushed digest before the digest is
+  exported. It passes the published `juniper-recurrence:0.5.0`. The script is the same one the four
+  other image repos carry. `juniper-recurrence/tests/test_check_image_serves.py` (new, 20 tests)
+  needs no Docker. This is item 5 of the juniper-ml container-registry rollout handoff.
 - **Model snapshots: `POST`/`GET /v1/model/snapshots`, `GET`/`POST /v1/model/snapshots/{id}[/restore]`.**
   The service's **first persisted artifact** — until now it wrote nothing to disk.
 
