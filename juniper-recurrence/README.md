@@ -43,7 +43,7 @@ keys are configured; health + docs are always exempt):
 | Route | Method | Behavior |
 |---|---|---|
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
-| `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`. |
+| `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`, with `metrics_scope: "in_sample"` labelling its `final_metrics`. |
 | `/v1/training/status` | GET | `idle` / `trained` + last metrics + training events. |
 | `/v1/crossval` | POST | Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's own `*_full` when present, otherwise rebuilt from `train \| val \| test`) (synchronous); returns aggregated per-fold metrics. |
 | `/v1/crossval/status` | GET | Most recent cross-validation result (aggregate + per-fold). |
@@ -56,6 +56,10 @@ keys are configured; health + docs are always exempt):
 Both `POST /v1/train` and `POST /v1/crossval` run **inline** (closed-form solves) and return
 their result in the response — no background jobs or WebSocket streams in v1. A second
 cross-validation run while one is in progress returns `409`.
+
+`POST /v1/train`'s `final_metrics` are **in-sample**: they are scored on the split the fit was
+trained on (`dataset.split`), and the response says so with `metrics_scope: "in_sample"`. They
+measure fit, not generalisation; the route reports no held-out metric.
 
 `POST /v1/train` and `POST /v1/crossval` accept a **`readout`** selector (DP-3): `"linear"`
 (default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
@@ -77,7 +81,17 @@ curl -s localhost:8210/v1/model
 # Fit the LMU on a dataset and persist it — no server.
 juniper-recurrence train --dataset <id> --d 16 --out model.npz
 juniper-recurrence train --name equities_seq_v1 --split train
+
+# Create the dataset from a generator with explicit generator params, then fit it.
+juniper-recurrence train --generator equities_seq --params '{"symbols": ["AAPL"], "start_date": "2015-01-01", "end_date": "2022-01-01", "lookback": 64, "fundamentals_fill": "drop", "regression_target": "log_return"}'
+juniper-recurrence train --generator equities_seq --params-file equities_seq.json
 ```
+
+`--params` (a JSON object) and `--params-file` (a file holding one) carry the generator params that
+`POST /v1/train` takes as `dataset.params`. They are mutually exclusive and need `--generator`. Pass
+them explicitly for `equities_seq`: the generator's bare defaults are not a trainable configuration.
+Either flag without `--generator`, malformed JSON, or JSON that is not an object exits `2`. The
+printed metrics are in-sample, as on the route.
 
 ## Configuration
 
