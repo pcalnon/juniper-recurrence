@@ -11,6 +11,27 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Added
 
+- **`juniper-recurrence train` gains `--params <json>` / `--params-file <path>`** (mutually
+  exclusive). This is W0.6 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`,
+  and it closes F-S1. `train --generator` had no way to pass generator params: the CLI called
+  `load_sequence_data` without `params`, so `create_dataset` always received `{}` and an
+  `equities_seq` dataset was built from the generator's bare defaults, which are not trainable
+  (F-P1). The only CLI route to a trainable equities fit was `--dataset <id>` of an artifact minted
+  elsewhere. The parsed JSON object is now threaded into `load_sequence_data(params=…)`, the channel
+  `POST /v1/train` already uses for `dataset.params`. Either flag without `--generator`, malformed
+  JSON, JSON that is not an object, or an unreadable file exits 2 with a message on stderr, before
+  any dataset is requested. Both flags together is an argparse usage error (exit 2). `train --help`
+  shows an `equities_seq` example. `tests/test_cli_train.py` gains 18 tests, among them the plan's
+  bounded offline E2E: the explicit params reach `create_dataset`, the real `validate_npz_contract`
+  checks a three-partition artifact, and the fit prints its metrics.
+- **`POST /v1/train` labels its metrics: `TrainResponse.metrics_scope` is `"in_sample"`** (W0.7,
+  service half; the label half of F-S5 / F-SCI3 in the same plan). `final_metrics` are scored on the
+  split the fit was trained on (`dataset.split`), so they are in-sample, and the response did not say
+  so; the r2 that canopy and the juniper-ml suite surfaced from it is in-sample too. The field is a
+  one-value constant for now because this route reports no held-out metric; plan item W5.3 adds
+  further scopes. No number changes. The field is additive, and `juniper-recurrence-client` returns
+  the response object as-is, so it needs no change. `tests/test_routes.py` gains 3 tests.
 - **The image's publish path asserts that it serves, and that it is the version it is tagged**
   (`util/check_image_serves.py` at the repo root, new; `.github/workflows/publish-image.yml`). The
   existing checks cover what the image contains and that `juniper_recurrence` imports. Neither can

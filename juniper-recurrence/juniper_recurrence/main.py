@@ -5,15 +5,19 @@
 * ``juniper-recurrence train`` is headless: load a 3-D NPZ via the shared data
   adapter, fit ``LMURegressor``, print the regression metrics, and optionally persist
   the model via ``LMUSerializer``. It reuses the exact ``data.load_sequence_data`` +
-  model construction the ``/v1/train`` route uses.
+  model construction the ``/v1/train`` route uses. A ``--generator`` dataset takes its
+  generator params from ``--params`` (a JSON object) or ``--params-file`` (a file
+  holding one), the CLI counterpart of the route's ``dataset.params``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 from juniper_recurrence._version import __version__
 
@@ -32,6 +36,22 @@ def _gamma_arg(value: str) -> float | str:
     return float(value)
 
 
+# W0.6 / F-S1 (juniper-ml notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md):
+# ``train --generator`` had no way to pass generator params, so every generator-created dataset was
+# built from the generator's bare defaults -- which for ``equities_seq`` are not a trainable
+# configuration (F-P1). The epilog shows an explicit bundle so ``--help`` documents the shape.
+_TRAIN_EPILOG = """\
+example: create an equities_seq dataset from explicit generator params, then fit it
+  juniper-recurrence train --generator equities_seq --params '{"symbols": ["AAPL"], "start_date": "2015-01-01", "end_date": "2022-01-01", "lookback": 64, "fundamentals_fill": "drop", "regression_target": "log_return"}'
+
+  # the same params, read from a file that holds the one JSON object
+  juniper-recurrence train --generator equities_seq --params-file equities_seq.json
+"""
+
+# JSON's own names for the non-object values ``json.loads`` can return, for the refusal message.
+_JSON_TYPE_NAMES = {list: "array", str: "string", int: "number", float: "number", bool: "boolean", type(None): "null"}
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``juniper-recurrence`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -46,10 +66,13 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=None, help="Bind port (defaults to JUNIPER_RECURRENCE_PORT / settings).")
     serve.add_argument("--config", default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_RECURRENCE_CONFIG_FILE before settings load; Wave 3.3).")
 
-    train = subparsers.add_parser("train", help="Headless: fit the LMU on a dataset and print metrics.")
+    train = subparsers.add_parser("train", help="Headless: fit the LMU on a dataset and print metrics.", epilog=_TRAIN_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     train.add_argument("--dataset", default=None, help="Dataset id to train on.")
     train.add_argument("--name", default=None, help="Dataset name (uses the latest version).")
-    train.add_argument("--generator", default=None, help="Generator to create a dataset from (e.g. equities_seq).")
+    train.add_argument("--generator", default=None, help="Generator to create a dataset from (e.g. equities_seq); its params come from --params or --params-file.")
+    params_source = train.add_mutually_exclusive_group()
+    params_source.add_argument("--params", default=None, metavar="JSON", help="Generator params for --generator, as one JSON object (see the example below). Only valid with --generator; mutually exclusive with --params-file.")
+    params_source.add_argument("--params-file", default=None, metavar="PATH", help="File holding the --generator params as one JSON object. Only valid with --generator; mutually exclusive with --params.")
     train.add_argument("--split", default="train", help="Split to train on: 'train', 'val', 'test', or 'full' — the whole dataset, served from the artifact's own *_full arrays when present and otherwise rebuilt from the partitions (default: train).")
     train.add_argument("--d", type=int, default=None, help="LMU memory order (default: settings.default_d).")
     train.add_argument("--theta", type=float, default=None, help="LMU window length θ (default: data-driven).")
@@ -118,6 +141,38 @@ def _apply_train_overrides(args: argparse.Namespace, overrides: dict) -> argpars
     return args
 
 
+def _generator_params(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Parse ``--params`` / ``--params-file`` into the generator params object (W0.6).
+
+    Returns ``None`` when neither flag was given, so ``load_sequence_data`` keeps its own
+    default. argparse already refuses the two together (they are a mutually exclusive group).
+
+    Raises:
+        ValueError: with a user-facing message when the file cannot be read, the text is not
+            JSON, or the JSON is not an object. A list or a scalar is not a params mapping, and
+            the adapter's ``dict(params or {})`` would either raise an opaque error on one or,
+            for ``null`` / ``[]``, silently turn it into ``{}`` -- the bare defaults again.
+    """
+    if args.params is not None:
+        source, text = "--params", args.params
+    elif args.params_file is not None:
+        source = f"--params-file {args.params_file}"
+        try:
+            with open(args.params_file, encoding="utf-8") as handle:
+                text = handle.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"cannot read {source}: {exc}") from exc
+    else:
+        return None
+    try:
+        params = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source} is not valid JSON: {exc}") from exc
+    if not isinstance(params, dict):
+        raise ValueError(f"{source} must be a JSON object of generator params, got a JSON {_JSON_TYPE_NAMES.get(type(params), type(params).__name__)}")
+    return params
+
+
 def _train(args: argparse.Namespace) -> int:
     """Headless train: load a 3-D NPZ, fit ``LMURegressor``, print metrics, persist."""
     from juniper_recurrence_model import LMUSerializer
@@ -130,6 +185,17 @@ def _train(args: argparse.Namespace) -> int:
         print("error: train requires one of --dataset / --name / --generator", file=sys.stderr)
         return 2
 
+    # W0.6: generator params are only consumed when the dataset is created from --generator; with
+    # only --dataset / --name they would be silently dropped, so refuse instead.
+    if (args.params is not None or args.params_file is not None) and not args.generator:
+        print("error: --params/--params-file require --generator", file=sys.stderr)
+        return 2
+    try:
+        params = _generator_params(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     # W-11: YAML train: block seeds any flag the CLI left unset (explicit CLI wins).
     args = _apply_train_overrides(args, _experiment_train_overrides())
 
@@ -140,6 +206,7 @@ def _train(args: argparse.Namespace) -> int:
         dataset_id=args.dataset,
         name=args.name,
         generator=args.generator,
+        params=params,
         split=args.split,
     )
 

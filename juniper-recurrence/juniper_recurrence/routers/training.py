@@ -97,6 +97,10 @@ def train(
         logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
         return TrainResponse(
             final_metrics=result.final_metrics,
+            # W0.7: LMURegressor.fit scores final_metrics on the arrays it was fitted on (no X_val is
+            # passed here), so they are in-sample. Set explicitly rather than left to the schema
+            # default, so the claim sits where the metrics are produced.
+            metrics_scope="in_sample",
             n_epochs=result.n_epochs,
             stopped_reason=result.stopped_reason,
             dataset=dataset,

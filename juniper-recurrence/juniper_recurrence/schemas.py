@@ -160,9 +160,21 @@ class TrainRequest(BaseModel):
 
 
 class TrainResponse(BaseModel):
-    """``POST /v1/train`` result: the ``TrainResult`` plus the dataset descriptor."""
+    """``POST /v1/train`` result: the ``TrainResult`` plus the dataset descriptor.
+
+    ``metrics_scope`` labels ``final_metrics`` (W0.7, F-S5 in juniper-ml
+    ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``).
+    The metrics are scored on the very split the fit was trained on, so they are in-sample, and
+    nothing in the response said so; the r2 that canopy and the juniper-ml suite surfaced from it
+    is in-sample too (F-SCI3). A one-member ``Literal`` for now: this route reports no held-out
+    metric. The label changes no number.
+    """
 
     final_metrics: dict[str, float]
+    metrics_scope: Literal["in_sample"] = Field(
+        default="in_sample",
+        description="Which data final_metrics were computed on. Always 'in_sample': they are scored on the split the fit was trained on (dataset.split), so they measure fit, not generalisation. This route reports no held-out metric; further scopes arrive with plan item W5.3.",
+    )
     n_epochs: int
     stopped_reason: str | None = None
     dataset: DatasetDescriptor

@@ -38,6 +38,35 @@ def test_train_happy_path(fake_data):
     assert body["dataset"]["has_target_dt"] is True
 
 
+@pytest.mark.parametrize("split", ["train", "val"])
+def test_train_response_labels_its_metrics_in_sample(fake_data, split):
+    """W0.7 (F-S5): ``final_metrics`` are scored on the split the fit saw, and the response now says so.
+
+    In-sample means "the split this fit was trained on", whichever split that is -- training on
+    ``val`` makes ``val`` the in-sample split, so the label does not depend on ``dataset.split``.
+    The label changes no number: the metric set is the one the happy path asserts.
+    """
+    # The fake client serves this same mapping; give it a val partition to train on.
+    fake_data.update({key.replace("_train", "_val"): value for key, value in list(fake_data.items())})
+
+    resp = _client(api_keys=None).post("/v1/train", json={"dataset": {"dataset_id": "ds-1", "split": split}})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["metrics_scope"] == "in_sample"
+    assert body["dataset"]["split"] == split
+    assert set(body["final_metrics"]) >= {"mse", "rmse", "mae", "r2", "loss"}
+
+
+def test_train_response_publishes_metrics_scope_in_the_openapi_schema():
+    """The label is part of the published contract: a one-value constant, defaulting to in_sample."""
+    schema = _client(api_keys=None).app.openapi()
+    prop = schema["components"]["schemas"]["TrainResponse"]["properties"]["metrics_scope"]
+    allowed = prop["enum"] if "enum" in prop else [prop["const"]]
+    assert allowed == ["in_sample"]
+    assert prop["default"] == "in_sample"
+
+
 def test_status_idle_then_trained(fake_data):
     client = _client(api_keys=None)
     idle = client.get("/v1/training/status").json()
