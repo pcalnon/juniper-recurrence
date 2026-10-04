@@ -143,6 +143,30 @@ CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 ma
 
 A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-06) runs as a `version-drift` pre-commit hook (and so via the `CI — pre-commit` gate): each package's `_version.py` must agree with its CHANGELOG top heading and the root AGENTS.md version table, and the root `**Version**` header must match the app. Pure stdlib; the git-tag check degrades gracefully on a shallow checkout.
 
+### Host environment the experiment launchers actually serve from (operator recipe, plan W0.1)
+
+"No dedicated conda env" above is true of this repo, but it is not what runs. The juniper-ml launchers (`util/experiment_stack.bash`, `util/isolated_stack.bash`) default the recurrence leg to **`JuniperCascor1`**, so that env is the one that serves recurrence on the host — and nothing in the launch path checked its contents until juniper-ml's W0.2 preflight.
+On 2026-10-03 it served `juniper-recurrence-model` 0.1.5 (no `derive_full_split`) and `juniper-service-core` 0.5.0 (whose module reports `0.4.0`) under an app pinned `>=0.3.0,<0.4.0` / `>=0.6.0,<0.8.0`; `/v1/health/ready` passed and every `POST /v1/crossval` returned 422 `missing required key 'X_full'` (`juniper-ml/notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`, F-E1).
+
+Repair recipe. Install editable from the **primary checkouts**, never from a worktree (a removed worktree leaves an orphaned `.pth` that `pip show` still reports as installed), with `--no-deps` so nothing else in the env moves, and probe with `-s` so a `~/.local` package cannot mask an env gap:
+
+```bash
+PY=/opt/miniforge3/envs/JuniperCascor1/bin/python
+# 1. the model core, from this repo's checkout
+$PY -s -m pip install --no-deps -e /home/pcalnon/Development/python/Juniper/juniper-recurrence/juniper-recurrence-model
+# 2. the service tier, from the juniper-ml checkout
+$PY -s -m pip install --no-deps -e /home/pcalnon/Development/python/Juniper/juniper-ml/juniper-service-core
+# 3. probes
+$PY -s -c "from juniper_recurrence_model.data import derive_full_split; print('derive_full_split ok')"
+$PY -s -m pip check | grep -i juniper          # want: no output (CUDA lines are out of scope)
+```
+
+Then **restart any recurrence listener started before the repair** (`ss -ltnpH | grep -E ':82[6-8][0-9] '` lists the launcher range; a process keeps importing from the tree it started with — the parent `AGENTS.md` deleted-interpreter trap), and re-run the bench as served: `$PY -m pytest bench/` from the repo root (37 tests).
+
+Record of 2026-10-04: step 1 applied (model 0.3.0 editable at `be081fa`; probe ok; bench 37/37 as served; `POST /v1/crossval` 200 on `equities_seq-6.0.0-15505731cba5b86d` with no `PYTHONPATH`).
+Step 2 **deferred**: a live cascor listener on `:8202` (the canopy E2E stack) imports `juniper_service_core` from this env, and replacing a package under a running service is the owner's call.
+Until it is applied, `pip check` reports exactly one line (`juniper-recurrence 0.5.0 has requirement juniper-service-core<0.8.0,>=0.6.0, but you have juniper-service-core 0.5.0`), `tests/test_app_smoke.py::test_docs_require_auth_when_enabled` fails as served (`200 == 401`, a 0.5.0 behaviour), and the juniper-ml launcher preflight refuses the env unless `--skip-env-preflight` is passed.
+
 ## Sequence-safety nets (required CI)
 
 The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.9.0,<0.10.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`); neither is a required check.
