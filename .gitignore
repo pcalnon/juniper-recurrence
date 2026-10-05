@@ -44,3 +44,13 @@ data/
 # dataset seeds, so the PNGs are outputs, not baselines — bench/results/ stays the tracked
 # baseline home. Point --out-dir elsewhere for a run you want to keep.
 bench/plots/
+
+# Recurrence snapshot ARTIFACTS. The snapshot root juniper-deploy bind-mounts (W1.12,
+# juniper-deploy#242) is `<repo>/recurrence-snapshots/`, the repo root, so the whole-tree
+# offline backup captures the files and git never does. DIRECTORY-anchored, in the `/*`
+# form rather than `/recurrence-snapshots/`: git cannot re-include anything under an
+# excluded directory, and the .gitkeep below must ship -- a missing bind-mount source is
+# created root-owned by the Docker daemon, which then EPERMs the uid-1000 container on
+# every save. Mirrors juniper-cascor's /cascor-snapshots/* rule (juniper-cascor#548).
+/recurrence-snapshots/*
+!/recurrence-snapshots/.gitkeep
