@@ -27,11 +27,12 @@ def _auto_target_reader() -> Callable[..., Any]:
     """The model reader with ``target="auto"`` bound: the bench keeps ``auto`` explicitly.
 
     juniper-data's synthetic sequence generators -- ``irregular_sine`` among them -- emit
-    their regression target as ``y_*``; only the equities pair adds ``y_reg_*``. Under the
-    model's ``"reg"`` default (plan W1.3, ruling R8) the app, which passes no ``target``,
-    refuses such an artifact (``regression target 'y_reg_train' missing``), so this e2e
-    pins ``auto`` on the reader the app calls. A pre-W1.3 model (``<0.4.0``, what the
-    bench lane installs from PyPI) has no ``target=`` and already behaves as ``auto``.
+    their regression target as ``y_*``; only the equities pair adds ``y_reg_*``. ``auto``
+    is the model's default today, but ruling R8 (plan W1.3) may move it to ``"reg"``, under
+    which the app -- it passes no ``target`` -- refuses such an artifact
+    (``regression target 'y_reg_train' missing``). Binding ``auto`` here keeps this e2e
+    independent of that ruling. A pre-W1.3 model (``<0.4.0``, what the bench lane installs
+    from PyPI) has no ``target=`` and already behaves as ``auto``.
     """
     from juniper_recurrence_model import sequence_data_from_arrays
 

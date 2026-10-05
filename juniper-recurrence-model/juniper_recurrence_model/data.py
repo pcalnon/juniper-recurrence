@@ -16,9 +16,10 @@ The WS-1 3-D contract (juniper-data#168; ``DELTA_T_HANDLING`` §6): ``X_{split}`
 from which ``dt`` is derived); ``y_reg_{split}`` is the regression target (one per window);
 ``target_dt_{split}`` (horizon) and ``seq_lengths_{split}`` (valid step count) are optional.
 
-The target is **selected explicitly** -- ``target=`` on :func:`sequence_data_from_arrays` and
-:func:`load_sequence_npz`, defaulting to :data:`DEFAULT_TARGET` -- rather than by a silent
-fallback from ``y_reg_{split}`` to the one-hot ``y_{split}`` (W1.3, finding F-S2 of juniper-ml
+The target is **selectable** -- ``target=`` on :func:`sequence_data_from_arrays` and
+:func:`load_sequence_npz`, defaulting to :data:`DEFAULT_TARGET` -- and the default ``"auto"``
+fallback from ``y_reg_{split}`` to ``y_{split}`` is no longer silent when ``y_{split}`` looks
+one-hot (W1.3, finding F-S2 of juniper-ml
 ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``).
 """
 
@@ -37,16 +38,18 @@ logger = logging.getLogger(__name__)
 #: Which per-split key the reader takes as the target the regressor fits (W1.3). ``"reg"``
 #: requires ``y_reg_{split}``; ``"class"`` requires ``y_{split}`` (the producer's primary label --
 #: one-hot on a classification artifact such as equities' direction label); ``"auto"`` prefers
-#: ``y_reg_{split}`` and falls back to ``y_{split}`` with a logged WARNING.
+#: ``y_reg_{split}`` and falls back to ``y_{split}``, logging a WARNING when that looks one-hot.
 TargetMode = Literal["reg", "class", "auto"]
 
 #: Every accepted ``target=`` value.
 TARGET_MODES: tuple[str, ...] = ("reg", "class", "auto")
 
 #: The ``target=`` default of every public entry in this module -- the single place the ruling
-#: lives. ``"reg"`` applies the plan's recommended ruling R8 pending the owner's ruling; the
-#: alternative ruling (keep ``"auto"`` as the default for one more release) is this one line.
-DEFAULT_TARGET: TargetMode = "reg"
+#: lives. ``"auto"`` is ruling R8's alternative, applied pending the owner's re-ruling. The plan
+#: recommends ``"reg"``, but every juniper-data synthetic sequence generator emits its regression
+#: target as ``y_*`` only (measured 2026-10-05), so ``"reg"`` would refuse them all while the app
+#: passes no ``target``. Moving to ``"reg"`` is this one line, once that is no longer true.
+DEFAULT_TARGET: TargetMode = "auto"
 
 
 @dataclass(frozen=True)
@@ -166,10 +169,12 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
       raises ``ValueError("regression target 'y_reg_{split}' missing")``.
     * ``"class"`` -- the producer's primary label ``y_{split}``, required (one-hot on a
       classification artifact, e.g. equities' direction label).
-    * ``"auto"`` -- the pre-W1.3 behaviour: ``y_reg_{split}`` when present, otherwise
-      ``y_{split}`` with a logged WARNING naming the split and both keys. On a classification
-      artifact that fallback turns a regression fit into a fit of the one-hot direction label
-      (F-S2), which is why it is no longer silent and no longer the default.
+    * ``"auto"`` (the default) -- the pre-W1.3 behaviour: ``y_reg_{split}`` when present,
+      otherwise ``y_{split}``. When that fallback looks one-hot (2-D, at least two columns,
+      every value 0 or 1) it is logged at WARNING, naming the split and both keys: on a
+      classification artifact it turns a regression fit into a fit of the direction label
+      (F-S2), which used to happen silently. A continuous ``y_{split}`` -- the regression
+      target juniper-data's synthetic generators emit -- is logged at DEBUG.
 
     ``split`` must be ``"train"`` / ``"val"`` / ``"test"`` / ``"full"`` -- the four the app's
     request schema admits; anything else is refused before the artifact is read.
@@ -181,7 +186,7 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
     if target not in TARGET_MODES:
         raise ValueError(f"target must be one of {TARGET_MODES}; got {target!r}")
     # The four splits the app's request schema admits (``SplitName``). Spelled as an inline literal
-    # rather than derived from _FULL_COMPONENT_SPLITS: ``split`` reaches the target-fallback WARNING,
+    # rather than derived from _FULL_COMPONENT_SPLITS: ``split`` reaches the target-fallback log lines,
     # and a comparison against a literal display is what static analysis (CodeQL
     # ``py/log-injection``) recognises as validating a caller-supplied string.
     if split not in ("train", "val", "test", "full"):
@@ -249,13 +254,27 @@ def _select_target(arrays: dict[str, np.ndarray], split: str, target: str) -> np
         if class_key not in arrays:
             raise ValueError(f"classification target '{class_key}' missing")
         return np.asarray(arrays[class_key])
-    # "auto": the pre-W1.3 preference order, with the fallback made audible rather than silent.
+    # "auto": the pre-W1.3 preference order. The fallback is audible exactly when it is the F-S2
+    # hazard -- a one-hot class label about to be fitted as a regression target.
     if reg_key in arrays:
         return np.asarray(arrays[reg_key])
     if class_key in arrays:
-        logger.warning("split %r: regression target %r missing; target='auto' falls back to %r. On a classification artifact that key is the one-hot label, so the fit becomes a direction fit -- pass target='reg' or target='class' to choose explicitly.", split, reg_key, class_key)
-        return np.asarray(arrays[class_key])
+        y = np.asarray(arrays[class_key])
+        if _looks_one_hot(y):
+            logger.warning("split %r: regression target %r missing; target='auto' falls back to %r, which looks one-hot (a class label), so the fit becomes a direction fit -- pass target='reg' or target='class' to choose explicitly.", split, reg_key, class_key)
+        else:
+            logger.debug("split %r: no %r; target='auto' uses %r as the regression target.", split, reg_key, class_key)
+        return y
     raise ValueError(f"missing regression target: neither '{reg_key}' nor '{class_key}' present")
+
+
+def _looks_one_hot(y: np.ndarray) -> bool:
+    """Whether ``y`` has the shape of a class label: 2-D, at least two columns, every value 0 or 1.
+
+    A synthetic generator's regression target fails it: ``(W,)`` is not 2-D, ``(W, 1)`` has one
+    column, and a continuous ``(W, H)`` horizon holds values other than 0 and 1.
+    """
+    return y.ndim == 2 and y.shape[1] >= 2 and bool(np.isin(y, (0, 1)).all())
 
 
 def _read_target_dt(arrays: dict[str, np.ndarray], split: str, n_windows: int) -> np.ndarray | None:

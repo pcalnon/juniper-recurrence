@@ -75,25 +75,20 @@ def test_sequence_data_rejects_nonfinite_target(bad, key):
     backward pass -- the very failure the X check prevents, arriving through the
     one door left open.
 
-    Both target keys are covered because ``target="auto"`` prefers ``y_reg_*`` and
-    falls back to ``y_*``; guarding only the preferred key would leave the fallback
-    path unchecked. (``target="class"`` reads ``y_*`` too -- pinned separately in
-    ``TestTargetSelection``.)
+    Both target keys are covered because the loader prefers ``y_reg_*`` and falls
+    back to ``y_*``; guarding only the preferred key would leave the fallback
+    path unchecked.
     """
     arrays = _make_equities_seq_arrays(splits=("train",))
-    target = "reg"
     if key == "y_train":
         # Exercise the FALLBACK branch for real rather than skipping it: the
         # loader prefers ``y_reg_*``, so the fallback is only reached once the
-        # preferred key is gone -- and, since W1.3, only under ``target="auto"``
-        # (the default refuses a ``y_*``-only artifact outright). A skip here
-        # would have pinned nothing.
+        # preferred key is gone. A skip here would have pinned nothing.
         arrays["y_train"] = np.asarray(arrays.pop("y_reg_train"), dtype=float).copy()
-        target = "auto"
     arrays[key] = np.asarray(arrays[key], dtype=float).copy()
     arrays[key][0] = bad
     with pytest.raises(ValueError, match="non-finite|finite"):
-        sequence_data_from_arrays(arrays, split="train", target=target)
+        sequence_data_from_arrays(arrays, split="train")
 
 
 def test_end_to_end_fit_predict_on_sequence_npz(tmp_path):
@@ -128,14 +123,13 @@ def test_loader_derives_dt_from_absolute_t():
 
 
 def test_loader_falls_back_to_y_when_no_y_reg():
-    """The fallback survives W1.3 as an explicit opt-in (``target="auto"``); the default refuses it (``TestTargetSelection``)."""
     rng = np.random.default_rng(2)
     arrays = {
         "X_train": rng.normal(size=(5, 4, 2)).astype(np.float32),
         "y_train": rng.normal(size=(5, 1)).astype(np.float32),  # no y_reg
         "dt_train": np.zeros((5, 4), dtype=np.float32),
     }
-    assert sequence_data_from_arrays(arrays, "train", target="auto").y.shape == (5, 1)
+    assert sequence_data_from_arrays(arrays, "train").y.shape == (5, 1)
 
 
 def test_loader_rejects_2d_x():
@@ -341,11 +335,13 @@ class TestCrossvalReadSurvivesDecision11:
 # --------------------------------------------------------------------------------------
 # W1.3 (findings F-S2 / F-S8 of juniper-ml
 # notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md):
-# the target is SELECTED, not silently fallen back to. Before W1.3 an artifact without
-# y_reg_{split} had its y_{split} read instead -- on a classification artifact that is the
-# one-hot direction label, so a regression run became a two-output direction fit and nothing
-# said so. ``reg`` now refuses, ``class`` asks for the label on purpose, and ``auto`` keeps
-# the old preference order but logs the fallback.
+# the target is SELECTABLE, and the fallback is no longer silent where it is a hazard. Before
+# W1.3 an artifact without y_reg_{split} had its y_{split} read instead -- on a classification
+# artifact that is the one-hot direction label, so a regression run became a two-output
+# direction fit and nothing said so. ``auto`` (the default, pending ruling R8) keeps the old
+# preference order but WARNs when the fallback looks one-hot; ``reg`` refuses; ``class`` asks
+# for the label on purpose. A continuous y_{split} -- what every juniper-data synthetic
+# sequence generator emits -- is the regression target and stays quiet (DEBUG only).
 # --------------------------------------------------------------------------------------
 
 _DATA_LOGGER = "juniper_recurrence_model.data"
@@ -408,11 +404,61 @@ class TestTargetSelection:
             assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, entry.__name__
             assert parameter.default == DEFAULT_TARGET, entry.__name__
 
-    def test_the_default_applies_the_recommended_r8_ruling(self):
-        """Pins plan ruling R8's recommendation (``reg``), pending the owner's ruling -- a re-ruling moves this pin with the constant."""
-        assert DEFAULT_TARGET == "reg"
-        with pytest.raises(ValueError, match=r"^regression target 'y_reg_train' missing$"):
-            sequence_data_from_arrays(_y_only_artifact(), "train")
+    def test_the_default_is_auto_pending_ruling_r8(self, caplog):
+        """Pins R8's alternative (``auto``), applied pending the owner's re-ruling.
+
+        The plan recommends ``reg``, but every juniper-data synthetic sequence generator emits its
+        regression target as ``y_*`` only (measured 2026-10-05), and the app passes no ``target``.
+        A re-ruling to ``reg`` flips ``DEFAULT_TARGET`` and this pin together.
+        """
+        assert DEFAULT_TARGET == "auto"
+        arrays = _y_only_artifact()
+        with caplog.at_level(logging.WARNING, logger=_DATA_LOGGER):
+            data = sequence_data_from_arrays(arrays, "train")  # no target: the default
+
+        assert np.array_equal(data.y, arrays["y_train"])
+        assert [r.levelno for r in caplog.records if r.name == _DATA_LOGGER] == [logging.WARNING]
+
+    def test_auto_falls_back_to_a_continuous_w_by_1_y_without_a_warning(self, caplog):
+        """The synthetics' shape -- a ``(W, 1)`` float target under ``y_*`` -- is the regression target: DEBUG, never WARNING."""
+        rng = np.random.default_rng(5)
+        arrays = {
+            "X_train": rng.normal(size=(6, 4, 2)).astype(np.float32),
+            "y_train": rng.normal(size=(6, 1)).astype(np.float32),
+            "dt_train": np.zeros((6, 4), dtype=np.float32),
+        }
+        with caplog.at_level(logging.DEBUG, logger=_DATA_LOGGER):
+            data = sequence_data_from_arrays(arrays, "train", target="auto")
+
+        assert np.array_equal(data.y, arrays["y_train"])
+        records = [r for r in caplog.records if r.name == _DATA_LOGGER]
+        assert [r.levelno for r in records] == [logging.DEBUG]
+        message = records[0].getMessage()
+        assert "'y_train'" in message and "regression target" in message, message
+
+    @pytest.mark.parametrize(
+        ("y", "warns"),
+        [
+            pytest.param(np.eye(3, dtype=np.float32)[[0, 1, 2, 0, 1, 2]], True, id="one-hot-3-classes"),
+            pytest.param(np.array([[1, 1], [0, 1], [1, 0], [0, 0], [1, 1], [0, 1]], dtype=np.float32), True, id="multi-hot-0-1-matrix"),
+            # Each of the next three fails exactly one clause of the one-hot test.
+            pytest.param(np.array([0, 1, 1, 0, 1, 0], dtype=np.float32), False, id="1-d-0-1-vector-fails-only-2-d"),
+            pytest.param(np.array([[0], [1], [1], [0], [1], [0]], dtype=np.float32), False, id="single-0-1-column-fails-only-2-columns"),
+            pytest.param(np.array([[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0.5, 0.5]], dtype=np.float32), False, id="one-non-0-1-value-fails-only-values"),
+            # The continuous targets a synthetic generator or the bench serve under y_*.
+            pytest.param(np.linspace(-1.0, 1.0, 6, dtype=np.float32), False, id="1-d-continuous"),
+            pytest.param(np.linspace(-1.0, 1.0, 12, dtype=np.float32).reshape(6, 2), False, id="w-by-h-continuous-horizons"),
+        ],
+    )
+    def test_auto_warns_exactly_when_the_fallback_looks_one_hot(self, y, warns, caplog):
+        """The one-hot test is 2-D AND >= 2 columns AND every value 0 or 1; dropping any clause turns a case red."""
+        rng = np.random.default_rng(9)
+        arrays = {"X_train": rng.normal(size=(6, 4, 2)).astype(np.float32), "y_train": y, "dt_train": np.zeros((6, 4), dtype=np.float32)}
+        with caplog.at_level(logging.DEBUG, logger=_DATA_LOGGER):
+            sequence_data_from_arrays(arrays, "train", target="auto")
+
+        levels = [r.levelno for r in caplog.records if r.name == _DATA_LOGGER]
+        assert levels == ([logging.WARNING] if warns else [logging.DEBUG])
 
     def test_auto_falls_back_to_y_with_a_warning_naming_the_split_and_both_keys(self, caplog):
         arrays = _y_only_artifact()

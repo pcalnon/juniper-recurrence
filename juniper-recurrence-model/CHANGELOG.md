@@ -10,41 +10,44 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ### Changed
 
-- **BREAKING — the reader no longer falls back silently from `y_reg_{split}` to `y_{split}`: the
-  target is selected explicitly, and the default is `"reg"`** (plan W1.3; findings F-S2 / F-S8 of
-  juniper-ml `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`).
-  `sequence_data_from_arrays` and `load_sequence_npz` take a keyword-only `target`: `"reg"`
+- **`auto` warns on a one-hot fallback; the `reg` default is deferred to ruling R8, because every
+  juniper-data synthetic sequence generator emits its regression target as `y_*` (measured
+  2026-10-05)** (plan W1.3; findings F-S2 / F-S8 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`).
+  `sequence_data_from_arrays` and `load_sequence_npz` take a keyword-only `target`. `"reg"`
   requires `y_reg_{split}` and otherwise raises
-  `ValueError("regression target 'y_reg_{split}' missing")`; `"class"` requires `y_{split}` (the
-  one-hot label on a classification artifact); `"auto"` keeps the old order — `y_reg_{split}`,
-  else `y_{split}` — but logs a WARNING naming the split and both keys when it falls back. Before
-  this, a classification artifact without `y_reg` turned a regression run into a two-output fit of
-  the one-hot direction label, and nothing said so.
+  `ValueError("regression target 'y_reg_{split}' missing")`; `"class"` requires `y_{split}`; and
+  `"auto"`, the default, keeps the pre-W1.3 order — `y_reg_{split}`, else `y_{split}`. That
+  fallback now logs a WARNING naming the split and both keys when `y_{split}` looks one-hot (2-D,
+  at least two columns, every value 0 or 1): on a classification artifact it turns a regression
+  run into a fit of the direction label, which used to happen silently. A continuous `y_{split}`
+  is logged at DEBUG as the regression target. By default every artifact the old reader loaded
+  resolves to the same target array as before.
 
-  The `"reg"` default applies the plan's **recommended** ruling R8 **pending the owner's ruling**
-  (ship in recurrence 0.6.0 as a pre-1.0 breaking minor). It lives in one constant,
-  `juniper_recurrence_model.data.DEFAULT_TARGET`, which both entry points default to; the
-  alternative ruling (keep `"auto"` the default for one more release, behind the WARNING) is a
-  one-line change there, plus the pin test `test_the_default_applies_the_recommended_r8_ruling`.
-
-  **What it breaks is wider than "a non-equities artifact".** Every `y_*`-only artifact read with
-  the default — and juniper-data's five synthetic sequence generators (`irregular_sine`,
-  `multi_sine`, `mackey_glass`, `ar_p`, `delay_product`) emit their regression target as `y_*`
-  only (`juniper_data/generators/_sequence.py`, `window_regular_series` / `window_timed_series`);
-  just `equities` / `equities_seq` add `y_reg_*`. The juniper-recurrence app passes no `target`, so
-  with this model it refuses all five: `POST /v1/train` → 422
-  `invalid dataset: regression target 'y_reg_train' missing`, reproduced through
-  `bench/app_e2e.py`. The app pins `juniper-recurrence-model<0.4.0`, so no published app can pick
-  this up; its half (pass `target`, or the producer emitting `y_reg_*`) has to land before it
-  raises that cap. The bench keeps `"auto"` explicitly.
+  The plan recommends `"reg"` as the default (ruling R8). But all five juniper-data synthetic
+  sequence generators (`irregular_sine`, `multi_sine`, `mackey_glass`, `ar_p`, `delay_product`)
+  emit their regression target under `y_*` only (`juniper_data/generators/_sequence.py`,
+  `window_regular_series` / `window_timed_series`); only `equities` / `equities_seq` add
+  `y_reg_*`. The juniper-recurrence app passes no `target`, so under `"reg"` it refused all five —
+  `POST /v1/train` → 422 `invalid dataset: regression target 'y_reg_train' missing`, reproduced
+  through `bench/app_e2e.py`. The default is therefore R8's alternative, `"auto"`, pending the
+  owner's re-ruling. It lives in one constant, `juniper_recurrence_model.data.DEFAULT_TARGET`;
+  moving to `"reg"` is that line plus the pin test `test_the_default_is_auto_pending_ruling_r8`,
+  once the app passes `target` or the producer emits `y_reg_*`. The bench pins `"auto"` either way.
 
 - **An unknown `split` is refused up front.** `sequence_data_from_arrays` (and so
   `load_sequence_npz`) accepts exactly `"train"` / `"val"` / `"test"` / `"full"` — the four the
   app's request schema admits (`SplitName`) — and raises
   `ValueError("split must be one of 'train' / 'val' / 'test' / 'full'; got ...")` for anything
-  else, where a typo used to surface as `NPZ artifact is missing required key 'X_<typo>'`. The
-  value now reaches a log line (the `"auto"` fallback WARNING), and CodeQL's `py/log-injection`
-  treats a comparison against a literal as the validation that makes that safe.
+  else, where a typo used to surface as `NPZ artifact is missing required key 'X_<typo>'`. Any
+  other name used to load if the artifact carried matching keys; no caller in this repo or in
+  juniper-ml passes one. The value now reaches the fallback log lines, and CodeQL's
+  `py/log-injection` treats a comparison against a literal as the validation that makes that safe.
+
+- **A `(W, 1)` `target_dt` and a float or bool `seq_lengths` are now refused** — the W1.4 mirror
+  under Fixed below. The first was reshaped into place; the model truncated the second (a float)
+  or read it as 0 / 1 (a bool). juniper-data emits neither: `target_dt` is `(W,)` `float32`, and
+  `seq_lengths` is not emitted at all.
 
 ### Added
 
@@ -62,9 +65,7 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   place without a word; and `LMURegressor` clips each `seq_lengths - 1` readout index into
   `[0, L - 1]`, so an out-of-range or float length read the wrong step instead of failing. The
   mirror's third rule, finite `dt`, was already enforced (0.2.0, audit MODEL-01). No `float32`
-  check is added here — the reader consumes what the validator admitted. **An artifact whose
-  `(W, 1)` `target_dt` or float `seq_lengths` loaded before is now refused**; juniper-data emits
-  neither (`target_dt` is `(W,)` `float32`, and `seq_lengths` is not emitted at all).
+  check is added here — the reader consumes what the validator admitted.
 
 ## [0.3.0] - 2026-09-09
 
