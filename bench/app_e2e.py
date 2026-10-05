@@ -4,18 +4,41 @@ Generates an ``irregular_sine`` dataset and serves it through the app's data ada
 live juniper-data service), then drives ``POST /v1/train`` -> ``/v1/predict`` -> ``/v1/crossval`` and
 asserts the deployed app trains + predicts well on irregular-Δt data. This is the roadmap's OQ-7
 "completed-state" gate: the shipped HTTP surface actually works on irregular timing end-to-end.
+The model reader the app calls runs with ``target="auto"`` -- see :func:`_auto_target_reader`.
 
 Run from the repo root:  ``python -m bench.app_e2e``
 """
 
 from __future__ import annotations
 
+import functools
+import inspect
+from collections.abc import Callable
+from typing import Any
 from unittest import mock
 
 import numpy as np
 from fastapi.testclient import TestClient
 
 from bench import datasets
+
+
+def _auto_target_reader() -> Callable[..., Any]:
+    """The model reader with ``target="auto"`` bound: the bench keeps ``auto`` explicitly.
+
+    juniper-data's synthetic sequence generators -- ``irregular_sine`` among them -- emit
+    their regression target as ``y_*``; only the equities pair adds ``y_reg_*``. ``auto``
+    is the model's default today, but ruling R8 (plan W1.3) may move it to ``"reg"``, under
+    which the app -- it passes no ``target`` -- refuses such an artifact
+    (``regression target 'y_reg_train' missing``). Binding ``auto`` here keeps this e2e
+    independent of that ruling. A pre-W1.3 model (``<0.4.0``, what the bench lane installs
+    from PyPI) has no ``target=`` and already behaves as ``auto``.
+    """
+    from juniper_recurrence_model import sequence_data_from_arrays
+
+    if "target" not in inspect.signature(sequence_data_from_arrays).parameters:
+        return sequence_data_from_arrays
+    return functools.partial(sequence_data_from_arrays, target="auto")
 
 
 def _arrays_for_app(ds: datasets.Dataset) -> dict[str, np.ndarray]:
@@ -64,6 +87,9 @@ def main() -> None:
         mock.patch("juniper_recurrence.data.JuniperDataClient", _FakeClient),
         mock.patch(
             "juniper_recurrence.data.validate_npz_contract", lambda a, **k: "sequence"
+        ),
+        mock.patch(
+            "juniper_recurrence.data.sequence_data_from_arrays", _auto_target_reader()
         ),
     ):
         from juniper_recurrence.app import build_app
