@@ -171,6 +171,8 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
       artifact that fallback turns a regression fit into a fit of the one-hot direction label
       (F-S2), which is why it is no longer silent and no longer the default.
 
+    ``split`` must be ``"train"`` / ``"val"`` / ``"test"`` / ``"full"`` -- the four the app's
+    request schema admits; anything else is refused before the artifact is read.
     ``split="full"`` is served from the artifact's own ``*_full`` family when it has one, and
     otherwise from :func:`derive_full_split`. juniper-data stopped emitting that family in
     decision 11, so without the fallback every post-#369 artifact would fail this read --
@@ -178,6 +180,12 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
     """
     if target not in TARGET_MODES:
         raise ValueError(f"target must be one of {TARGET_MODES}; got {target!r}")
+    # The four splits the app's request schema admits (``SplitName``). Spelled as an inline literal
+    # rather than derived from _FULL_COMPONENT_SPLITS: ``split`` reaches the target-fallback WARNING,
+    # and a comparison against a literal display is what static analysis (CodeQL
+    # ``py/log-injection``) recognises as validating a caller-supplied string.
+    if split not in ("train", "val", "test", "full"):
+        raise ValueError(f"split must be one of 'train' / 'val' / 'test' / 'full'; got {split!r}")
     if split == "full" and f"X_{split}" not in arrays:
         arrays = derive_full_split(arrays)
     if f"X_{split}" not in arrays:

@@ -38,6 +38,14 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   this up; its half (pass `target`, or the producer emitting `y_reg_*`) has to land before it
   raises that cap. The bench keeps `"auto"` explicitly.
 
+- **An unknown `split` is refused up front.** `sequence_data_from_arrays` (and so
+  `load_sequence_npz`) accepts exactly `"train"` / `"val"` / `"test"` / `"full"` — the four the
+  app's request schema admits (`SplitName`) — and raises
+  `ValueError("split must be one of 'train' / 'val' / 'test' / 'full'; got ...")` for anything
+  else, where a typo used to surface as `NPZ artifact is missing required key 'X_<typo>'`. The
+  value now reaches a log line (the `"auto"` fallback WARNING), and CodeQL's `py/log-injection`
+  treats a comparison against a literal as the validation that makes that safe.
+
 ### Added
 
 - **`DEFAULT_TARGET`, `TARGET_MODES` and the `TargetMode` alias** in `juniper_recurrence_model.data`

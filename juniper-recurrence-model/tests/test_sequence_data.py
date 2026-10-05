@@ -490,8 +490,17 @@ class TestTargetSelection:
             sequence_data_from_arrays(_equities_seq_artifact(), "train", target="regression")
 
     def test_target_cannot_be_passed_positionally(self):
+        # Unpacked on purpose: a literal three-argument call is exactly what CodeQL's
+        # py/call/wrong-arguments reports, and proving Python refuses one is this test's job.
+        positional = (_equities_seq_artifact(), "train", "auto")
         with pytest.raises(TypeError):
-            sequence_data_from_arrays(_equities_seq_artifact(), "train", "auto")
+            sequence_data_from_arrays(*positional)
+
+    @pytest.mark.parametrize("split", ["validation", "Train", "", "train\nforged log line"])
+    def test_an_unknown_split_is_refused_before_anything_is_read(self, split):
+        """The app's ``SplitName`` admits four splits; the reader refuses anything else up front, not as a missing key."""
+        with pytest.raises(ValueError, match=r"^split must be one of 'train' / 'val' / 'test' / 'full'; got "):
+            sequence_data_from_arrays(_equities_seq_artifact(), split)
 
     def test_load_sequence_npz_threads_target_to_the_reader(self, tmp_path, caplog):
         path = tmp_path / "y_only.npz"
