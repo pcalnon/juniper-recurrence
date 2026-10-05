@@ -489,12 +489,15 @@ class TestTargetSelection:
         with pytest.raises(ValueError, match=r"target must be one of \('reg', 'class', 'auto'\); got 'regression'"):
             sequence_data_from_arrays(_equities_seq_artifact(), "train", target="regression")
 
-    def test_target_cannot_be_passed_positionally(self):
-        # Unpacked on purpose: a literal three-argument call is exactly what CodeQL's
-        # py/call/wrong-arguments reports, and proving Python refuses one is this test's job.
-        positional = (_equities_seq_artifact(), "train", "auto")
-        with pytest.raises(TypeError):
-            sequence_data_from_arrays(*positional)
+    @pytest.mark.parametrize("entry", [sequence_data_from_arrays, load_sequence_npz], ids=lambda entry: entry.__name__)
+    def test_target_cannot_be_passed_positionally(self, entry):
+        """``Signature.bind`` applies the interpreter's own argument-binding rules without making the call.
+
+        Binding rather than calling: a literal over-long call is what CodeQL's
+        ``py/call/wrong-arguments`` reports, even one written to prove Python refuses it.
+        """
+        with pytest.raises(TypeError, match="too many positional arguments"):
+            inspect.signature(entry).bind({}, "train", "auto")
 
     @pytest.mark.parametrize("split", ["validation", "Train", "", "train\nforged log line"])
     def test_an_unknown_split_is_refused_before_anything_is_read(self, split):
