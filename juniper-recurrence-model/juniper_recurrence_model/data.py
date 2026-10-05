@@ -7,23 +7,46 @@ This module is the lean, **numpy-only model-side reader**: it pulls the per-spli
 ``target_dt`` / ``seq_lengths``) out of the NPZ key layout (per-split suffixes
 ``_train`` / ``_val`` / ``_test`` / ``_full``, the last **derived** from the partitions by
 :func:`derive_full_split` when the artifact does not carry it — decision 11 retired the
-``*_full`` family, juniper-data#369) and applies the minimal ``dt`` rules the model relies on.
-It deliberately takes **no** juniper-data-client dependency, keeping this package numpy-only.
+``*_full`` family, juniper-data#369) and applies the minimal timing rules the model relies on
+(``dt``, plus ``target_dt`` / ``seq_lengths`` when present). It deliberately takes **no**
+juniper-data-client dependency, keeping this package numpy-only.
 
 The WS-1 3-D contract (juniper-data#168; ``DELTA_T_HANDLING`` §6): ``X_{split}`` is ``(W, L, F)``;
 ``dt_{split}`` is ``(W, L)`` with ``dt[:, 0] == 0`` and ``dt >= 0`` (or absolute ``t_{split}``,
 from which ``dt`` is derived); ``y_reg_{split}`` is the regression target (one per window);
 ``target_dt_{split}`` (horizon) and ``seq_lengths_{split}`` (valid step count) are optional.
+
+The target is **selected explicitly** -- ``target=`` on :func:`sequence_data_from_arrays` and
+:func:`load_sequence_npz`, defaulting to :data:`DEFAULT_TARGET` -- rather than by a silent
+fallback from ``y_reg_{split}`` to the one-hot ``y_{split}`` (W1.3, finding F-S2 of juniper-ml
+``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``).
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
-__all__ = ["SequenceData", "derive_full_split", "load_sequence_npz", "sequence_data_from_arrays"]
+__all__ = ["DEFAULT_TARGET", "TARGET_MODES", "SequenceData", "TargetMode", "derive_full_split", "load_sequence_npz", "sequence_data_from_arrays"]
+
+logger = logging.getLogger(__name__)
+
+#: Which per-split key the reader takes as the target the regressor fits (W1.3). ``"reg"``
+#: requires ``y_reg_{split}``; ``"class"`` requires ``y_{split}`` (the producer's primary label --
+#: one-hot on a classification artifact such as equities' direction label); ``"auto"`` prefers
+#: ``y_reg_{split}`` and falls back to ``y_{split}`` with a logged WARNING.
+TargetMode = Literal["reg", "class", "auto"]
+
+#: Every accepted ``target=`` value.
+TARGET_MODES: tuple[str, ...] = ("reg", "class", "auto")
+
+#: The ``target=`` default of every public entry in this module -- the single place the ruling
+#: lives. ``"reg"`` applies the plan's recommended ruling R8 pending the owner's ruling; the
+#: alternative ruling (keep ``"auto"`` as the default for one more release) is this one line.
+DEFAULT_TARGET: TargetMode = "reg"
 
 
 @dataclass(frozen=True)
@@ -50,15 +73,16 @@ class SequenceData:
         return kwargs
 
 
-def load_sequence_npz(path: Any, split: str = "train") -> SequenceData:
+def load_sequence_npz(path: Any, split: str = "train", *, target: TargetMode = DEFAULT_TARGET) -> SequenceData:
     """Read one ``split`` (``"train"`` / ``"val"`` / ``"test"`` / ``"full"``) of a 3-D sequence ``.npz``.
 
     ``"full"`` is served from the artifact's own ``*_full`` family when it has one and is
-    otherwise derived by :func:`derive_full_split` — see :func:`sequence_data_from_arrays`.
+    otherwise derived by :func:`derive_full_split`; ``target`` selects the target key. Both
+    behave exactly as in :func:`sequence_data_from_arrays`.
     """
     with np.load(path, allow_pickle=False) as handle:
         arrays = {key: handle[key] for key in handle.files}
-    return sequence_data_from_arrays(arrays, split)
+    return sequence_data_from_arrays(arrays, split, target=target)
 
 
 #: Partition suffixes that compose the whole dataset, in the order juniper-data laid them
@@ -126,19 +150,34 @@ def derive_full_split(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return {**arrays, **derived}
 
 
-def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train") -> SequenceData:
+def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train", *, target: TargetMode = DEFAULT_TARGET) -> SequenceData:
     """Build a :class:`SequenceData` from an in-memory NPZ array mapping.
 
-    Reads ``X_{split}`` (required, 3-D), the regression target ``y_reg_{split}`` (preferred;
-    falls back to ``y_{split}``), and the timing channel ``dt_{split}`` (or derives it from
-    ``t_{split}``). ``target_dt_{split}`` / ``seq_lengths_{split}`` are read when present.
-    Applies the minimal model-side ``dt`` checks (a strict subset of ``validate_npz_contract``).
+    Reads ``X_{split}`` (required, 3-D), the target ``target`` selects (below), and the timing
+    channel ``dt_{split}`` (or derives it from ``t_{split}``). ``target_dt_{split}`` /
+    ``seq_lengths_{split}`` are read when present. Applies the model-side timing checks: the
+    ``dt`` rules (``(W, L)``, finite, ``>= 0``, ``dt[:, 0] == 0``) and, mirroring
+    juniper-data-client's ``validate_npz_contract`` (W1.4), ``target_dt`` ``(W,)`` finite
+    ``>= 0`` and ``seq_lengths`` ``(W,)`` of an integer dtype with every value in ``[1, L]``.
+
+    ``target`` (keyword-only; default :data:`DEFAULT_TARGET`) chooses the target key:
+
+    * ``"reg"`` -- the regression target ``y_reg_{split}``, required. An artifact without it
+      raises ``ValueError("regression target 'y_reg_{split}' missing")``.
+    * ``"class"`` -- the producer's primary label ``y_{split}``, required (one-hot on a
+      classification artifact, e.g. equities' direction label).
+    * ``"auto"`` -- the pre-W1.3 behaviour: ``y_reg_{split}`` when present, otherwise
+      ``y_{split}`` with a logged WARNING naming the split and both keys. On a classification
+      artifact that fallback turns a regression fit into a fit of the one-hot direction label
+      (F-S2), which is why it is no longer silent and no longer the default.
 
     ``split="full"`` is served from the artifact's own ``*_full`` family when it has one, and
     otherwise from :func:`derive_full_split`. juniper-data stopped emitting that family in
     decision 11, so without the fallback every post-#369 artifact would fail this read --
     which is how ``POST /v1/crossval`` would break.
     """
+    if target not in TARGET_MODES:
+        raise ValueError(f"target must be one of {TARGET_MODES}; got {target!r}")
     if split == "full" and f"X_{split}" not in arrays:
         arrays = derive_full_split(arrays)
     if f"X_{split}" not in arrays:
@@ -150,13 +189,7 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
         raise ValueError(f"X_{split} has non-finite values (NaN/Inf)")
     n_windows, lookback = int(X.shape[0]), int(X.shape[1])
 
-    # Regression target: prefer y_reg, fall back to y.
-    if f"y_reg_{split}" in arrays:
-        y = np.asarray(arrays[f"y_reg_{split}"])
-    elif f"y_{split}" in arrays:
-        y = np.asarray(arrays[f"y_{split}"])
-    else:
-        raise ValueError(f"missing regression target: neither 'y_reg_{split}' nor 'y_{split}' present")
+    y = _select_target(arrays, split, target)
     if y.ndim == 1:
         y = y[:, None]
     # ``X`` and ``dt`` are both checked for finiteness; ``y`` was not. That
@@ -191,7 +224,67 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
     if n_windows and np.any(dt[:, 0] != 0):
         raise ValueError(f"{dt_key}[:, 0] must be 0 by convention")
 
-    target_dt = np.asarray(arrays[f"target_dt_{split}"]).reshape(n_windows) if f"target_dt_{split}" in arrays else None
-    seq_lengths = np.asarray(arrays[f"seq_lengths_{split}"]).reshape(n_windows) if f"seq_lengths_{split}" in arrays else None
+    target_dt = _read_target_dt(arrays, split, n_windows)
+    seq_lengths = _read_seq_lengths(arrays, split, n_windows, lookback)
 
     return SequenceData(X=X, y=y, dt=dt, target_dt=target_dt, seq_lengths=seq_lengths)
+
+
+def _select_target(arrays: dict[str, np.ndarray], split: str, target: str) -> np.ndarray:
+    """Return the target array ``target`` selects for ``split`` (see :func:`sequence_data_from_arrays`)."""
+    reg_key, class_key = f"y_reg_{split}", f"y_{split}"
+    if target == "reg":
+        if reg_key not in arrays:
+            raise ValueError(f"regression target '{reg_key}' missing")
+        return np.asarray(arrays[reg_key])
+    if target == "class":
+        if class_key not in arrays:
+            raise ValueError(f"classification target '{class_key}' missing")
+        return np.asarray(arrays[class_key])
+    # "auto": the pre-W1.3 preference order, with the fallback made audible rather than silent.
+    if reg_key in arrays:
+        return np.asarray(arrays[reg_key])
+    if class_key in arrays:
+        logger.warning("split %r: regression target %r missing; target='auto' falls back to %r. On a classification artifact that key is the one-hot label, so the fit becomes a direction fit -- pass target='reg' or target='class' to choose explicitly.", split, reg_key, class_key)
+        return np.asarray(arrays[class_key])
+    raise ValueError(f"missing regression target: neither '{reg_key}' nor '{class_key}' present")
+
+
+def _read_target_dt(arrays: dict[str, np.ndarray], split: str, n_windows: int) -> np.ndarray | None:
+    """``target_dt_{split}`` when present: ``(W,)``, finite, ``>= 0`` (the W1.4 validator mirror).
+
+    The horizon enters the readout's design matrix as a linear side-channel, so a NaN there
+    surfaced as an opaque ``LinAlgError`` ("SVD did not converge") from the solve rather than
+    as a contract error; a mis-shaped array used to be reshaped into place without a word.
+    """
+    key = f"target_dt_{split}"
+    if key not in arrays:
+        return None
+    target_dt = np.asarray(arrays[key])
+    if target_dt.shape != (n_windows,):
+        raise ValueError(f"{key} shape {target_dt.shape} != {(n_windows,)}")
+    if not np.all(np.isfinite(target_dt)):
+        raise ValueError(f"{key} has non-finite horizons (NaN/Inf)")
+    if np.any(target_dt < 0):
+        raise ValueError(f"{key} has negative horizons")
+    return target_dt
+
+
+def _read_seq_lengths(arrays: dict[str, np.ndarray], split: str, n_windows: int, lookback: int) -> np.ndarray | None:
+    """``seq_lengths_{split}`` when present: ``(W,)``, integer dtype, every value in ``[1, L]`` (W1.4 mirror).
+
+    :class:`~juniper_recurrence_model.LMURegressor` reads each window's memory at step ``seq_lengths - 1`` and CLIPS that
+    index into ``[0, L - 1]`` (``model.py`` ``_readout_index``), so an out-of-range length silently
+    reads the wrong step instead of failing, and a float length is truncated the same way.
+    """
+    key = f"seq_lengths_{split}"
+    if key not in arrays:
+        return None
+    seq_lengths = np.asarray(arrays[key])
+    if seq_lengths.shape != (n_windows,):
+        raise ValueError(f"{key} shape {seq_lengths.shape} != {(n_windows,)}")
+    if not np.issubdtype(seq_lengths.dtype, np.integer):
+        raise ValueError(f"{key} must be an integer dtype, got {seq_lengths.dtype}")
+    if np.any((seq_lengths < 1) | (seq_lengths > lookback)):
+        raise ValueError(f"{key} values must be in [1, {lookback}]")
+    return seq_lengths

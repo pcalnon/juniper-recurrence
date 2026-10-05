@@ -8,6 +8,56 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — the reader no longer falls back silently from `y_reg_{split}` to `y_{split}`: the
+  target is selected explicitly, and the default is `"reg"`** (plan W1.3; findings F-S2 / F-S8 of
+  juniper-ml `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`).
+  `sequence_data_from_arrays` and `load_sequence_npz` take a keyword-only `target`: `"reg"`
+  requires `y_reg_{split}` and otherwise raises
+  `ValueError("regression target 'y_reg_{split}' missing")`; `"class"` requires `y_{split}` (the
+  one-hot label on a classification artifact); `"auto"` keeps the old order — `y_reg_{split}`,
+  else `y_{split}` — but logs a WARNING naming the split and both keys when it falls back. Before
+  this, a classification artifact without `y_reg` turned a regression run into a two-output fit of
+  the one-hot direction label, and nothing said so.
+
+  The `"reg"` default applies the plan's **recommended** ruling R8 **pending the owner's ruling**
+  (ship in recurrence 0.6.0 as a pre-1.0 breaking minor). It lives in one constant,
+  `juniper_recurrence_model.data.DEFAULT_TARGET`, which both entry points default to; the
+  alternative ruling (keep `"auto"` the default for one more release, behind the WARNING) is a
+  one-line change there, plus the pin test `test_the_default_applies_the_recommended_r8_ruling`.
+
+  **What it breaks is wider than "a non-equities artifact".** Every `y_*`-only artifact read with
+  the default — and juniper-data's five synthetic sequence generators (`irregular_sine`,
+  `multi_sine`, `mackey_glass`, `ar_p`, `delay_product`) emit their regression target as `y_*`
+  only (`juniper_data/generators/_sequence.py`, `window_regular_series` / `window_timed_series`);
+  just `equities` / `equities_seq` add `y_reg_*`. The juniper-recurrence app passes no `target`, so
+  with this model it refuses all five: `POST /v1/train` → 422
+  `invalid dataset: regression target 'y_reg_train' missing`, reproduced through
+  `bench/app_e2e.py`. The app pins `juniper-recurrence-model<0.4.0`, so no published app can pick
+  this up; its half (pass `target`, or the producer emitting `y_reg_*`) has to land before it
+  raises that cap. The bench keeps `"auto"` explicitly.
+
+### Added
+
+- **`DEFAULT_TARGET`, `TARGET_MODES` and the `TargetMode` alias** in `juniper_recurrence_model.data`
+  (exported in its `__all__`), so a caller can name the modes and the default rather than repeat
+  the strings.
+
+### Fixed
+
+- **`target_dt_{split}` and `seq_lengths_{split}` are validated, mirroring juniper-data-client's
+  `validate_npz_contract`** (plan W1.4, finding F-S3). `target_dt` must be `(W,)`, finite and
+  `>= 0`; `seq_lengths` must be `(W,)`, of an integer dtype, with every value in `[1, L]`. Both
+  were read through a bare `.reshape(W)`. A NaN horizon reached the readout's design matrix and
+  surfaced as an opaque `LinAlgError` ("SVD did not converge"); a `(W, 1)` array was reshaped into
+  place without a word; and `LMURegressor` clips each `seq_lengths - 1` readout index into
+  `[0, L - 1]`, so an out-of-range or float length read the wrong step instead of failing. The
+  mirror's third rule, finite `dt`, was already enforced (0.2.0, audit MODEL-01). No `float32`
+  check is added here — the reader consumes what the validator admitted. **An artifact whose
+  `(W, 1)` `target_dt` or float `seq_lengths` loaded before is now refused**; juniper-data emits
+  neither (`target_dt` is `(W,)` `float32`, and `seq_lengths` is not emitted at all).
+
 ## [0.3.0] - 2026-09-09
 
 ### Added
