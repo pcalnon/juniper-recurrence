@@ -15,6 +15,12 @@ Three things this module deliberately does **not** do:
   no-deletion (juniper-ml#1296), and says do not build deletion tooling.
 * **It does not synthesise a ``TrainResult`` on restore.** A restored model reports the third
   state ``restored`` with no result and no events — see ``AppState.set_restored``.
+
+Operation identity (W1.5): a restore takes ``train_lock`` like a fit, so it is an *operation* with
+its own ``operation_id``, minted when it takes the lock. The restored model carries that id -- not
+the id of the fit that produced the snapshot -- and a restore that fails leaves a ``failed``
+record. A save accepts ``expect_operation_id`` and writes nothing when it does not name the
+operation that produced the in-memory model.
 """
 
 from __future__ import annotations
@@ -30,8 +36,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_recurrence_model import LMURegressor
 from juniper_recurrence_model.model import LMUSerializer
 
-from juniper_recurrence.routers._common import get_settings, get_state
-from juniper_recurrence.schemas import RestoreResponse, SnapshotListResponse, SnapshotModel, SnapshotRequest
+from juniper_recurrence.routers._common import RecordedOperation, RequestIdHeader, get_settings, get_state, require_expected_operation
+from juniper_recurrence.schemas import OperationConflictResponse, RestoreResponse, SnapshotListResponse, SnapshotModel, SnapshotRequest
 from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
@@ -134,7 +140,12 @@ def _describe(path: Path) -> SnapshotModel:
     )
 
 
-@router.post("/v1/model/snapshots", response_model=SnapshotModel, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/v1/model/snapshots",
+    response_model=SnapshotModel,
+    status_code=status.HTTP_201_CREATED,
+    responses={status.HTTP_409_CONFLICT: {"model": OperationConflictResponse, "description": "No model yet (string detail), or expect_operation_id does not name the model's operation (detail names both ids); nothing is written."}},
+)
 def save_snapshot(
     body: SnapshotRequest,
     state: Annotated[AppState, Depends(get_state)],
@@ -145,10 +156,15 @@ def save_snapshot(
     The 409 is checked HERE rather than left to the serializer: ``LMUSerializer.save`` raises
     ``RuntimeError`` on an unfitted model, which would surface as a 500 for what is a
     precondition failure. Mirrors ``GET /v1/model``'s existing refusal.
+
+    ``409`` too when ``expect_operation_id`` names a different operation than the one that
+    produced the in-memory model (W1.5) -- checked before anything touches the disk, against the
+    model reference that is then saved, so the snapshot is of the model the check passed.
     """
-    model = state.model
+    model, model_operation_id = state.model_with_operation()
     if model is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "no trained model; call POST /v1/train first")
+    require_expected_operation(body.expect_operation_id, model_operation_id)
 
     directory = _dir(settings)
     snapshot_id = f"lmu-{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%S%f')}"
@@ -186,31 +202,33 @@ def restore_snapshot(
     snapshot_id: str,
     state: Annotated[AppState, Depends(get_state)],
     settings: Annotated[Settings, Depends(get_settings)],
+    x_request_id: RequestIdHeader = None,
 ) -> RestoreResponse:
     """Load a snapshot into the app state. ``404`` when absent, ``409`` while a fit is running.
 
     The resulting state is ``restored``, never ``trained``: this process did not fit the model,
-    and no ``TrainResult`` is invented to make the status shape uniform.
+    and no ``TrainResult`` is invented to make the status shape uniform. The restore is an
+    operation with its own ``operation_id`` (W1.5), returned here and carried by the model.
     """
     path = _snapshot_path(settings, snapshot_id)
 
     # A restore that lands mid-fit would have the training thread publish over it moments later,
     # so the caller would be told the restore succeeded and then silently get the fitted model.
     # Non-blocking, like POST /v1/train's own guard.
-    if not state.train_lock.acquire(blocking=False):
+    operation, _holder = state.try_begin("restore", requested_by=x_request_id or None)
+    if operation is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "a training run is in progress; retry when it completes")
-    try:
+    with RecordedOperation(state, operation):
         try:
             model: LMURegressor = LMUSerializer().load(str(path))
         except Exception as exc:  # noqa: BLE001 — a corrupt/foreign file is a 422, not a 500
             raise HTTPException(422, f"snapshot could not be loaded: {exc}") from exc
-        state.set_restored(model, snapshot_id)
-    finally:
-        state.train_lock.release()
+        state.set_restored(model, snapshot_id, operation=operation)
 
     return RestoreResponse(
         state="restored",
         restored_from=snapshot_id,
         topology=dict(model.describe_topology()),
         metrics=model.metrics(),
+        operation_id=operation.operation_id,
     )

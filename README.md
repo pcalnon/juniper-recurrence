@@ -191,7 +191,7 @@ always exempt.
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/v1/train` | POST | Train the LMU on a dataset (synchronous closed-form solve). |
-| `/v1/training/status` | GET | `idle` / `trained`, last metrics, and training events. |
+| `/v1/training/status` | GET | `idle` / `training` / `trained` / `restored` / `failed` (and `restoring`), the operation it describes, last metrics, and training events. |
 | `/v1/predict` | POST | Predictions for inline `X` (+ `dt`) or a dataset reference. |
 | `/v1/crossval` | POST | Walk-forward cross-validation (expanding / sliding, with embargo). |
 | `/v1/crossval/status` | GET | Cross-validation run state + aggregate results. |
@@ -199,6 +199,11 @@ always exempt.
 | `/v1/dataset` | GET | Descriptor of the trained-on dataset. |
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
 | `/docs` | GET | OpenAPI / Swagger UI (exempt). |
+
+A service is **exclusively owned by one caller at a time** (one lock, one in-memory model, one
+snapshot directory): every fit and restore returns an `operation_id`, and `expect_operation_id` on
+`/v1/predict` and snapshot saves proves whose model is being used. See
+[One caller per service](./juniper-recurrence/README.md#one-caller-per-service).
 
 Configuration reads the `JUNIPER_RECURRENCE_` environment namespace (e.g.
 `JUNIPER_RECURRENCE_PORT`, default `8210`) and honours Docker `_FILE` secret indirection. When no API

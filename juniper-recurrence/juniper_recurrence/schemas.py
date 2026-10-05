@@ -11,6 +11,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from juniper_recurrence.state import OperationKind
+
 __all__ = [
     "DatasetRef",
     "DatasetDescriptor",
@@ -29,7 +31,21 @@ __all__ = [
     "SnapshotModel",
     "SnapshotListResponse",
     "RestoreResponse",
+    "OperationFailure",
+    "BusyDetail",
+    "BusyResponse",
+    "OperationMismatchDetail",
+    "OperationConflictResponse",
 ]
+
+# W1.5 (F-S6 / F-CON1 / F-CON2 of juniper-ml
+# ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``): every
+# request that takes the service's ``train_lock`` -- a fit (``train``) or a snapshot restore
+# (``restore``), the ``OperationKind`` imported above -- is an *operation* with an ``operation_id``
+# (uuid4 hex) minted when it takes the lock.
+#
+# Shared wording for ``expect_operation_id`` on the two routes that act on the in-memory model.
+_EXPECT_OPERATION_ID_DESCRIPTION = "Optional operation_id the caller expects produced the in-memory model (from a POST /v1/train or restore response). If it names a different operation the request is refused with 409 and a detail naming both ids, so a caller sharing the service cannot act on another caller's model. A model restored from a snapshot has its own operation id, minted at restore. Omit to skip the check."
 
 # DP-3 (P1): ``ridge`` accepts a non-negative float, the literal ``"gcv"`` (closed-form GCV
 # selection of the readout penalty, performed in the model), or ``None`` (fall back to
@@ -178,6 +194,9 @@ class TrainResponse(BaseModel):
     n_epochs: int
     stopped_reason: str | None = None
     dataset: DatasetDescriptor
+    operation_id: str = Field(
+        description="Identity of this fit (uuid4 hex), minted when the route took the service's train_lock. GET /v1/training/status reports the same id while the fit runs and after it ends; pass it as expect_operation_id to /v1/predict and POST /v1/model/snapshots to prove the in-memory model is this one (W1.5).",
+    )
 
 
 class EventModel(BaseModel):
@@ -188,15 +207,42 @@ class EventModel(BaseModel):
     payload: dict[str, Any]
 
 
-class StatusResponse(BaseModel):
-    """``GET /v1/training/status``: synchronous, instant (no background job)."""
+class OperationFailure(BaseModel):
+    """Why the most recent operation failed: ``StatusResponse.failure`` under ``state="failed"`` (W1.5)."""
 
-    # "idle" | "trained" | "restored".
+    detail: str = Field(description="The error detail the failing request returned. For an unexpected exception -- where the request itself got a bare 500 -- the exception's type and message.")
+    status_code: int = Field(description="The HTTP status the failing request returned (500 for an unexpected exception).")
+
+
+class StatusResponse(BaseModel):
+    """``GET /v1/training/status``: synchronous, instant (no background job).
+
+    Operation identity (W1.5; F-S6 / F-CON2 of juniper-ml
+    ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``): every
+    request that takes the service's ``train_lock`` -- a fit, or a snapshot restore -- is an operation
+    with an ``operation_id``. The status says which operation it describes, whose request it was
+    (``requested_by``, from ``X-Request-ID``), and, separately, which operation produced the model
+    that ``/v1/predict`` would score (``model_operation_id``). A caller whose ``POST /v1/train`` timed
+    out client-side can find its fit here by its own ``X-Request-ID``: the fit is not cancelled by a
+    client timeout, and keeps the lock until it ends.
+
+    A model restored from a snapshot has its own operation id, minted at restore.
+    """
+
+    # "idle" | "training" | "restoring" | "trained" | "restored" | "failed".
     #
-    # ``restored`` is a THIRD state, not a flavour of ``trained``: the model is present and
+    # ``training`` / ``restoring``: an operation holds ``train_lock`` right now (``busy_since`` says
+    # since when). Any earlier model is still loaded and predictable; ``model_operation_id`` names it.
+    # ``trained`` / ``restored`` / ``failed`` are terminal: they describe the last operation to end.
+    #
+    # ``restored`` is a separate state, not a flavour of ``trained``: the model is present and
     # predictable, but THIS PROCESS NEVER FITTED IT, so ``final_metrics`` / ``stopped_reason`` /
     # ``events`` are absent rather than carried over or invented. ``restored_from`` names which
     # snapshot, because "loaded from disk" without an id is precise about the wrong thing.
+    #
+    # ``failed``: the last operation took the lock and did not complete -- the dataset fetch failed,
+    # the fit raised, the snapshot would not load. ``failure`` carries why. No result or events are
+    # reported, because the failed operation produced none; an earlier model, if any, is untouched.
     #
     # Deliberately a bare ``str`` rather than a ``Literal``, matching the field as it shipped --
     # widening it here would be a contract change for every consumer. Worth promoting to a
@@ -206,6 +252,25 @@ class StatusResponse(BaseModel):
     stopped_reason: str | None = None
     events: list[EventModel] = Field(default_factory=list)
     restored_from: str | None = None
+    operation_id: str | None = Field(
+        default=None,
+        description="The operation this status describes: the one holding the lock under 'training' / 'restoring', the one that produced the model under 'trained' / 'restored', the one that failed under 'failed'. Null under 'idle'.",
+    )
+    operation: OperationKind | None = Field(default=None, description="Which kind of operation operation_id is: 'train' or 'restore'. Null under 'idle'.")
+    busy_since: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC time at which the in-flight operation took the service's train_lock. Set only under 'training' / 'restoring'; null once the operation has ended.",
+    )
+    dataset_id: str | None = Field(
+        default=None,
+        description="Dataset of the operation: the requested dataset_id, replaced by the resolved id once a name / generator reference resolves. Null for a restore, and for a fit whose reference has not resolved yet.",
+    )
+    requested_by: str | None = Field(default=None, description="The X-Request-ID header the operation's request carried, verbatim; null if it sent none.")
+    model_operation_id: str | None = Field(
+        default=None,
+        description="The operation that produced the in-memory model -- the model /v1/predict scores and POST /v1/model/snapshots saves; compare it with expect_operation_id. Differs from operation_id while another operation runs or after one fails. Null when no model is loaded.",
+    )
+    failure: OperationFailure | None = Field(default=None, description="Why the operation failed. Set only under 'failed'.")
 
 
 class PredictRequest(BaseModel):
@@ -214,6 +279,11 @@ class PredictRequest(BaseModel):
     ``X`` is ``(n, T, F)``; ``dt`` ``(n, T)`` engages the Δt path; ``target_dt`` ``(n,)``
     supplies the irregular horizon; ``seq_lengths`` ``(n,)`` selects the many-to-one
     readout step. Exactly one of ``X`` / ``dataset`` is required.
+
+    ``expect_operation_id`` (optional, W1.5) makes the request prove whose model it scores: when
+    it does not name the operation that produced the in-memory model, the route answers ``409``
+    instead of scoring. A model restored from a snapshot has its own operation id, minted at
+    restore -- not the id of the fit that produced the snapshot.
     """
 
     X: list | None = None
@@ -221,6 +291,7 @@ class PredictRequest(BaseModel):
     target_dt: list | None = None
     seq_lengths: list | None = None
     dataset: DatasetRef | None = None
+    expect_operation_id: str | None = Field(default=None, min_length=1, description=_EXPECT_OPERATION_ID_DESCRIPTION)
 
     @model_validator(mode="after")
     def _require_x_or_dataset(self) -> PredictRequest:
@@ -313,9 +384,16 @@ class CrossValStatusResponse(BaseModel):
 
 
 class SnapshotRequest(BaseModel):
-    """Body for ``POST /v1/model/snapshots``. All fields optional."""
+    """Body for ``POST /v1/model/snapshots``. All fields optional.
+
+    ``expect_operation_id`` (W1.5) makes the save prove whose model it writes: when it does not
+    name the operation that produced the in-memory model, the route answers ``409`` and writes
+    nothing. A model restored from a snapshot has its own operation id, minted at restore -- not
+    the id of the fit that produced the snapshot.
+    """
 
     description: str = ""
+    expect_operation_id: str | None = Field(default=None, min_length=1, description=_EXPECT_OPERATION_ID_DESCRIPTION)
 
 
 class SnapshotModel(BaseModel):
@@ -344,9 +422,55 @@ class RestoreResponse(BaseModel):
 
     ``state`` is always ``"restored"`` -- the model is present and predictable but this process
     never fitted it, so there is no result or event stream. See ``StatusResponse.state``.
+
+    ``operation_id`` is the restore's own id, minted when it took the lock (W1.5). It is the id the
+    restored model now carries, so it -- not the id of the fit that produced the snapshot -- is what
+    ``expect_operation_id`` must name afterwards.
     """
 
     state: str
     restored_from: str
     topology: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float] = Field(default_factory=dict)
+    operation_id: str = Field(description="Identity of this restore (uuid4 hex), minted when it took the service's train_lock; the restored model's operation id from now on.")
+
+
+class BusyDetail(BaseModel):
+    """``detail`` of the ``409`` that ``POST /v1/train`` returns while another operation holds the service (W1.5).
+
+    Before W1.5 this ``detail`` was the bare string now carried in ``message``, so a refused caller
+    could not tell whose run it had collided with (F-CON1). The holder's fields are ``None`` only if
+    the lock was taken outside the operation machinery (tests do that).
+    """
+
+    message: str = Field(description="Human-readable refusal; 'a training run is already in progress' unless the holder is a restore.")
+    operation_id: str | None = Field(default=None, description="The holder's operation_id.")
+    operation: OperationKind | None = Field(default=None, description="The holder's kind: 'train' or 'restore'.")
+    busy_since: str | None = Field(default=None, description="ISO-8601 UTC time at which the holder took the lock.")
+    requested_by: str | None = Field(default=None, description="The holder's X-Request-ID, if its request sent one.")
+    dataset_id: str | None = Field(default=None, description="The holder's dataset, as far as it has resolved.")
+
+
+class BusyResponse(BaseModel):
+    """The ``409`` body of ``POST /v1/train`` when the service is busy."""
+
+    detail: BusyDetail
+
+
+class OperationMismatchDetail(BaseModel):
+    """``detail`` of the ``409`` for an ``expect_operation_id`` that does not name the in-memory model's operation (W1.5)."""
+
+    message: str
+    expected_operation_id: str = Field(description="The expect_operation_id the request sent.")
+    model_operation_id: str | None = Field(default=None, description="The operation that actually produced the in-memory model.")
+
+
+class OperationConflictResponse(BaseModel):
+    """The ``409`` body of ``/v1/predict`` and ``POST /v1/model/snapshots``.
+
+    ``detail`` is the plain string ``"no trained model; call POST /v1/train first"`` when there is no
+    model (unchanged), and an :class:`OperationMismatchDetail` when ``expect_operation_id`` names a
+    different operation.
+    """
+
+    detail: OperationMismatchDetail | str

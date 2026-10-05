@@ -71,6 +71,40 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   **Retention is inherited, not invented**: §6.4 of the ecosystem snapshot-lifecycle design was
   ratified no-deletion (juniper-ml#1296), which also says do not build deletion tooling. Nothing
   here prunes, ages out or caps, and a test pins that absence.
+- **Operation identity: every fit and restore is an operation with an `operation_id`** (W1.5,
+  service half, of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  F-S6, F-CON1, F-CON2). The id is a uuid4 hex minted when the request takes `train_lock`.
+  `POST /v1/train` and `POST /v1/model/snapshots/{id}/restore` return it. A restored model carries
+  the restore's own id, not the id of the fit that produced the snapshot. `GET /v1/training/status`
+  gains `operation_id`, `operation` (`train` / `restore`), `busy_since` (ISO-8601 UTC, set only while
+  the operation holds the lock), `dataset_id`, `requested_by` (the request's `X-Request-ID`, verbatim,
+  or null), `model_operation_id` (the operation that produced the model `/v1/predict` would score)
+  and `failure` (`{detail, status_code}`, set only under `failed`). Before this, a caller that hit a
+  busy service could not tell whose run it was, and a caller could not prove that a prediction or a
+  snapshot came from the model it trained. `tests/test_operation_identity.py` (new, 29 tests) holds a
+  real fit under the lock, with a data client or a fit that blocks on a `threading.Event`, while a
+  second request arrives on another thread.
+- **`expect_operation_id` on `POST /v1/predict` and `POST /v1/model/snapshots`** (W1.5). It is
+  optional. When present and different from the operation that produced the in-memory model, the
+  route answers `409` and the detail names both ids. The save then writes nothing. The model and its
+  id are read together, so a fit publishing in between cannot pair one with the other. When it is
+  omitted the routes behave as before. The no-model `409` keeps its string detail.
+- **`JUNIPER_RECURRENCE_JUNIPER_DATA_TIMEOUT_SECONDS`** (`Settings.juniper_data_timeout_seconds`,
+  default `120`, must be `> 0`; W1.5, F-S9, the service half of F-D5). `load_sequence_data` built
+  `JuniperDataClient(base_url=…, api_key=…)` with no `timeout`, so the client's 30 s default governed
+  dataset creation, which is where a cold `equities_seq` fetch happens. No setting could raise it,
+  and canopy's and the driver's own budgets stayed green while the fit failed inside. The train,
+  predict and cross-validation routes and the CLI `train` now pass the setting as
+  `JuniperDataClient(timeout=…)`. A direct caller of `load_sequence_data` that names no timeout gets
+  `data.DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS` (`120.0`), not 30 s. There is deliberately no
+  unprefixed alias. `tests/test_data_timeout.py` (new, 12 tests) asserts the keyword that reaches the
+  client constructor on each of those paths.
+- **README: "One caller per service".** A recurrence service is exclusively owned by one caller at a
+  time: one `train_lock`, one in-memory model, one snapshot directory. The operation id is how a
+  caller proves whose model it is scoring, and a fit is not cancellable. The juniper-ml launcher's
+  per-run ports (8260-8289) are what keep a CLI suite and canopy apart, and canopy's service URL is
+  not in that range (F-CON3). The root README points to the section.
 
 ### Changed
 
@@ -98,6 +132,23 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   its changelog touches them. **The bench lane does not check a change like this on its own**:
   its `test` job runs only when `bench/` or its workflow changes (#178), so a ceiling move
   reaches it through `workflow_dispatch` on the branch, or not at all.
+- **`GET /v1/training/status` gains `training`, `restoring` and a terminal `failed` state** (W1.5).
+  Every existing field and state is kept. A fit that raised used to leave no record: the route's
+  `finally` released the lock and the status went on describing an earlier run, or `idle`. It now
+  reads `failed` with the operation's id and `failure`, and any earlier model stays loaded and
+  predictable (`model_operation_id` names it). The route still re-raises or maps every error exactly
+  as before; only the record is new. A run in flight reads `training`, with `busy_since`. `restored_from`
+  is still non-null only under `restored`. `AppState.status()` keeps its 3-tuple, now derived from
+  the new `AppState.status_snapshot()`.
+- **The busy `409` of `POST /v1/train` carries an object `detail`** (W1.5): `{message, operation_id,
+  operation, busy_since, requested_by, dataset_id}`, where `message` is the old string. It was the
+  bare string `"a training run is already in progress"`. The type change was checked against the
+  in-ecosystem consumers. canopy's adapter keeps the raw body text, `juniper-recurrence-client`
+  attaches `detail` as decoded to `JuniperRecurrenceConflictError.detail`, and the juniper-ml driver
+  `str()`s it. The restore route's `409` keeps its string detail.
+- **A fit publishes its model last** (W1.5). `set_trained` now runs after the metrics are recorded
+  and the response is built, so the status reads `trained` only for a run whose caller is about to
+  receive its result.
 
 ## [0.5.0] - 2026-09-10
 

@@ -43,11 +43,13 @@ keys are configured; health + docs are always exempt):
 | Route | Method | Behavior |
 |---|---|---|
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
-| `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`, with `metrics_scope: "in_sample"` labelling its `final_metrics`. |
-| `/v1/training/status` | GET | `idle` / `trained` + last metrics + training events. |
+| `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`, with `metrics_scope: "in_sample"` labelling its `final_metrics`, and the fit's `operation_id`. |
+| `/v1/training/status` | GET | `idle` / `training` / `restoring` / `trained` / `restored` / `failed`, the operation it describes (`operation_id`, `busy_since`, `dataset_id`, `requested_by`), `model_operation_id`, a `failure` under `failed`, + last metrics + training events. |
 | `/v1/crossval` | POST | Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's own `*_full` when present, otherwise rebuilt from `train \| val \| test`) (synchronous); returns aggregated per-fold metrics. |
 | `/v1/crossval/status` | GET | Most recent cross-validation result (aggregate + per-fold). |
-| `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref. |
+| `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref; optional `expect_operation_id` (`409` when it does not name the model's operation). |
+| `/v1/model/snapshots` | GET / POST | List snapshots / save the current model; the save takes an optional `expect_operation_id`, like `/v1/predict`. |
+| `/v1/model/snapshots/{id}/restore` | POST | Load a snapshot as the current model; the restore mints its own `operation_id`. |
 | `/v1/model` | GET | Current model topology + regression metrics. |
 | `/v1/dataset` | GET | Descriptor of the trained-on dataset. |
 | `/v1/metrics` | GET | Prometheus metrics — IP-allowlist gated; needs the `[observability]` extra. |
@@ -93,6 +95,28 @@ them explicitly for `equities_seq`: the generator's bare defaults are not a trai
 Either flag without `--generator`, malformed JSON, or JSON that is not an object exits `2`. The
 printed metrics are in-sample, as on the route.
 
+## One caller per service
+
+A recurrence service is **exclusively owned by one caller at a time**: it has one process-wide
+`train_lock`, one in-memory model and one snapshot directory. Two callers sharing a listener -- canopy
+and a CLI experiment suite, say -- get each other's `409`s and silently score each other's models.
+
+- **The operation id is how a caller proves whose model it is scoring.** Each `POST /v1/train` mints
+  an `operation_id` when it takes the lock and returns it; a restore mints its own, which the restored
+  model then carries. Pass it as `expect_operation_id` to `/v1/predict` and `POST /v1/model/snapshots`:
+  a model produced by any other operation is refused with a `409` that names both ids.
+- **Who holds it, and what happened.** A refused `POST /v1/train` gets a `409` whose `detail` names the
+  holder (`operation_id`, `busy_since`, `requested_by`). `GET /v1/training/status` reports `training`
+  while a fit runs, then `trained` or `failed` (with `failure`), plus `model_operation_id` for the model
+  `/v1/predict` scores. Send an `X-Request-ID` with your train request; it comes back as `requested_by`.
+- **A fit is not cancellable.** A caller that times out leaves the fit running under the lock; poll the
+  status for its outcome rather than retrying.
+- **Keep callers apart by port.** The juniper-ml experiment launcher (`util/experiment_stack.bash`)
+  starts a fresh service per run on ports 8260-8289, and that is what keeps a CLI suite and canopy
+  apart. Canopy's service URL is outside that range (unset by default; Compose sets
+  `http://juniper-recurrence:8210`, host port 8211; a native service listens on 8210), so canopy and a
+  suite pointed at the same native or Compose listener recreate the collision, and neither side warns.
+
 ## Configuration
 
 All settings read the `JUNIPER_RECURRENCE_` environment namespace (e.g.
@@ -107,6 +131,7 @@ are configured, authentication is disabled (open access — development default)
 | `JUNIPER_RECURRENCE_API_KEYS` | _(unset)_ | CSV or JSON-array of valid `X-API-Key` values. |
 | `JUNIPER_DATA_URL` | `http://localhost:8100` | Upstream juniper-data base URL. |
 | `JUNIPER_DATA_API_KEY` | _(unset)_ | Outbound `X-API-Key` to juniper-data. |
+| `JUNIPER_RECURRENCE_JUNIPER_DATA_TIMEOUT_SECONDS` | `120` | Per-request timeout of the service's juniper-data client -- dataset creation, where a cold `equities_seq` fetch happens, included. Keep it below your callers' own timeouts. |
 
 ## Development
 

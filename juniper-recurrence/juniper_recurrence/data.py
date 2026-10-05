@@ -9,6 +9,13 @@ the canonical WS-1 key layout + ``dt`` rules instead of re-deriving them).
 Framework-light by design: takes primitives (no FastAPI / pydantic / settings import),
 so the routers and the headless CLI ``train`` share it. ``JuniperDataClient`` and
 ``validate_npz_contract`` are imported at module level so tests can monkeypatch them.
+
+F-S9 (juniper-ml
+``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``): the
+client used to be built with no ``timeout``, so juniper-data-client's 30 s default governed
+dataset creation -- the call that runs a cold ``equities_seq`` fetch -- and no setting could raise
+it. Every caller now passes ``Settings.juniper_data_timeout_seconds``; a caller that passes nothing
+gets :data:`DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS`, never the client's 30 s.
 """
 
 from __future__ import annotations
@@ -18,7 +25,14 @@ from typing import Any
 from juniper_data_client import JuniperDataClient, validate_npz_contract
 from juniper_recurrence_model import SequenceData, sequence_data_from_arrays
 
-__all__ = ["load_sequence_data"]
+__all__ = ["DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS", "load_sequence_data"]
+
+#: Per-request timeout (seconds) for the juniper-data client when the caller names none. It is
+#: also the default of ``Settings.juniper_data_timeout_seconds`` (a test pins the two together;
+#: the literal is repeated there because this module deliberately imports no settings). Applied
+#: to each HTTP request the client makes: dataset creation is a POST and is not retried, while
+#: the GETs (latest version, artifact download) fall under the client's own idempotent-retry policy.
+DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS: float = 120.0
 
 
 def _resolve_dataset_id(
@@ -60,17 +74,21 @@ def load_sequence_data(
     generator: str | None = None,
     params: dict[str, Any] | None = None,
     split: str = "train",
+    timeout: float = DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS,
 ) -> tuple[SequenceData, dict[str, Any]]:
     """Fetch and map one split of a 3-D sequence dataset for the LMU regressor.
 
     Returns the :class:`SequenceData` (``X`` / ``y`` / ``dt`` / ``target_dt`` /
     ``seq_lengths``) plus a plain descriptor dict for ``DatasetDescriptor``.
 
+    ``timeout`` is the per-request timeout handed to ``JuniperDataClient`` (F-S9); the service
+    and the CLI pass ``Settings.juniper_data_timeout_seconds``.
+
     Raises:
         juniper_data_client.JuniperDataClientError: on upstream fetch failures.
         ValueError: when the artifact violates the contract or is not a 3-D sequence.
     """
-    client = JuniperDataClient(base_url=base_url, api_key=api_key)
+    client = JuniperDataClient(base_url=base_url, api_key=api_key, timeout=timeout)
     try:
         resolved_id = _resolve_dataset_id(client, dataset_id=dataset_id, name=name, generator=generator, params=params)
         arrays = client.download_artifact_npz(resolved_id)
