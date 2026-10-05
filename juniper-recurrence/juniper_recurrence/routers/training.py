@@ -118,6 +118,7 @@ def train(
         dataset = DatasetDescriptor(**descriptor)
         duration = time.perf_counter() - start
         metrics.record_train(duration, result.final_metrics)
+        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
         response = TrainResponse(
             final_metrics=result.final_metrics,
             # W0.7: LMURegressor.fit scores final_metrics on the arrays it was fitted on (no X_val is
@@ -132,7 +133,6 @@ def train(
         # Published LAST, once nothing left can fail: the status then says "trained" only for a run
         # whose caller is about to receive its result, never for one that went on to raise.
         state.set_trained(model, result, sink, dataset, operation=operation)
-        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
         return response
 
 
