@@ -1,0 +1,14 @@
+# Keeps <repo>/recurrence-snapshots/ present in a fresh clone.
+#
+# Not cosmetic. juniper-deploy bind-mounts this directory into the recurrence container
+# (W1.12, juniper-deploy#242: JUNIPER_RECURRENCE_SNAPSHOTS_DIR=/app/recurrence-snapshots).
+# A missing bind source is created by the Docker DAEMON, as root, and the uid-1000
+# container then EPERMs on every snapshot save -- silently, because the save path only
+# warns. juniper-deploy's snapshot preflight refuses `make up` while this directory is
+# absent for exactly that reason; shipping the directory is what makes a fresh clone work.
+# Same pattern as juniper-cascor/cascor-snapshots/.gitkeep (juniper-cascor#548).
+#
+# Everything else in here is ignored (.gitignore: /recurrence-snapshots/*). Snapshots are
+# project assets that live in the tree for the offline backup, and never enter git.
+# Nothing restores a snapshot on boot: a restarted service starts `idle`, and `restored`
+# is reached only through POST /v1/model/snapshots/{id}/restore.
