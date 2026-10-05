@@ -208,6 +208,7 @@ def _train(args: argparse.Namespace) -> int:
         generator=args.generator,
         params=params,
         split=args.split,
+        timeout=settings.juniper_data_timeout_seconds,
     )
 
     d = args.d if args.d is not None else settings.default_d

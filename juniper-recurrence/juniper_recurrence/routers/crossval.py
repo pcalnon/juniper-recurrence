@@ -70,6 +70,7 @@ def crossval(
                 generator=req.dataset.generator,
                 params=req.dataset.params,
                 split="full",  # CV always derives folds from the full chronological set (D-CV-4)
+                timeout=settings.juniper_data_timeout_seconds,
             )
         except (JuniperDataClientError, ValueError) as exc:
             logger.warning("cross-validation aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)

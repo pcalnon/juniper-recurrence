@@ -176,6 +176,19 @@ class Settings(SettingsBase):
         validation_alias=AliasChoices("juniper_data_url", "JUNIPER_DATA_URL", "JUNIPER_RECURRENCE_JUNIPER_DATA_URL"),
     )
     juniper_data_api_key: str | None = Field(default=None)
+    # F-S9 (juniper-ml notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md):
+    # the data client was built with no timeout, so its 30 s default governed dataset creation --
+    # the call that runs a cold equities_seq fetch -- and nothing could raise it, while the callers'
+    # own budgets (canopy 300 s, the juniper-ml driver's) sat untouched. Env:
+    # JUNIPER_RECURRENCE_JUNIPER_DATA_TIMEOUT_SECONDS (the env_prefix; deliberately no unprefixed
+    # alias, so another service's timeout cannot leak in). The default is
+    # juniper_recurrence.data.DEFAULT_JUNIPER_DATA_TIMEOUT_SECONDS, repeated as a literal because
+    # data.py imports no settings; tests/test_data_timeout.py pins the two together.
+    juniper_data_timeout_seconds: float = Field(
+        default=120.0,
+        gt=0,
+        description="Per-request timeout (seconds) the service's juniper-data client uses -- dataset creation (where a cold equities fetch happens), latest-version lookup and artifact download. Keep it below the callers' own timeouts so a slow fetch fails here, visibly, rather than after the caller has given up.",
+    )
 
     # --- LMU hyperparameter defaults (consumed by the PR-2 training path) -------------
     default_d: int = 16

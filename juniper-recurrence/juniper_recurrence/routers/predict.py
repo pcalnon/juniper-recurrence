@@ -3,6 +3,12 @@
 Accepts inline arrays (``X`` + optional ``dt`` / ``target_dt`` / ``seq_lengths``) or a
 dataset ref. Passes ``dt`` explicitly to engage the Δt path. Returns continuous
 predictions — never an ``argmax`` collapse to labels (RK-6). ``409`` before any train.
+
+W1.5: an optional ``expect_operation_id`` makes the request prove whose model it scores -- a
+caller sharing the service (canopy and a CLI suite on one listener, F-CON1) otherwise silently
+scores whichever model the last fit or restore left behind. A mismatch is a ``409`` naming both
+ids; the model and its operation id are read together, so a fit publishing in between cannot
+pair one with the other.
 """
 
 from __future__ import annotations
@@ -16,8 +22,8 @@ from juniper_data_client import JuniperDataClientError
 
 from juniper_recurrence import metrics
 from juniper_recurrence.data import load_sequence_data
-from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
-from juniper_recurrence.schemas import PredictRequest, PredictResponse
+from juniper_recurrence.routers._common import get_settings, get_state, map_data_error, require_expected_operation
+from juniper_recurrence.schemas import OperationConflictResponse, PredictRequest, PredictResponse
 from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
@@ -26,16 +32,21 @@ router = APIRouter(tags=["predict"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/v1/predict", response_model=PredictResponse)
+@router.post(
+    "/v1/predict",
+    response_model=PredictResponse,
+    responses={status.HTTP_409_CONFLICT: {"model": OperationConflictResponse, "description": "No model yet (string detail), or expect_operation_id does not name the model's operation (detail names both ids)."}},
+)
 def predict(
     req: PredictRequest,
     state: Annotated[AppState, Depends(get_state)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PredictResponse:
     """Predict continuous targets for inline ``X`` or a dataset split."""
-    model = state.model
+    model, model_operation_id = state.model_with_operation()
     if model is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "no trained model; call POST /v1/train first")
+    require_expected_operation(req.expect_operation_id, model_operation_id)
 
     if req.X is not None:
         features = np.asarray(req.X, dtype=float)
@@ -56,6 +67,7 @@ def predict(
                 generator=req.dataset.generator,
                 params=req.dataset.params,
                 split=req.dataset.split,
+                timeout=settings.juniper_data_timeout_seconds,
             )
         except (JuniperDataClientError, ValueError) as exc:
             logger.warning("predict aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
