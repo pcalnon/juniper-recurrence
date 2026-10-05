@@ -82,7 +82,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   or null), `model_operation_id` (the operation that produced the model `/v1/predict` would score)
   and `failure` (`{detail, status_code}`, set only under `failed`). Before this, a caller that hit a
   busy service could not tell whose run it was, and a caller could not prove that a prediction or a
-  snapshot came from the model it trained. `tests/test_operation_identity.py` (new, 29 tests) holds a
+  snapshot came from the model it trained. `tests/test_operation_identity.py` (new, 30 tests) holds a
   real fit under the lock, with a data client or a fit that blocks on a `threading.Event`, while a
   second request arrives on another thread.
 - **`expect_operation_id` on `POST /v1/predict` and `POST /v1/model/snapshots`** (W1.5). It is

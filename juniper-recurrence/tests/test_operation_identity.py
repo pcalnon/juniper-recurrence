@@ -83,12 +83,12 @@ class _Request(threading.Thread):
         super().__init__(daemon=True)
         self._app, self._method, self._url, self._kwargs = app, method, url, kwargs
         self.response = None
-        self.error: BaseException | None = None
+        self.error: Exception | None = None
 
     def run(self) -> None:
         try:
             self.response = TestClient(self._app).request(self._method, self._url, **self._kwargs)
-        except BaseException as exc:  # handed back to the test by result()
+        except Exception as exc:  # handed back to the test by result()
             self.error = exc
 
     def result(self):
@@ -625,3 +625,36 @@ def test_the_pre_w1_5_status_tuple_and_restored_from_still_work(fake_data):
     assert result is not None and result.n_epochs == 1
     assert [event.type for event in events] == ["training_start", "epoch_end", "training_end"]
     assert state.restored_from is None
+
+
+def test_the_pre_w1_5_status_tuple_is_the_snapshot_in_every_state(snap_app, fake_data, monkeypatch):
+    """``AppState.status()`` became a thin view of ``status_snapshot()`` (W1.5); its contract did not shrink.
+
+    It returns the same ``(state, result, events)`` it always did for ``idle`` / ``trained`` /
+    ``restored`` -- result and events only for a fit -- and reports the new ``failed`` state the
+    same way the route does, so a caller of the old method is never told "trained" about a fit
+    that raised.
+    """
+    client = TestClient(snap_app, raise_server_exceptions=False)
+    state = snap_app.state.app_state
+
+    def _agrees() -> tuple:
+        snapshot = state.status_snapshot()
+        legacy = state.status()
+        assert legacy == (snapshot.state, snapshot.result, snapshot.events)
+        assert legacy[0] == _status(client)["state"]
+        return legacy
+
+    assert _agrees() == ("idle", None, [])
+
+    client.post("/v1/train", json=_TRAIN)
+    name, result, events = _agrees()
+    assert name == "trained" and result is not None and len(events) == 3
+
+    snapshot_id = client.post("/v1/model/snapshots", json={}).json()["id"]
+    client.post(f"/v1/model/snapshots/{snapshot_id}/restore")
+    assert _agrees() == ("restored", None, [])
+
+    monkeypatch.setattr("juniper_recurrence.routers.training.TrainingLifecycle", _RaisingLifecycle)
+    assert client.post("/v1/train", json=_TRAIN).status_code == 500
+    assert _agrees() == ("failed", None, [])

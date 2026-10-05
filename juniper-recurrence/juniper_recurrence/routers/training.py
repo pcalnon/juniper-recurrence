@@ -80,7 +80,7 @@ def train(
                 timeout=settings.juniper_data_timeout_seconds,
             )
         except (JuniperDataClientError, ValueError) as exc:
-            logger.warning("training aborted: dataset fetch failed (operation_id=%s dataset=%s): %s", operation.operation_id, req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
+            logger.warning("training aborted: dataset fetch failed (dataset=%s): %s", req.dataset.dataset_id or req.dataset.name or req.dataset.generator, exc)
             raise map_data_error(exc) from exc
         state.note_dataset(operation, descriptor["dataset_id"])
 
@@ -110,7 +110,7 @@ def train(
             logger.warning("training unavailable: readout=%r requires the [torch] extra: %s", req.readout, exc)
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
-        logger.info("training start: operation_id=%s dataset=%s split=%s windows=%s d=%s theta=%s readout=%s", operation.operation_id, descriptor["dataset_id"], descriptor.get("split"), descriptor.get("n_windows"), d, theta, req.readout or "linear")
+        logger.info("training start: dataset=%s split=%s windows=%s d=%s theta=%s readout=%s", descriptor["dataset_id"], descriptor.get("split"), descriptor.get("n_windows"), d, theta, req.readout or "linear")
         start = time.perf_counter()
         lifecycle = TrainingLifecycle(model, on_event=sink)
         result = lifecycle.run(sequence.X, sequence.y, **sequence.fit_kwargs())
@@ -132,7 +132,7 @@ def train(
         # Published LAST, once nothing left can fail: the status then says "trained" only for a run
         # whose caller is about to receive its result, never for one that went on to raise.
         state.set_trained(model, result, sink, dataset, operation=operation)
-        logger.info("training complete: operation_id=%s dataset=%s epochs=%s duration=%.3fs metrics=%s", operation.operation_id, descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
+        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
         return response
 
 

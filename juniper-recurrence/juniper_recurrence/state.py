@@ -43,7 +43,9 @@ import threading
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
+
+from juniper_recurrence.schemas import OperationKind
 
 if TYPE_CHECKING:
     from juniper_model_core import TrainResult
@@ -54,9 +56,6 @@ if TYPE_CHECKING:
     from juniper_recurrence.schemas import DatasetDescriptor
 
 __all__ = ["AppState", "FailureRecord", "Operation", "OperationKind", "StatusSnapshot", "new_operation_id", "utc_now_iso"]
-
-#: The two kinds of request that take ``train_lock`` and so replace (or try to replace) the model.
-OperationKind = Literal["train", "restore"]
 
 
 def new_operation_id() -> str:

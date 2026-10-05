@@ -11,8 +11,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from juniper_recurrence.state import OperationKind
-
 __all__ = [
     "DatasetRef",
     "DatasetDescriptor",
@@ -36,14 +34,17 @@ __all__ = [
     "BusyResponse",
     "OperationMismatchDetail",
     "OperationConflictResponse",
+    "OperationKind",
 ]
 
 # W1.5 (F-S6 / F-CON1 / F-CON2 of juniper-ml
 # ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``): every
 # request that takes the service's ``train_lock`` -- a fit (``train``) or a snapshot restore
-# (``restore``), the ``OperationKind`` imported above -- is an *operation* with an ``operation_id``
-# (uuid4 hex) minted when it takes the lock.
-#
+# (``restore``) -- is an *operation* with an ``operation_id`` (uuid4 hex) minted when it takes the
+# lock. Defined HERE and imported by ``juniper_recurrence.state``, never the other way round: state
+# already imports this module, so a reverse import would close an import cycle.
+OperationKind = Literal["train", "restore"]
+
 # Shared wording for ``expect_operation_id`` on the two routes that act on the in-memory model.
 _EXPECT_OPERATION_ID_DESCRIPTION = "Optional operation_id the caller expects produced the in-memory model (from a POST /v1/train or restore response). If it names a different operation the request is refused with 409 and a detail naming both ids, so a caller sharing the service cannot act on another caller's model. A model restored from a snapshot has its own operation id, minted at restore. Omit to skip the check."
 
