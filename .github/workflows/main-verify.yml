@@ -16,8 +16,13 @@
 #    cascor#482). This repo joins the net as a rollout EXTENSION (owner decision 2026-08-09):
 #    the original Wave-2 repo set predated / omitted the juniper-recurrence monorepo. Runs
 #    AFTER a merge lands on main, so it fires no matter who merged or what they bypassed --
-#    the bypass-proof compositional-loss net the per-PR advisory screen
-#    (sequence-safety.yml) cannot guarantee. The flood damage class was every-PR-green but
+#    the bypass-proof compositional-loss net the per-PR screen
+#    (sequence-safety.yml) cannot guarantee. That screen's `Sequence Safety` context IS a
+#    required check in the branch ruleset, but a ruleset bypass actor can still merge over a
+#    red run, and an owner label (`allow-symbol-loss` / `docs-rewrite`) greens it for one PR;
+#    this net honours only the `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers.
+#    It runs on push to main, so it is not a PR status check and blocks no merge -- it
+#    reports after one. The flood damage class was every-PR-green but
 #    serial same-file merges fused / silently deleted sibling content, and a deleted test
 #    cannot fail, so nothing per-PR saw it.
 #

@@ -78,7 +78,7 @@ on:
       - main
       - develop
 
-# Per-PR ref, cancel superseded runs: an advisory review signal only needs the latest push.
+# Per-PR ref, cancel superseded runs: the ruleset reads this required check on the PR's head commit, so only the latest push needs a verdict.
 concurrency:
   group: sequence-safety-${{ github.ref }}
   cancel-in-progress: true

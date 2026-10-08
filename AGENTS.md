@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.5.0
-**Last Updated**: 2026-09-11
+**Last Updated**: 2026-10-08
 
 ---
 
@@ -80,7 +80,7 @@ juniper-recurrence/
 │       ├── ci-pre-commit.yml
 │       ├── ci-docs.yml
 │       ├── security-scan.yml
-│       ├── sequence-safety.yml      # per-PR advisory sequence-safety net (rollout extension, 2026-08-09)
+│       ├── sequence-safety.yml      # per-PR required sequence-safety net (rollout extension, 2026-08-09)
 │       └── main-verify.yml          # post-merge bypass-proof compositional-loss net
 ├── notes/                           # repo-local notes
 ├── scripts/                         # repo-level tooling
@@ -169,9 +169,13 @@ Until it is applied, `pip check` reports exactly one line (`juniper-recurrence 0
 
 ## Sequence-safety nets (required CI)
 
-The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.9.0,<0.10.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`); neither is a required check.
+The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.9.0,<0.10.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`).
+`sequence-safety.yml` publishes **`Sequence Safety`**, a required context in ruleset `juniper-recurrent-rules` (id `20634527`), so a red run blocks merge into `main`. It is a standalone workflow, so no lane aggregate (`App` / `Model` / `Client` / `Bench required checks`) can list it in `needs:` (a `needs:` entry can only name a job in the same workflow), and green lane aggregates do not mean mergeable.
+`main-verify.yml` runs after the merge and is not a PR status check.
+Live list: `gh api repos/pcalnon/juniper-recurrence/rulesets/20634527 --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'`.
 
-- `.github/workflows/sequence-safety.yml` — per-PR **advisory** screens over base..HEAD: AST symbol-loss + docs deletion-magnitude. Symbol scope: five monorepo trees (`juniper-recurrence/**`, `juniper-recurrence-model/**`, `juniper-recurrence-client/**`, `bench/**`, `scripts/**`; tests/ live inside each tree). Docs screen: the universal default cluster (AGENTS.md, docs/, notes/). `allow-symbol-loss` / `docs-rewrite` labels demote the screen to WARN-only; JSON reports upload as `sequence-safety-report`.
+- `.github/workflows/sequence-safety.yml` — per-PR **required** screens over base..HEAD: AST symbol-loss + docs deletion-magnitude. Symbol scope: five monorepo trees (`juniper-recurrence/**`, `juniper-recurrence-model/**`, `juniper-recurrence-client/**`, `bench/**`, `scripts/**`; tests/ live inside each tree). Docs screen: the universal default cluster (AGENTS.md, docs/, notes/).
+  `allow-symbol-loss` / `docs-rewrite` labels demote the screen to WARN-only (`--advisory`, exit 0), which greens the check for that PR but does not clear `main-verify.yml`; JSON reports upload as `sequence-safety-report`.
 - `.github/workflows/main-verify.yml` — post-merge, bypass-proof net on `push: main` (per-SHA concurrency, no cancel, so a merge storm never drops a verification): the same two screens over the catch-up BASE..merge (screens-only — no battery; the per-package CI lanes gate pre-merge). On failure it upserts a stable-title tracking issue (one per red streak) and posts a non-blocking Slack summary when a `SLACK_WEBHOOK_URL` secret exists (none is currently provisioned, so that step self-skips).
 
 An intentional symbol removal / docs rewrite is waived with the enumerated `Allow-Symbol-Loss: <qualified.symbol>` / `Allow-Docs-Rewrite: <path>` commit trailers, which travel in git history and clear both nets — carry them into the squash-merge commit message.
