@@ -34,6 +34,13 @@
 # ``juniper-data-client`` moves 0.4.2 -> **0.5.0**. Those two are the ONLY pin changes; the count
 # is unchanged at 31. The KNOWN STALENESS this header recorded at creation (2026-09-09, when
 # 0.3.0 had been released but was still parked at the approval gate) is CLOSED.
+#
+# REGENERATED 2026-10-10, TARGETED: the command above plus ``--upgrade-package`` for the two
+# packages below, compiled onto a copy of this file so every other pin is held. The security
+# patches: ``juniper-observability`` 0.4.0 -> **0.4.1** (``configure_sentry`` stops sending frame
+# locals) and ``juniper-service-core`` 0.7.0 -> **0.7.1** (non-ASCII key 401; bounded
+# ``FailedAuthThrottle.check()``). Those two are the ONLY pin changes; the count is unchanged at
+# 31, and the arm64 pre-flight above passes. Both floors in ``pyproject.toml`` moved with them.
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -67,11 +74,11 @@ juniper-model-core==0.3.1
     #   juniper-recurrence (pyproject.toml)
     #   juniper-recurrence-model
     #   juniper-service-core
-juniper-observability==0.4.0
+juniper-observability==0.4.1
     # via juniper-recurrence (pyproject.toml)
 juniper-recurrence-model==0.3.0
     # via juniper-recurrence (pyproject.toml)
-juniper-service-core==0.7.0
+juniper-service-core==0.7.1
     # via juniper-recurrence (pyproject.toml)
 numpy==2.5.3
     # via
