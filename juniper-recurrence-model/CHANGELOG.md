@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-10
+
 ### Changed
 
 - **`auto` warns on a one-hot fallback; the `reg` default is deferred to ruling R8, because every
