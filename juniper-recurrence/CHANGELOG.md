@@ -132,6 +132,25 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   its changelog touches them. **The bench lane does not check a change like this on its own**:
   its `test` job runs only when `bench/` or its workflow changes (#178), so a ceiling move
   reaches it through `workflow_dispatch` on the branch, or not at all.
+- **The `[bench]` and `[bench-equities]` extras admit `juniper-data` 0.17.0** (ceiling `<0.17.0` →
+  `<0.18.0`; floor unchanged at `>=0.9.0`). This is a W1.13 prerequisite in juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`.
+  - **Why.** juniper-data 0.17.0 (PyPI, 2026-10-10) is the first release to serve `equities_seq` at
+    `generator_version` **6.0.0** with `task_type: regression` (owner ruling X8, juniper-data#437).
+    Under the old ceiling, a fresh `.[bench,bench-equities]` install resolved 0.16.0, with its
+    5.0.0 / `classification` label.
+  - **No bench number moves.** The bench's `equities_seq` row calls `EquitiesSeqGenerator.generate()`
+    in-process and reads `y_reg_*`. X8 changed the registry's label and the version constant, not
+    the arrays.
+  - **Nothing else in 0.17.0 reaches the bench.** No synthetic generator changed between 0.16.0 and
+    0.17.0. The only other generator change is juniper-data#451's 400 for a late `purchase_date`
+    under `fundamentals_fill="drop"`, which the bench never requests.
+  - **Tested.** The `juniper-data-published` dispatch for 0.17.0 ran the bench smoke against it past
+    the old ceiling, and it is green on Python 3.12, 3.13 and 3.14 (`36 passed, 1 skipped` on 3.12).
+    The 3.12 job's first attempt failed only because PyPI had not propagated the upload within the
+    job's 10-minute wait; its re-run passed.
+  - The intermediate move `<0.16.0` → `<0.17.0`, which admitted 0.16.0 (#188, Dependabot), carried no
+    entry here.
 - **`GET /v1/training/status` gains `training`, `restoring` and a terminal `failed` state** (W1.5).
   Every existing field and state is kept. A fit that raised used to leave no record: the route's
   `finally` released the lock and the status went on describing an earlier run, or `idle`. It now
