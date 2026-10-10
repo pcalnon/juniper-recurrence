@@ -169,6 +169,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   and the response is built, so the status reads `trained` only for a run whose caller is about to
   receive its result.
 
+### Security
+
+- **The service picks up the two shared security patches**: `juniper-service-core>=0.7.1,<0.8.0`
+  and `juniper-observability[prometheus]>=0.4.1,<0.5.0`, and the image lock moves those two pins
+  (0.7.0 -> 0.7.1, 0.4.0 -> 0.4.1) and nothing else. service-core 0.7.1 answers a non-ASCII
+  `X-API-Key` with a 401 instead of a 500 whose Sentry event could carry the real configured key,
+  and `FailedAuthThrottle.check()` no longer adds a table entry for every unseen client address.
+  observability 0.4.1's `configure_sentry` no longer sends frame-local variables, which could hold
+  the key. Until now the lock pinned 0.7.0 and 0.4.0, so an image built from `main` carried neither
+  fix. The lock was regenerated with `--upgrade-package` for the two packages only; the pin count
+  stays 31 and the arm64 wheel pre-flight passes.
+
 ## [0.5.0] - 2026-09-10
 
 ### Added

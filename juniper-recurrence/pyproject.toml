@@ -48,7 +48,10 @@ dependencies = [
     # /docs and /openapi.json. Under the old >=0.5.0 range the auth posture of the docs
     # routes -- and therefore tests/test_app_smoke.py -- depended on which service-core
     # pip happened to resolve. A security-relevant behaviour must not be resolution-dependent.
-    "juniper-service-core>=0.6.0,<0.8.0",
+    # Floor raised to 0.7.1 (2026-10-10), the security patch: a non-ASCII X-API-Key is a 401,
+    # not a 500 whose Sentry event could carry the real key, and FailedAuthThrottle.check()
+    # no longer adds a table entry for every unseen client address.
+    "juniper-service-core>=0.7.1,<0.8.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
     "juniper-recurrence-model>=0.3.0,<0.5.0",
     "juniper-data-client>=0.4.2,<0.7.0",
@@ -75,8 +78,9 @@ test = [
 observability = [
     # [prometheus] pulls prometheus-client — juniper-observability keeps it optional,
     # so the bare package would ModuleNotFoundError at /metrics scrape time (mirrors
-    # juniper-data's observability extra).
-    "juniper-observability[prometheus]>=0.4.0,<0.5.0",
+    # juniper-data's observability extra). Floor 0.4.1 (2026-10-10), the security patch:
+    # configure_sentry no longer sends frame-local variables, which could hold the real key.
+    "juniper-observability[prometheus]>=0.4.1,<0.5.0",
 ]
 # Rung 2b torch MLP readout over the HTTP API / CLI (DP-3 P3). ``readout="mlp"`` needs torch at
 # runtime; it is optional (~GB) so deployments that never select the MLP readout stay torch-free —
