@@ -50,7 +50,7 @@ dependencies = [
     # pip happened to resolve. A security-relevant behaviour must not be resolution-dependent.
     "juniper-service-core>=0.6.0,<0.8.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
-    "juniper-recurrence-model>=0.3.0,<0.4.0",
+    "juniper-recurrence-model>=0.3.0,<0.5.0",
     "juniper-data-client>=0.4.2,<0.7.0",
 ]
 
@@ -83,7 +83,7 @@ observability = [
 # the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
 # when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
 torch = [
-    "juniper-recurrence-model[torch]>=0.3.0,<0.4.0",
+    "juniper-recurrence-model[torch]>=0.3.0,<0.5.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
@@ -112,7 +112,7 @@ bench-equities = [
 # juniper-recurrence-model 0.1.5 (the LMURegressor validation plumbing + the Rung 2b readout); the
 # floor is the higher >=0.3.0 that decision 11's `derive_full_split` requires, which subsumes it.
 bench-torch = [
-    "juniper-recurrence-model[torch]>=0.3.0,<0.4.0",
+    "juniper-recurrence-model[torch]>=0.3.0,<0.5.0",
 ]
 # G-5 benchmark figures (bench.plots): forecast-vs-truth, residuals, Δt distribution, and the
 # per-model r2 comparison. Kept out of [bench] like [bench-equities] / [bench-torch] so the
