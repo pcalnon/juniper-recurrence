@@ -180,6 +180,35 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   the key. Until now the lock pinned 0.7.0 and 0.4.0, so an image built from `main` carried neither
   fix. The lock was regenerated with `--upgrade-package` for the two packages only; the pin count
   stays 31 and the arm64 wheel pre-flight passes.
+- **A 5xx from the data path no longer relays the data client's text, so a padded juniper-data
+  key can no longer reach callers** (W1.14, which closes F-S10, in juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  CWE-209, CWE-532). `map_data_error` answered every juniper-data client failure with the
+  client's own text, e.g. `502 "data fetch failed: {exc}"`. requests refuses a header value with
+  leading whitespace and quotes it, and juniper-data-client words that as
+  `Request failed: … in header value: ' <key>'`. A padded `JUNIPER_DATA_API_KEY` therefore reached
+  the 502 body of every `/v1/train`, `/v1/predict` and `/v1/crossval` caller, and the operation
+  record that `GET /v1/training/status` serves to any caller. The juniper-ml experiment driver
+  writes that detail into each run's manifest (`phases.<phase>.error`). Two changes:
+  - **Every 5xx detail is now a fixed phrase**, with juniper-data's status when it answered one:
+    `juniper-data unreachable: the connection failed` or `…: the request timed out`,
+    `data-client misconfigured`, `data fetch failed: juniper-data answered <status>` and
+    `data fetch failed: the request to juniper-data did not complete`, each followed by
+    `(details in the service log)`. The full text stays in the WARNING that each route already
+    logs before it maps the error. The 404 and 422 details still carry the text: they describe
+    this request, and they are what canopy shows (W0.5).
+  - **A padded key is refused at settings load.** `juniper_data_api_key` with leading or trailing
+    whitespace, or a control character, fails `Settings()` with a message that names
+    `JUNIPER_DATA_API_KEY` / `JUNIPER_RECURRENCE_JUNIPER_DATA_API_KEY` and not the value. A
+    `JUNIPER_DATA_API_KEY_FILE` secret is still stripped first, so a file's trailing newline still
+    works. `Settings` now sets `hide_input_in_errors`, so no `ValidationError` prints the value it
+    refused; before, a refused key would have been echoed as pydantic's `input_value`.
+
+  The 502 wording changed, so a caller that matched the old `…: {exc}` text no longer finds the
+  upstream text in it. Canopy's adapter appends no 5xx detail (W0.5), so canopy is unaffected. The
+  juniper-ml driver records whatever detail it is given, so it now records the fixed phrase.
+  Tests: `tests/test_routes.py` gains 2, including F-S10 reproduced through the real data client
+  with no network, and `tests/test_settings.py` gains 17.
 
 ## [0.5.0] - 2026-09-10
 
