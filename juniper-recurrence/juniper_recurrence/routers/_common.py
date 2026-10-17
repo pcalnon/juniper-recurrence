@@ -3,7 +3,8 @@
 The app-state and settings dependencies read the per-app instances stashed on
 ``app.state`` by :func:`juniper_recurrence.app.build_app`. :func:`map_data_error`
 translates juniper-data-client failures into the appropriate HTTP status so the
-train / predict data path returns ``404`` / ``422`` / ``502`` rather than a bare 500.
+train / predict data path returns ``404`` / ``422`` / ``502`` rather than a bare 500,
+with a 5xx detail that never relays the client's text (W1.14).
 
 :class:`RecordedOperation` and :func:`require_expected_operation` are the route half of
 operation identity (W1.5; see :mod:`juniper_recurrence.state`).
@@ -46,6 +47,11 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
+#: Appended to every 5xx detail: the text that detail no longer carries is in the WARNING each
+#: call site logs before it maps the error.
+_SEE_SERVICE_LOG = "(details in the service log)"
+
+
 def map_data_error(exc: Exception) -> HTTPException:
     """Translate a data-fetch failure into an :class:`HTTPException`.
 
@@ -53,19 +59,33 @@ def map_data_error(exc: Exception) -> HTTPException:
     * connection / timeout → ``502`` (upstream juniper-data unreachable)
     * validation / contract (``ValueError``) → ``422``
     * misconfiguration → ``500``
-    * anything else → ``502``
+    * anything else → ``502``, naming juniper-data's status when it answered
+
+    A 4xx detail carries the error's text: it is juniper-data's (or the NPZ validator's)
+    judgement of this request, and it is the detail canopy shows (W0.5). A 5xx detail is a
+    fixed phrase and never the exception text (W1.14 / F-S10). juniper-data-client words a
+    header that requests refused as ``Request failed: … in header value: ' <key>'``, so
+    relaying the text put a padded ``JUNIPER_DATA_API_KEY`` into every caller's 502 body, and
+    into the operation record ``GET /v1/training/status`` serves (:class:`RecordedOperation`
+    records the detail). The full text stays in the WARNING each call site logs before
+    mapping, and ``Settings`` now refuses a padded key at load.
     """
     if isinstance(exc, JuniperDataNotFoundError):
         return HTTPException(status.HTTP_404_NOT_FOUND, f"dataset not found: {exc}")
-    if isinstance(exc, (JuniperDataConnectionError, JuniperDataTimeoutError)):
-        return HTTPException(status.HTTP_502_BAD_GATEWAY, f"juniper-data unreachable: {exc}")
+    if isinstance(exc, JuniperDataTimeoutError):
+        return HTTPException(status.HTTP_502_BAD_GATEWAY, f"juniper-data unreachable: the request timed out {_SEE_SERVICE_LOG}")
+    if isinstance(exc, JuniperDataConnectionError):
+        return HTTPException(status.HTTP_502_BAD_GATEWAY, f"juniper-data unreachable: the connection failed {_SEE_SERVICE_LOG}")
     if isinstance(exc, (JuniperDataValidationError, ValueError)):
         # 422 as an int literal: Starlette deprecated HTTP_422_UNPROCESSABLE_ENTITY and the
         # renamed constant is absent on older fastapi>=0.110 resolutions; the literal is safe.
         return HTTPException(422, f"invalid dataset: {exc}")
     if isinstance(exc, JuniperDataConfigurationError):
-        return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"data-client misconfigured: {exc}")
-    return HTTPException(status.HTTP_502_BAD_GATEWAY, f"data fetch failed: {exc}")
+        return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"data-client misconfigured {_SEE_SERVICE_LOG}")
+    upstream_status = getattr(exc, "status_code", None)
+    if upstream_status is not None:
+        return HTTPException(status.HTTP_502_BAD_GATEWAY, f"data fetch failed: juniper-data answered {upstream_status} {_SEE_SERVICE_LOG}")
+    return HTTPException(status.HTTP_502_BAD_GATEWAY, f"data fetch failed: the request to juniper-data did not complete {_SEE_SERVICE_LOG}")
 
 
 class RecordedOperation:

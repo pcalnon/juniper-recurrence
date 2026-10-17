@@ -4,7 +4,9 @@ Subclasses :class:`juniper_service_core.SettingsBase` (which supplies
 ``service_name`` / ``host`` / ``port`` / ``log_level``) and reads the
 ``JUNIPER_RECURRENCE_`` environment namespace.
 
-Three hardening choices, each a recorded ecosystem incident (plan §7 / §15):
+Four hardening choices, each a recorded ecosystem incident (plan §7 / §15, and
+W1.14 of juniper-ml
+``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``):
 
 * **No ``env_file=``** — setting it is the pydantic-settings ``.env``-leak class
   (cascor #309 / canopy #325 / data #153). Isolation relies on ``env_prefix`` +
@@ -17,6 +19,11 @@ Three hardening choices, each a recorded ecosystem incident (plan §7 / §15):
   pydantic-settings from JSON-decoding the env value, so a plain secret-file
   payload (``"k1,k2"``) never raises the JSON-list ``ValidationError`` (cascor
   ``_parse_api_keys`` precedent / secrets.example incident).
+* **A padded outbound key is refused, and no error echoes a value** — requests
+  refuses a header value with leading whitespace or a CR / LF and quotes the value,
+  so a padded ``JUNIPER_DATA_API_KEY`` reached every 502 body (F-S10).
+  ``hide_input_in_errors`` keeps pydantic from appending ``input_value=…`` (a
+  secret, for two of these fields) to any ``ValidationError``.
 """
 
 from __future__ import annotations
@@ -125,7 +132,9 @@ class ExperimentYamlSettingsSource(PydanticBaseSettingsSource):
 class Settings(SettingsBase):
     """Runtime configuration for the juniper-recurrence app (env prefix ``JUNIPER_RECURRENCE_``)."""
 
-    model_config = SettingsConfigDict(env_prefix="JUNIPER_RECURRENCE_", extra="ignore")
+    # hide_input_in_errors: a ValidationError's text would otherwise end with the offending
+    # value -- the key itself, for ``api_keys`` / ``juniper_data_api_key`` -- and boot prints it.
+    model_config = SettingsConfigDict(env_prefix="JUNIPER_RECURRENCE_", extra="ignore", hide_input_in_errors=True)
 
     @classmethod
     def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
@@ -273,6 +282,24 @@ class Settings(SettingsBase):
         if isinstance(value, (list, tuple)):
             cleaned = [str(item).strip() for item in value if str(item).strip()]
             return cleaned or None
+        return value
+
+    @field_validator("juniper_data_api_key")
+    @classmethod
+    def _refuse_padded_data_api_key(cls, value: str | None) -> str | None:
+        """Refuse an outbound juniper-data key with surrounding whitespace or a control character (W1.14 / F-S10).
+
+        ``get_secret`` strips a ``JUNIPER_DATA_API_KEY_FILE`` secret, but the plain variable
+        (or the prefixed ``JUNIPER_RECURRENCE_JUNIPER_DATA_API_KEY``) arrives as written. Sent
+        as a header, a padded key is refused by requests, whose error quotes the value; the
+        service relayed that text into its 502 body until W1.14. Refused here, at boot, instead
+        of on every fetch. The message names the variables, never the value -- the inbound
+        ``api_keys`` are stripped instead, because there a padded entry merely fails to match.
+        """
+        if value is None:
+            return None
+        if value != value.strip() or not value.isprintable():
+            raise ValueError("the juniper-data API key (JUNIPER_DATA_API_KEY / JUNIPER_RECURRENCE_JUNIPER_DATA_API_KEY) has leading or trailing whitespace or a control character; correct the variable or its secret file (the value is not shown)")
         return value
 
     @field_validator("metrics_trusted_ips")
