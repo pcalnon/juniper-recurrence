@@ -109,6 +109,45 @@ def test_juniper_data_api_key_shared_env_var(monkeypatch):
     assert Settings().juniper_data_api_key == "shared-outbound"
 
 
+# W1.14 / F-S10: requests refuses a padded key as a header and quotes it, and the service relayed
+# that text in its 502 body. A padded key is refused at load instead -- and the refusal, like any
+# ValidationError here, must not print the value (hide_input_in_errors).
+_PADDED_DATA_KEYS = [" LEAKME-key", "LEAKME-key ", "LEAKME-key\n", "\tLEAKME-key", "LEAKME\r\nkey", "LEAKME\tkey"]
+
+
+@pytest.mark.parametrize("variable", ["JUNIPER_DATA_API_KEY", "JUNIPER_RECURRENCE_JUNIPER_DATA_API_KEY"])
+@pytest.mark.parametrize("padded", _PADDED_DATA_KEYS)
+def test_padded_juniper_data_api_key_refused_at_load_without_echoing_it(monkeypatch, variable, padded):
+    from pydantic import ValidationError
+
+    monkeypatch.setenv(variable, padded)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+    message = str(excinfo.value)
+    assert "juniper_data_api_key" in message
+    assert "JUNIPER_DATA_API_KEY" in message  # the remedy names the variable ...
+    assert "LEAKME" not in message  # ... and never the value, not even as pydantic's input_value
+
+
+@pytest.mark.parametrize("padded", ["   ", "\n", "LEAKME\x00key", "LEAKME\x1bkey"])
+def test_whitespace_only_or_control_character_data_api_key_refused(padded):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(juniper_data_api_key=padded)
+    assert "LEAKME" not in str(excinfo.value)
+
+
+def test_validation_errors_never_echo_the_input():
+    # hide_input_in_errors covers every field, so a mistyped secret-bearing value is never printed at boot.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(port="LEAKME-not-a-port")
+    assert "port" in str(excinfo.value)
+    assert "LEAKME" not in str(excinfo.value)
+
+
 def test_juniper_data_url_shared_alias(monkeypatch):
     monkeypatch.setenv("JUNIPER_DATA_URL", "http://shared:8100")
     assert Settings().juniper_data_url == "http://shared:8100"
