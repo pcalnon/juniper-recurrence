@@ -110,6 +110,22 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Changed
 
+- **The image runs juniper-data-client 0.6.0 and juniper-recurrence-model 0.4.0** (W1.13 of
+  juniper-ml `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`).
+  `requirements.lock`, which the image installs, moves those two pins (0.5.0 -> 0.6.0, 0.3.0 -> 0.4.0)
+  and nothing else; the count stays 31. Neither release changed its own requirements. The
+  `pyproject.toml` ranges already admitted both, so a `pip install` resolves them without this
+  change. What the service now refuses:
+  - **data-client 0.6.0's `validate_npz_contract` (W1.4)** answers `422 invalid dataset: …` for an
+    artifact with a non-finite `dt_*`, a mis-shaped, non-finite or negative `target_dt_*`, a
+    `seq_lengths_*` that is not an integer or lies outside `[1, L]`, or an `X_*` / `y_*` / `y_reg_*`
+    that is not `float32`. The dtype rule is the breaking one: a `float64` artifact used to load.
+    juniper-data's sequence windowing casts `X` / `y` / `y_reg` / `dt` / `target_dt` to `float32`
+    (`juniper_data/generators/_sequence.py`), and `equities_seq` goes through it, so a juniper-data
+    artifact is unaffected.
+  - **model 0.4.0 (W1.3)** logs a WARNING when a split falls back to a one-hot `y_*` because it has
+    no `y_reg_*`. It also refuses a `(W, 1)` `target_dt` and a float or bool `seq_lengths`, which
+    mirrors the W1.4 rules.
 - **`GET /v1/training/status` gains a third `state`: `restored`, plus a `restored_from` field.**
   A model loaded from a snapshot is present and predictable, but **this process never fitted it** —
   so `final_metrics`, `stopped_reason` and `events` are absent rather than carried over or
