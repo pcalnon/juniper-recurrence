@@ -7,6 +7,7 @@ exercise the real model + synchronous lifecycle + serialization end-to-end.
 
 from __future__ import annotations
 
+import logging
 import pathlib
 
 import pytest
@@ -183,6 +184,7 @@ def test_predict_dataset_fetch_failure_mapped(fake_data, monkeypatch):
     monkeypatch.setattr("juniper_recurrence.routers.predict.load_sequence_data", _raise)
     resp = client.post("/v1/predict", json={"dataset": {"dataset_id": "ds-1", "split": "train"}})
     assert resp.status_code == 502  # JuniperDataClientError -> map_data_error -> 502
+    assert "upstream predict fetch failed" not in resp.text  # a 5xx detail never relays the client's text (W1.14)
 
 
 # --- model + dataset ------------------------------------------------------------------
@@ -273,6 +275,67 @@ def test_map_data_error_covers_all_branches():
     assert map_data_error(ValueError("x")).status_code == 422
     assert map_data_error(JuniperDataConfigurationError("x")).status_code == 500
     assert map_data_error(JuniperDataClientError("x")).status_code == 502
+
+
+def test_map_data_error_relays_a_4xx_text_and_never_a_5xx_text():
+    """W1.14 / F-S10: a 5xx detail is a fixed phrase (plus juniper-data's status); a 4xx keeps the text.
+
+    The 4xx text is what canopy shows the operator (W0.5); the 5xx text is the client's own wording,
+    which can quote a header value -- the juniper-data key.
+    """
+    from juniper_data_client import (
+        JuniperDataClientError,
+        JuniperDataConfigurationError,
+        JuniperDataConnectionError,
+        JuniperDataNotFoundError,
+        JuniperDataTimeoutError,
+        JuniperDataValidationError,
+    )
+
+    from juniper_recurrence.routers._common import map_data_error
+
+    assert map_data_error(JuniperDataNotFoundError("Resource not found: ds-9")).detail == "dataset not found: Resource not found: ds-9"
+    assert map_data_error(JuniperDataValidationError("Validation error (422): n_symbols")).detail == "invalid dataset: Validation error (422): n_symbols"
+    assert map_data_error(ValueError("X_train has non-finite values")).detail == "invalid dataset: X_train has non-finite values"
+
+    leak = "LEAKME-rec-data"
+    five_xx = {
+        JuniperDataConnectionError(f"Failed to connect to JuniperData at http://{leak}:8100"): "juniper-data unreachable: the connection failed (details in the service log)",
+        JuniperDataTimeoutError(f"Request to http://{leak}/v1 timed out after 120.0s"): "juniper-data unreachable: the request timed out (details in the service log)",
+        JuniperDataConfigurationError(f"bad base_url {leak}"): "data-client misconfigured (details in the service log)",
+        JuniperDataClientError(f"Request failed (503): {leak}", status_code=503): "data fetch failed: juniper-data answered 503 (details in the service log)",
+        JuniperDataClientError(f"Request failed: Invalid leading whitespace, reserved character(s), or return character(s) in header value: ' {leak}'"): "data fetch failed: the request to juniper-data did not complete (details in the service log)",
+        RuntimeError(leak): "data fetch failed: the request to juniper-data did not complete (details in the service log)",
+    }
+    for exc, detail in five_xx.items():
+        mapped = map_data_error(exc)
+        assert mapped.status_code >= 500
+        assert mapped.detail == detail
+        assert leak not in mapped.detail
+
+
+def test_a_refused_key_header_reaches_neither_the_502_body_nor_the_operation_record(caplog):
+    """F-S10 reproduced through the REAL data client: requests refuses a padded key and quotes it.
+
+    ``Settings`` refuses a padded key at load (``test_settings.py``), so the key is assigned past
+    the validator here: the route half must keep it out on its own, should one arrive another way.
+    requests refuses the header before it opens a connection, so nothing listens on the URL.
+    """
+    settings = Settings(api_keys=None, juniper_data_url="http://127.0.0.1:9")
+    settings.juniper_data_api_key = " LEAKME-rec-data"  # validate_assignment is off: bypasses the load-time refusal
+    client = TestClient(build_app(settings))
+
+    with caplog.at_level(logging.WARNING, logger="juniper_recurrence.routers.training"):
+        resp = client.post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}})
+
+    assert resp.status_code == 502, resp.text
+    assert resp.json()["detail"] == "data fetch failed: the request to juniper-data did not complete (details in the service log)"
+    assert "LEAKME" not in resp.text
+    status_body = client.get("/v1/training/status")
+    assert status_body.status_code == 200
+    assert "LEAKME" not in status_body.text  # RecordedOperation records the mapped detail, not the client's text
+    # The full text stays in the operator's WARNING -- that is where the 5xx detail points.
+    assert any("header value" in record.getMessage() for record in caplog.records), [record.getMessage() for record in caplog.records]
 
 
 # --- security + rate limit (plan §12) -------------------------------------------------
