@@ -41,6 +41,21 @@
 # locals) and ``juniper-service-core`` 0.7.0 -> **0.7.1** (non-ASCII key 401; bounded
 # ``FailedAuthThrottle.check()``). Those two are the ONLY pin changes; the count is unchanged at
 # 31, and the arm64 pre-flight above passes. Both floors in ``pyproject.toml`` moved with them.
+#
+# MOVED 2026-10-17, TARGETED, for the 0.6.0 image (W1.13 of juniper-ml
+# notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md):
+# ``juniper-recurrence-model`` 0.3.0 -> **0.4.0** (W1.3's one-hot fallback warning, and the
+# ``target_dt`` / ``seq_lengths`` checks that mirror the W1.4 validator) and ``juniper-data-client``
+# 0.5.0 -> **0.6.0** (the W1.4 ``validate_npz_contract`` rules: finite ``dt`` / ``target_dt``,
+# ``seq_lengths`` in ``[1, L]``, ``float32`` features and targets). Those two are the ONLY pin
+# changes, and the count is unchanged at 31. Neither release changed its own requirements (the
+# PyPI ``requires_dist`` of 0.4.0 / 0.6.0 equals that of 0.3.0 / 0.5.0), so no other pin can
+# move. The two lines were moved by hand: ``uv pip compile`` could not reach PyPI from the host
+# that made this change (repeated connect timeouts). Instead, pip's resolver was run for Python
+# 3.13 (``--python-version 3.13 --only-binary=:all:``), with every other pin of this file as a
+# constraint, and it accepted the set. Both new pins are pure-Python wheels, so the arm64
+# pre-flight is unaffected. The ``pyproject.toml`` floors do not move: both ranges already admit
+# these releases.
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -67,7 +82,7 @@ idna==3.19
     # via
     #   anyio
     #   requests
-juniper-data-client==0.5.0
+juniper-data-client==0.6.0
     # via juniper-recurrence (pyproject.toml)
 juniper-model-core==0.3.1
     # via
@@ -76,7 +91,7 @@ juniper-model-core==0.3.1
     #   juniper-service-core
 juniper-observability==0.4.1
     # via juniper-recurrence (pyproject.toml)
-juniper-recurrence-model==0.3.0
+juniper-recurrence-model==0.4.0
     # via juniper-recurrence (pyproject.toml)
 juniper-service-core==0.7.1
     # via juniper-recurrence (pyproject.toml)
