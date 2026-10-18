@@ -37,6 +37,14 @@ classifiers = [
 # in juniper-recurrence-model 0.3.0. Publish-first: 0.3.0 reached PyPI 2026-09-10. The MLP readout needs
 # torch *at runtime* only — kept optional via the [torch] extra below, never a base dependency
 # (importing MLPReadoutSpec is torch-free; torch is lazily imported inside the readout's fit).
+# Floors raised to juniper-recurrence-model >=0.4.0 and juniper-data-client >=0.6.0 (W1.13 of the
+# juniper-ml recurrence × equities plan; owner ruling 2026-10-10, which 0.6.0 shipped without).
+# model 0.4.0 carries W1.3's target selection, whose `auto` default warns on a one-hot fallback,
+# and the target_dt checks; data-client 0.6.0 carries the W1.4 rules that `validate_npz_contract`
+# applies on every load (float32, finite dt, target_dt, seq_lengths). 0.6.0's ranges still admitted
+# model 0.3.0 and data-client 0.4.2, so `pip install -U juniper-recurrence` over a 0.5.0 env kept
+# both, and the service ran without those refusals. Neither floor is about an import: 0.6.0 loads
+# against the older pair. They make the refusals the release notes describe hold on every install.
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.30",
@@ -53,8 +61,8 @@ dependencies = [
     # no longer adds a table entry for every unseen client address.
     "juniper-service-core>=0.7.1,<0.8.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
-    "juniper-recurrence-model>=0.3.0,<0.5.0",
-    "juniper-data-client>=0.4.2,<0.7.0",
+    "juniper-recurrence-model>=0.4.0,<0.5.0",
+    "juniper-data-client>=0.6.0,<0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -87,7 +95,7 @@ observability = [
 # the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
 # when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
 torch = [
-    "juniper-recurrence-model[torch]>=0.3.0,<0.5.0",
+    "juniper-recurrence-model[torch]>=0.4.0,<0.5.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
@@ -114,9 +122,10 @@ bench-equities = [
 # (run_benchmark.py probes for torch and omits the MLP row when absent), while a developer who wants
 # the MLP capacity row installs `.[bench,bench-torch]`. MLPReadoutSpec ships in
 # juniper-recurrence-model 0.1.5 (the LMURegressor validation plumbing + the Rung 2b readout); the
-# floor is the higher >=0.3.0 that decision 11's `derive_full_split` requires, which subsumes it.
+# floor is the app's own >=0.4.0 (see dependencies), which subsumes both that and the >=0.3.0
+# decision 11's `derive_full_split` requires.
 bench-torch = [
-    "juniper-recurrence-model[torch]>=0.3.0,<0.5.0",
+    "juniper-recurrence-model[torch]>=0.4.0,<0.5.0",
 ]
 # G-5 benchmark figures (bench.plots): forecast-vs-truth, residuals, Δt distribution, and the
 # per-model r2 comparison. Kept out of [bench] like [bench-equities] / [bench-torch] so the

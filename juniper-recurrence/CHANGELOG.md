@@ -9,6 +9,26 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Fixed
+
+- **The floors now require `juniper-recurrence-model>=0.4.0` and `juniper-data-client>=0.6.0`**
+  (W1.13 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  the owner ruled this on 2026-10-10, and 0.6.0 shipped without it). 0.6.0 moved its image lock to
+  those two releases, but its ranges still admitted model `>=0.3.0` and data-client `>=0.4.2`.
+  - A fresh `pip install` resolves the new pair.
+  - `pip install -U juniper-recurrence` over a 0.5.0 environment does not. pip's default
+    `only-if-needed` strategy keeps any installed release the range admits, so the upgrade moves
+    juniper-recurrence alone.
+  - 0.6.0 imports cleanly against the older pair. It calls `sequence_data_from_arrays(arrays, split)`
+    without `target=`, and data-client 0.4.2 already exports `validate_npz_contract`. Such a
+    service therefore starts and serves **without** the refusals the `[0.6.0]` Changed entry lists:
+    no W1.4 rules (`float32`, finite `dt`, `target_dt`, `seq_lengths`) and no model 0.4.0 target
+    checks.
+
+  The floors move in `dependencies`, `[torch]` and `[bench-torch]`. `requirements.lock` already
+  pins model 0.4.0 and data-client 0.6.0, so the image does not change.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added
