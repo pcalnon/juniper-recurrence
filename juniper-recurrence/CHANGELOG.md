@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-18
+
 ### Fixed
 
 - **The floors now require `juniper-recurrence-model>=0.4.0` and `juniper-data-client>=0.6.0`**
