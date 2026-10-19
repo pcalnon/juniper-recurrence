@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from juniper_recurrence_model import LMURegressor, SequenceData, load_sequence_npz, sequence_data_from_arrays
-from juniper_recurrence_model.data import DEFAULT_TARGET, TARGET_MODES, derive_full_split
+from juniper_recurrence_model.data import DEFAULT_TARGET, TARGET_MODES, derive_composed_split, derive_full_split
 
 
 def _make_equities_seq_arrays(splits=("train", "test"), w=40, lookback=12, n_features=4, seed=0):
@@ -309,6 +309,77 @@ class TestDeriveFullSplit:
         assert derived["X_full"].shape[0] == arrays["X_train"].shape[0] + arrays["X_test"].shape[0]
 
 
+class TestTrainvalViewAndWindowKeys:
+    """W5.2 (0.6.0): the ``trainval`` pool excludes ``test``; the entity / date keys ride every view."""
+
+    @staticmethod
+    def _post_369_with_dates():
+        """The three-ticker artifact without its ``_full`` family, plus per-split ``window_end_date`` keys."""
+        artifact = {k: v for k, v in _three_ticker_artifact().items() if not k.endswith("_full")}
+        # A YYYYMMDD-shaped date per window, unique per row, so the composed view's permutation of the
+        # dates can be checked against the permutation of the rows (``X[:, 0, 0]`` is the row id).
+        for split in ("train", "val", "test"):
+            ids = artifact[f"X_{split}"][:, 0, 0].astype(np.int64)
+            artifact[f"window_end_date_{split}"] = (20200101 + ids).astype(np.int32)
+        return artifact
+
+    def test_trainval_is_the_full_view_minus_every_tickers_test_block(self):
+        artifact = _three_ticker_artifact()
+        post_369 = {k: v for k, v in artifact.items() if not k.endswith("_full")}
+        pool = sequence_data_from_arrays(post_369, "trainval")
+        full = sequence_data_from_arrays(post_369, "full")
+        test_ids = set(artifact["X_test"][:, 0, 0].tolist())
+        expected = full.X[[i for i, row_id in enumerate(full.X[:, 0, 0].tolist()) if row_id not in test_ids]]
+        assert pool.X.shape[0] == artifact["X_train"].shape[0] + artifact["X_val"].shape[0]
+        assert np.array_equal(pool.X, expected)  # same entity-major order as ``full``, test rows removed
+        assert not (set(pool.X[:, 0, 0].tolist()) & test_ids)
+        assert np.array_equal(pool.y, full.y[[i for i, row_id in enumerate(full.X[:, 0, 0].tolist()) if row_id not in test_ids]])
+
+    def test_window_keys_are_read_and_permuted_with_the_rows(self):
+        artifact = self._post_369_with_dates()
+        for view in ("trainval", "full"):
+            data = sequence_data_from_arrays(artifact, view)
+            assert data.ticker_code is not None and data.window_end_date is not None
+            assert data.ticker_code.shape == (data.X.shape[0],) and data.window_end_date.shape == (data.X.shape[0],)
+            # Each row's date is the one minted for that row id: the keys travelled with the rows.
+            assert np.array_equal(data.window_end_date, (20200101 + data.X[:, 0, 0].astype(np.int64)).astype(np.int32))
+            assert np.all(np.diff(data.ticker_code) >= 0)  # entity-major, as ``full`` is laid down
+
+    def test_window_keys_are_none_when_the_artifact_lacks_them(self):
+        arrays = _make_equities_seq_arrays(splits=("train", "val", "test"))
+        data = sequence_data_from_arrays(arrays, "trainval")
+        assert data.ticker_code is None and data.window_end_date is None
+        assert "ticker_code" not in data.fit_kwargs() and "window_end_date" not in data.fit_kwargs()
+
+    def test_window_keys_are_not_fit_kwargs(self):
+        data = sequence_data_from_arrays(self._post_369_with_dates(), "train")
+        assert set(data.fit_kwargs()) == {"dt"}
+        assert data.ticker_code is not None and data.window_end_date is not None
+
+    @pytest.mark.parametrize("bad", [np.zeros((3, 1), dtype=np.int32), np.zeros(3, dtype=np.float32), np.zeros(4, dtype=np.int32)])
+    def test_a_mis_shaped_or_float_window_key_is_refused(self, bad):
+        artifact = _assemble_like_juniper_data([_ticker_windows(10, (3, 2, 2))])
+        artifact = {k: v for k, v in artifact.items() if not k.endswith("_full")}
+        artifact["window_end_date_train"] = bad
+        with pytest.raises(ValueError, match="window_end_date_train"):
+            sequence_data_from_arrays(artifact, "train")
+
+    def test_trainval_of_a_two_way_artifact_is_its_train_set(self):
+        arrays = _make_equities_seq_arrays(splits=("train", "test"))
+        data = sequence_data_from_arrays(arrays, "trainval")
+        assert np.array_equal(data.X, np.asarray(arrays["X_train"]))
+
+    def test_an_unknown_view_is_refused(self):
+        with pytest.raises(ValueError, match="view must be one of"):
+            derive_composed_split({}, "everything")
+        with pytest.raises(ValueError, match="split must be one of"):
+            sequence_data_from_arrays(_make_equities_seq_arrays(), "everything")
+
+    def test_full_is_the_same_composition_as_before(self):
+        post_369 = {k: v for k, v in _three_ticker_artifact().items() if not k.endswith("_full")}
+        assert np.array_equal(derive_full_split(post_369)["X_full"], derive_composed_split(post_369, "full")["X_full"])
+
+
 class TestCrossvalReadSurvivesDecision11:
     """``POST /v1/crossval`` passes ``split="full"``. That read must not fail post-#369."""
 
@@ -547,8 +618,8 @@ class TestTargetSelection:
 
     @pytest.mark.parametrize("split", ["validation", "Train", "", "train\nforged log line"])
     def test_an_unknown_split_is_refused_before_anything_is_read(self, split):
-        """The app's ``SplitName`` admits four splits; the reader refuses anything else up front, not as a missing key."""
-        with pytest.raises(ValueError, match=r"^split must be one of 'train' / 'val' / 'test' / 'full'; got "):
+        """The app's ``SplitName`` admits five splits; the reader refuses anything else up front, not as a missing key."""
+        with pytest.raises(ValueError, match=r"^split must be one of 'train' / 'val' / 'test' / 'full' / 'trainval'; got "):
             sequence_data_from_arrays(_equities_seq_artifact(), split)
 
     def test_load_sequence_npz_threads_target_to_the_reader(self, tmp_path, caplog):
