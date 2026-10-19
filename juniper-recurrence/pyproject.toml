@@ -61,7 +61,7 @@ dependencies = [
     # no longer adds a table entry for every unseen client address.
     "juniper-service-core>=0.7.1,<0.8.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
-    "juniper-recurrence-model>=0.4.0,<0.5.0",
+    "juniper-recurrence-model>=0.4.0,<0.6.0",
     "juniper-data-client>=0.6.0,<0.7.0",
 ]
 
@@ -95,7 +95,7 @@ observability = [
 # the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
 # when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
 torch = [
-    "juniper-recurrence-model[torch]>=0.4.0,<0.5.0",
+    "juniper-recurrence-model[torch]>=0.4.0,<0.6.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the
@@ -125,7 +125,7 @@ bench-equities = [
 # floor is the app's own >=0.4.0 (see dependencies), which subsumes both that and the >=0.3.0
 # decision 11's `derive_full_split` requires.
 bench-torch = [
-    "juniper-recurrence-model[torch]>=0.4.0,<0.5.0",
+    "juniper-recurrence-model[torch]>=0.4.0,<0.6.0",
 ]
 # G-5 benchmark figures (bench.plots): forecast-vs-truth, residuals, Δt distribution, and the
 # per-model r2 comparison. Kept out of [bench] like [bench-equities] / [bench-torch] so the
