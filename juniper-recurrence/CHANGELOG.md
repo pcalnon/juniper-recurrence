@@ -9,6 +9,30 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Changed
+
+- **`POST /v1/crossval` selects over the `trainval` pool and cuts a panel's folds on the global
+  date, per entity** (W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  findings F-P7 / F-SCI2). The pool is juniper-recurrence-model 0.6.0's composed `trainval` view
+  (train | val, entity-major), so the final `test` partition is never in a fold -- on the W5.1
+  equities row the old `full`-view fold 4 evaluated the entire `test` partition, and the row's CV
+  population becomes 1,522 windows. When the artifact carries `ticker_code` and `window_end_date`,
+  model-core's `walk_forward_folds` is called with `groups` / `order`: every ticker's windows before
+  the cut are train and after it eval, and the embargo purge is applied per entity. **`embargo`
+  (windows) now defaults to the look-back** rather than 0 -- the gap that keeps an eval window's
+  history clear of every train window; an explicit smaller value is honoured (the E-G suite sweeps
+  it) and logged at WARNING. Two date-based rules follow: a train window whose
+  `window_end_date + target_dt` reaches the cut is dropped (its label is not known at the cut), and
+  the new optional **`embargo_days`** drops train windows ending within that many days of the cut
+  (422 on an artifact without dates). `window_end_date` is a `YYYYMMDD` integer and is converted to
+  day ordinals for the arithmetic. A keyless single series keeps its row-index folds. The response
+  and `GET /v1/crossval/status` carry a **`folding`** block (`lookback`, the resolved `embargo`,
+  `embargo_days`, `grouped`, `ordered`, `n_entities`, `n_folds`, `dropped_label_availability`,
+  `dropped_embargo_days`); `dataset.split` reads `trainval`. `SplitName` admits `trainval` on the
+  train route too. The floor is `juniper-recurrence-model>=0.6.0,<0.7.0` (also `[torch]`,
+  `[bench-torch]` and the image lock), where the view and the keys live.
+
 ## [0.7.0] - 2026-10-19
 
 ### Added

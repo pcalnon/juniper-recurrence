@@ -49,6 +49,8 @@ classifiers = [
 # default_ridge the service ships from 0.7.0 is safe only on a model that standardises the linear
 # rung's memory block on the train fold (GCV on the raw block scores -247 on the W5.1 artifact);
 # 0.5.0 does, and sets the gcv_at_edge_ / null_model_ fit diagnostics the W5.10 response block reads.
+# Raised to >=0.6.0 (W5.2, 2026-10-19): the crossval route's pool is the model reader's composed
+# `trainval` view, and the folds are cut on the `ticker_code` / `window_end_date` keys 0.6.0 reads.
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.30",
@@ -65,7 +67,7 @@ dependencies = [
     # no longer adds a table entry for every unseen client address.
     "juniper-service-core>=0.7.1,<0.8.0",
     "juniper-model-core[crossval]>=0.2.0,<0.4.0",
-    "juniper-recurrence-model>=0.5.0,<0.6.0",
+    "juniper-recurrence-model>=0.6.0,<0.7.0",
     "juniper-data-client>=0.6.0,<0.7.0",
 ]
 
@@ -129,7 +131,7 @@ bench-equities = [
 # floor is the app's own >=0.4.0 (see dependencies), which subsumes both that and the >=0.3.0
 # decision 11's `derive_full_split` requires.
 bench-torch = [
-    "juniper-recurrence-model[torch]>=0.5.0,<0.6.0",
+    "juniper-recurrence-model[torch]>=0.6.0,<0.7.0",
 ]
 # G-5 benchmark figures (bench.plots): forecast-vs-truth, residuals, Δt distribution, and the
 # per-model r2 comparison. Kept out of [bench] like [bench-equities] / [bench-torch] so the

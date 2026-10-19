@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from juniper_recurrence_model import LMURegressor
 
     from juniper_recurrence.events import EventSink
-    from juniper_recurrence.schemas import DatasetDescriptor, ReadoutDiagnostics
+    from juniper_recurrence.schemas import CrossValFolding, DatasetDescriptor, ReadoutDiagnostics
 
 __all__ = ["AppState", "FailureRecord", "Operation", "OperationKind", "StatusSnapshot", "new_operation_id", "utc_now_iso"]
 
@@ -146,6 +146,7 @@ class AppState:
         self._crossval_result: CrossValResult | None = None
         self._crossval_dataset: DatasetDescriptor | None = None
         self._crossval_diagnostics: list[ReadoutDiagnostics] = []
+        self._crossval_folding: CrossValFolding | None = None
 
     # --- operations (W1.5) ------------------------------------------------------------------
 
@@ -302,18 +303,20 @@ class AppState:
         """Snapshot id the current model was restored from, or ``None`` if it was fitted here."""
         return self._restored_from
 
-    def set_crossval(self, result: CrossValResult, dataset: DatasetDescriptor, diagnostics: list[ReadoutDiagnostics]) -> None:
+    def set_crossval(self, result: CrossValResult, dataset: DatasetDescriptor, diagnostics: list[ReadoutDiagnostics], folding: CrossValFolding) -> None:
         """Publish a completed cross-validation run. Sets ``_crossval_result`` last (publish-the-pointer-last).
 
         ``diagnostics`` is one :class:`~juniper_recurrence.schemas.ReadoutDiagnostics` per fold, in
-        ``result.folds`` order (W5.10); the status route re-serves it with the result.
+        ``result.folds`` order (W5.10); ``folding`` is how the folds were cut (W5.2); the status route
+        re-serves both with the result.
         """
         self._crossval_dataset = dataset
         self._crossval_diagnostics = list(diagnostics)
+        self._crossval_folding = folding
         self._crossval_result = result  # published last
 
-    def crossval_status(self) -> tuple[str, CrossValResult | None, DatasetDescriptor | None, list[ReadoutDiagnostics]]:
-        """``("idle"|"done", last_result, dataset, per_fold_diagnostics)`` for ``GET /v1/crossval/status``."""
+    def crossval_status(self) -> tuple[str, CrossValResult | None, DatasetDescriptor | None, list[ReadoutDiagnostics], CrossValFolding | None]:
+        """``("idle"|"done", last_result, dataset, per_fold_diagnostics, folding)`` for ``GET /v1/crossval/status``."""
         if self._crossval_result is None:
-            return ("idle", None, None, [])
-        return ("done", self._crossval_result, self._crossval_dataset, self._crossval_diagnostics)
+            return ("idle", None, None, [], None)
+        return ("done", self._crossval_result, self._crossval_dataset, self._crossval_diagnostics, self._crossval_folding)

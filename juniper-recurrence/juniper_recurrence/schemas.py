@@ -101,7 +101,7 @@ def _validate_readout_fields(
 # in the model loader, as a ``ValueError`` on a missing NPZ key — a 500-shaped failure for what is a
 # malformed request. Naming the four here moves the rejection to the request boundary (422), which is
 # also where the OpenAPI schema can advertise them.
-SplitName = Literal["train", "val", "test", "full"]
+SplitName = Literal["train", "val", "test", "full", "trainval"]
 
 
 class DatasetRef(BaseModel):
@@ -357,7 +357,11 @@ class CrossValRequest(BaseModel):
     dataset: DatasetRef
     n_folds: int = Field(ge=2)
     scheme: Literal["expanding", "rolling"] = "expanding"
-    embargo: int = Field(default=0, ge=0)
+    # W5.2: ``embargo`` is in windows, applied per entity, and ``None`` means one look-back -- the
+    # default that keeps an eval window's history clear of every train window. ``embargo_days`` is a
+    # separately named duration gap on top (needs the artifact's ``window_end_date``).
+    embargo: int | None = Field(default=None, ge=0)
+    embargo_days: float | None = Field(default=None, ge=0)
     min_train: int | None = Field(default=None, ge=1)
     d: int | None = Field(default=None, ge=1)
     theta: float | None = Field(default=None, gt=0)
@@ -402,6 +406,26 @@ class CrossValFoldModel(BaseModel):
     diagnostics: ReadoutDiagnostics = Field(description="The resolved readout hyperparameters of this fold's fit (W5.10): theta, ridge mode and value, RFF bandwidth, GCV edge / null-model flags.")
 
 
+class CrossValFolding(BaseModel):
+    """How the folds were cut (W5.2): the pool is the ``trainval`` view (``dataset.split``), and this says the rest.
+
+    ``embargo`` is the resolved per-entity window gap (the look-back when the request omitted it);
+    ``grouped`` / ``ordered`` say whether the artifact's ``ticker_code`` / ``window_end_date`` cut the
+    folds (a keyless single series is row-indexed); the two ``dropped_*`` counts are the train windows
+    the label-availability rule and ``embargo_days`` removed across all folds.
+    """
+
+    lookback: int
+    embargo: int
+    embargo_days: float | None = None
+    grouped: bool
+    ordered: bool
+    n_entities: int | None = None
+    n_folds: int
+    dropped_label_availability: int
+    dropped_embargo_days: int
+
+
 class CrossValResponse(BaseModel):
     """``POST /v1/crossval`` result: per-fold detail + per-metric mean / std aggregates."""
 
@@ -411,6 +435,7 @@ class CrossValResponse(BaseModel):
     eval_aggregate: dict[str, float]
     eval_std: dict[str, float]
     dataset: DatasetDescriptor
+    folding: CrossValFolding
 
 
 class CrossValStatusResponse(BaseModel):
