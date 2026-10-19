@@ -81,6 +81,17 @@ LMUSerializer().save(model, "/tmp/lmu")   # writes /tmp/lmu.npz (lossless round-
 `LMURegressor` passes model-core's conformance kit unchanged
 (`tests/test_conformance.py`), proving the WS-4 refactor template.
 
+## Reading an artifact
+
+`sequence_data_from_arrays` / `load_sequence_npz` read one split of a juniper-data sequence
+artifact: `train`, `val`, `test`, or two composed views -- `full` (train | val | test) and, since
+0.6.0, `trainval` (train | val), the cross-validation pool that leaves `test` for a single
+out-of-sample read. Both views are laid down entity-major (every window of one ticker, then the
+next), which is the order juniper-data wrote, not a plain concatenation. A panel artifact's
+per-window `ticker_code` and `window_end_date` (a `YYYYMMDD` integer) come back on the
+`SequenceData` as well; they are not fit kwargs but the `groups` / `order` keys for model-core's
+`walk_forward_folds`, so folds are cut on the global date with every ticker's earlier windows in train.
+
 ## Readout spectrum
 
 The LMU memory is always the fixed, closed-form Δt-native recurrence; only the **readout** on top of
