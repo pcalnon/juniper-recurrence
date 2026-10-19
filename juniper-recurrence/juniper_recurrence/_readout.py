@@ -17,16 +17,25 @@ the spec classes.
   Requires the optional ``[torch]`` extra **at runtime**; this module probes for it (``find_spec``)
   and raises a clear error when it is absent, rather than crashing mid-fit. The MLP regularises via
   weight decay (``mlp_weight_decay``), so ``ridge`` is rejected for this rung.
+
+The reverse translation lives here too: :func:`readout_diagnostics` reads a *fitted* model's
+resolved hyperparameters (theta, the ridge mode and the penalty the solve used, the RFF bandwidth,
+the GCV edge / null-model flags) into the :class:`~juniper_recurrence.schemas.ReadoutDiagnostics`
+block the ``/v1/train`` and ``/v1/crossval`` responses and the ``train`` CLI carry (W5.10).
 """
 
 from __future__ import annotations
 
 import importlib.util
+import math
 from typing import Literal
 
 from juniper_recurrence_model import LMURegressor, MLPReadoutSpec, RFFReadoutSpec
+from juniper_recurrence_model import readouts as _model_readouts
 
-__all__ = ["ReadoutKind", "build_lmu_regressor"]
+from juniper_recurrence.schemas import ReadoutDiagnostics
+
+__all__ = ["ReadoutKind", "build_lmu_regressor", "readout_diagnostics"]
 
 #: The readout rungs reachable over the HTTP / CLI edge. ``"mlp"`` (Rung 2b) needs the optional
 #: ``[torch]`` extra **at runtime** — the spec class imports fine torch-free (torch is lazily imported
@@ -126,3 +135,71 @@ def build_lmu_regressor(
         )
         return LMURegressor(d=d, theta=theta, readout=spec_mlp)
     raise ValueError(f"unknown readout {kind!r}; expected 'linear', 'rff', or 'mlp'")
+
+
+def _gcv_grid_bounds() -> tuple[float, float] | None:
+    """``(floor, ceiling)`` of the model's GCV grid, or ``None`` when the model does not expose it."""
+    grid = getattr(_model_readouts, "_GCV_GRID", None)
+    if grid is None or len(grid) == 0:
+        return None
+    return float(grid[0]), float(grid[-1])
+
+
+def readout_diagnostics(model: LMURegressor) -> ReadoutDiagnostics:
+    """Read the resolved readout hyperparameters off a **fitted** ``LMURegressor`` (W5.10).
+
+    The request names *modes* -- ``theta=None``, ``ridge="gcv"``, ``rff_gamma="median"`` -- and the
+    model resolves each at ``fit``: theta from the data, lambda from the GCV grid, gamma from the
+    median heuristic. The model writes the resolved values back onto itself (``model.theta``; the
+    live readout's ``ridge`` / ``gamma``) and keeps the *requested* mode on the immutable spec it was
+    built from, so both ends of the translation are readable after the fit. This is the one place
+    that reads them, for the two routes and the CLI alike.
+
+    ``gcv_at_edge`` is derived here from the selected lambda and the grid's floor / ceiling when the
+    penalty was GCV-selected. ``null_model`` needs the GCV curve beyond the ceiling, which only the
+    model can evaluate: it is taken from the fitted readout's ``null_model_`` attribute when present
+    (the W5.9 contract, juniper-recurrence-model 0.5.0; the trailing-underscore fit-diagnostic
+    convention the MLP rung already uses for ``n_epochs_`` / ``stopped_reason_``) and is ``None``
+    otherwise. A readout that reports its own ``gcv_at_edge_`` wins over the derivation here.
+
+    Raises:
+        RuntimeError: if ``model`` has not been fitted (there is nothing resolved to read).
+    """
+    readout = getattr(model, "_readout", None)
+    if readout is None or not readout.is_fitted:
+        raise RuntimeError("readout diagnostics need a fitted model")
+    if model.theta is None or not (model.theta > 0):
+        raise RuntimeError(f"fitted model has no resolved theta (theta={model.theta!r})")
+
+    kind = str(readout.kind)
+    requested_ridge = getattr(model._readout_spec, "ridge", None)
+    selected = getattr(readout, "ridge", None)
+    ridge_selected = None if selected is None or isinstance(selected, str) else float(selected)
+    ridge_mode: Literal["fixed", "gcv"] | None
+    if ridge_selected is None:
+        ridge_mode = None
+    else:
+        ridge_mode = "gcv" if requested_ridge == "gcv" else "fixed"
+
+    gamma_raw = getattr(readout, "gamma", None)
+    gamma = None if gamma_raw is None or isinstance(gamma_raw, str) else float(gamma_raw)
+
+    at_edge = getattr(readout, "gcv_at_edge_", None)
+    if at_edge is None and ridge_mode == "gcv" and ridge_selected is not None:
+        bounds = _gcv_grid_bounds()
+        if bounds is not None:
+            floor, ceiling = bounds
+            at_floor = ridge_selected <= floor or math.isclose(ridge_selected, floor, rel_tol=1e-9)
+            at_ceiling = ridge_selected >= ceiling or math.isclose(ridge_selected, ceiling, rel_tol=1e-9)
+            at_edge = at_floor or at_ceiling
+    null_model = getattr(readout, "null_model_", None)
+
+    return ReadoutDiagnostics(
+        readout=kind,
+        theta=float(model.theta),
+        ridge_mode=ridge_mode,
+        ridge_selected=ridge_selected,
+        gamma=gamma,
+        gcv_at_edge=None if at_edge is None else bool(at_edge),
+        null_model=None if null_model is None else bool(null_model),
+    )

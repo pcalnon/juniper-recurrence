@@ -63,6 +63,13 @@ cross-validation run while one is in progress returns `409`.
 trained on (`dataset.split`), and the response says so with `metrics_scope: "in_sample"`. They
 measure fit, not generalisation; the route reports no held-out metric.
 
+Both responses carry a **`diagnostics`** block per fit -- once on `POST /v1/train`, once per fold
+on `POST /v1/crossval` -- with the hyperparameters the fit *resolved*: `theta` (the data-driven
+value a `theta=None` request became, per fold), `ridge_mode` / `ridge_selected` (the lambda
+`ridge="gcv"` selected), `gamma` (the median-heuristic RFF bandwidth), and the `gcv_at_edge` /
+`null_model` flags (`null` means *not determined*; `null_model` is populated once the model
+reports it). The `train` CLI prints the same block under `Readout:`.
+
 `POST /v1/train` and `POST /v1/crossval` accept a **`readout`** selector (DP-3): `"linear"`
 (default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
 `rff_features` / `rff_gamma`), or `"mlp"` (a torch MLP with the `mlp_*` knobs — needs the `[torch]`

@@ -9,6 +9,28 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /v1/train` and every fold of `POST /v1/crossval` report the hyperparameters the fit
+  resolved** (W5.10 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  the response half of F-S7; accepted by the owner 2026-10-18). A new `diagnostics` block
+  (`ReadoutDiagnostics`) on `TrainResponse` and on each `CrossValFoldModel` carries `readout`,
+  `theta` (the data-driven median per-window elapsed time a `theta=None` request became -- per
+  fold, since each fold resolves its own), `ridge_mode` (`fixed` / `gcv` / null for mlp),
+  `ridge_selected` (the lambda GCV chose, or the fixed value), `gamma` (the median-heuristic RFF
+  bandwidth), and two flags: `gcv_at_edge` (the selected lambda sits at the grid floor `1e-6` or
+  ceiling `1e3`; null unless GCV-selected) and `null_model` (the GCV optimum lies beyond the
+  ceiling, so the fit is the intercept-only model). `null_model` is read from the fitted readout's
+  `null_model_` attribute and stays null until juniper-recurrence-model reports it (plan W5.9,
+  model 0.5.0): on both flags null means *not determined*, never *false*. `GET /v1/crossval/status`
+  re-serves the per-fold blocks with the persisted result, and the `train` CLI prints them under
+  `Readout:`. The block is read off the fitted model after the solve and changes no number. Until
+  now every one of these values -- the numbers that decided each candidate in the W5.1 cause note --
+  was an in-process read the service could not provide; the R5 acceptance band (W5.4) cannot be
+  made null-model-aware without it, and the W5.8 (B) default (`default_ridge: "gcv"`), which
+  abstains silently, is gated on the response announcing the lambda it chose.
+
 ## [0.6.1] - 2026-10-18
 
 ### Fixed

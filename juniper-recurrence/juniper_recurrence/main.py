@@ -177,7 +177,7 @@ def _train(args: argparse.Namespace) -> int:
     """Headless train: load a 3-D NPZ, fit ``LMURegressor``, print metrics, persist."""
     from juniper_recurrence_model import LMUSerializer
 
-    from juniper_recurrence._readout import build_lmu_regressor
+    from juniper_recurrence._readout import build_lmu_regressor, readout_diagnostics
     from juniper_recurrence.data import load_sequence_data
     from juniper_recurrence.settings import Settings
 
@@ -238,6 +238,10 @@ def _train(args: argparse.Namespace) -> int:
     print("Metrics:")
     for key, value in result.final_metrics.items():
         print(f"  {key}: {value:.6f}")
+    # W5.10: the resolved hyperparameters, as the /v1/train response reports them.
+    print("Readout:")
+    for key, value in readout_diagnostics(model).model_dump().items():
+        print(f"  {key}: {value}")
 
     if args.out:
         LMUSerializer().save(model, args.out)

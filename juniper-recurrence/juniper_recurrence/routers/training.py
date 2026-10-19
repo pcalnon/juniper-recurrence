@@ -29,7 +29,7 @@ from juniper_data_client import JuniperDataClientError
 from juniper_service_core import TrainingLifecycle
 
 from juniper_recurrence import metrics
-from juniper_recurrence._readout import build_lmu_regressor
+from juniper_recurrence._readout import build_lmu_regressor, readout_diagnostics
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.events import EventSink
 from juniper_recurrence.routers._common import RecordedOperation, RequestIdHeader, get_settings, get_state, map_data_error
@@ -118,7 +118,12 @@ def train(
         dataset = DatasetDescriptor(**descriptor)
         duration = time.perf_counter() - start
         metrics.record_train(duration, result.final_metrics)
+        # W5.10: what the fit resolved its hyperparameters to -- the theta a ``theta=None`` request
+        # became, the lambda ``ridge="gcv"`` selected, the gamma ``rff_gamma="median"`` resolved.
+        diagnostics = readout_diagnostics(model)
         logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
+        # The dataset is named by the line above; this one carries only model-resolved values.
+        logger.info("training diagnostics: %s", diagnostics.model_dump(exclude_none=True))
         response = TrainResponse(
             final_metrics=result.final_metrics,
             # W0.7: LMURegressor.fit scores final_metrics on the arrays it was fitted on (no X_val is
@@ -129,6 +134,7 @@ def train(
             stopped_reason=result.stopped_reason,
             dataset=dataset,
             operation_id=operation.operation_id,
+            diagnostics=diagnostics,
         )
         # Published LAST, once nothing left can fail: the status then says "trained" only for a run
         # whose caller is about to receive its result, never for one that went on to raise.
