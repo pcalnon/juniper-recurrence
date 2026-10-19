@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Changed
 
 - **The linear readout standardises the memory block on the train fold whenever `ridge != 0.0`**
