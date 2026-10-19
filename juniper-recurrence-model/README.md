@@ -88,7 +88,7 @@ the memory trajectory varies. Select it with the `readout=` constructor argument
 
 | Rung | Spec | What it fits | Notes |
 |---|---|---|---|
-| 0 / 1 | `LinearReadoutSpec` (default) | linear least squares, optional L2 | `ridge=` a float, or `"gcv"` for closed-form generalized-cross-validation selection |
+| 0 / 1 | `LinearReadoutSpec` (default) | linear least squares, optional L2 | `ridge=` a float, or `"gcv"` for closed-form generalized-cross-validation selection; any non-zero `ridge` standardises the memory block with the train-fold statistics first (`ridge=0.0`, the default, is the raw min-norm solve) |
 | 2a | `RFFReadoutSpec` | linear fit over random Fourier features of the memory | numpy-only; `n_features_out` / `gamma` (or `gamma="median"`) — adds nonlinear capacity |
 | 2b | `MLPReadoutSpec` | a small torch MLP over the memory | needs the `[torch]` extra (`pip install juniper-recurrence-model[torch]`); deterministic CPU fit |
 
@@ -102,7 +102,9 @@ All three rungs keep the closed-form Δt memory and pass the conformance kit (in
 save/load). On the synthetic `delay_product` capacity benchmark the RFF readout measures **+0.83 r²**
 over the linear readout; on the efficient-market equities target the spread is ≈0 (juniper-ml DP-3
 findings). Default to `linear` + `ridge="gcv"`; reach for `rff` / `mlp` when the target has genuine
-nonlinear structure.
+nonlinear structure. After a `"gcv"` fit the readout's `gcv_at_edge_` / `null_model_` say whether the
+selected penalty sits at the grid's edge or the GCV optimum is the intercept-only model (the fit
+abstains at the grid ceiling rather than extrapolate); either condition also logs a WARNING.
 
 ## Verified behaviour
 

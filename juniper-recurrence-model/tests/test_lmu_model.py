@@ -18,6 +18,7 @@ import pytest
 from juniper_model_core.validation import legal_event_order, validate_metrics, validate_topology
 
 from juniper_recurrence_model import LinearReadoutSpec, LMURegressor, LMUSerializer, VariableStepLMUMemory
+from juniper_recurrence_model.readouts import _ridge_solve
 
 
 def _toy_3d(n: int = 32, n_steps: int = 8, n_features: int = 3, seed: int = 0):
@@ -382,6 +383,46 @@ def test_gcv_ridge_selects_persists_and_roundtrips():
     assert restored.ridge == model.ridge  # selected λ persisted for retraining fidelity
 
 
+def test_model_ridge_zero_default_is_byte_identical_to_the_raw_lstsq_solve():
+    """W5.8 (B) leaves the conformance baseline alone: ridge=0.0 never standardises."""
+    X, dt, _ = _toy_3d(n=40, n_steps=6, n_features=2, seed=21)
+    y = np.random.default_rng(21).normal(size=(40,))
+    model = LMURegressor(d=8, theta=5.0)
+    model.fit(X, y, dt=dt)
+    assert model._readout.standardized is False
+    block = model._memory_block(np.asarray(X, dtype=float), dt, None, None)
+    design = np.concatenate([block, np.ones((40, 1))], axis=1)
+    expected, *_ = np.linalg.lstsq(design, y.reshape(40, 1), rcond=None)
+    assert np.array_equal(model._readout.coef, expected)
+
+
+def test_model_nonzero_ridge_standardises_and_roundtrips_lossless(tmp_path):
+    """A ridge > 0 fit standardises the memory block (W5.8 (B)) and its statistics ride the envelope."""
+    X, dt, _ = _toy_3d(n=40, n_steps=6, n_features=2, seed=22)
+    y = np.random.default_rng(22).normal(size=(40,))
+    model = LMURegressor(d=8, theta=5.0, ridge=0.5)
+    model.fit(X, y, dt=dt)
+    assert model._readout.standardized is True
+    before = model.predict(X, dt=dt)
+    LMUSerializer().save(model, tmp_path / "m")
+    restored = LMUSerializer().load(tmp_path / "m")
+    assert restored._readout.standardized is True
+    assert np.array_equal(before, restored.predict(X, dt=dt))
+
+
+def test_model_gcv_fit_surfaces_the_w5_9_flags_on_the_readout():
+    """The attributes juniper-recurrence's readout_diagnostics reads (W5.10 contract) are set after a GCV fit."""
+    X, dt, _ = _toy_3d(n=60, n_steps=6, n_features=2, seed=23)
+    y = np.random.default_rng(23).normal(size=(60,))  # noise: the flags are booleans either way
+    model = LMURegressor(d=8, theta=5.0, ridge="gcv")
+    model.fit(X, y, dt=dt)
+    assert isinstance(model._readout.gcv_at_edge_, bool)
+    assert isinstance(model._readout.null_model_, bool)
+    fixed = LMURegressor(d=8, theta=5.0, ridge=0.1)
+    fixed.fit(X, y, dt=dt)
+    assert fixed._readout.gcv_at_edge_ is None and fixed._readout.null_model_ is None
+
+
 def test_linear_readout_spec_matches_ridge_kwarg_byte_identical():
     """LMURegressor(readout=LinearReadoutSpec(ridge=r)) is byte-identical to LMURegressor(ridge=r)."""
     X, dt, rng = _toy_3d(n=80, n_steps=8, n_features=3, seed=51)
@@ -410,12 +451,19 @@ def test_coef_property_none_before_fit_and_forwards_after():
 
 
 def test_loads_pre_dp3_format_npz():
-    """A pre-DP-3 .npz (top-level 'coef', no meta['readout']) loads and predicts identically."""
+    """A pre-DP-3 .npz (top-level 'coef', no meta['readout']) loads and predicts identically.
+
+    A pre-DP-3 ridge fit solved on the **raw** memory block (train-fold standardisation arrived with
+    0.5.0, W5.8 (B), and persists its statistics beside the coefficients), so the fixture's
+    coefficients are a raw-block ridge solve and the reload must predict on the raw block.
+    """
     X, dt, rng = _toy_3d(n=40, n_steps=8, n_features=3, seed=53)
     y = rng.normal(size=(40, 1))
     model = LMURegressor(d=10, theta=6.0, ridge=1e-3)
-    model.fit(X, y, dt=dt)
-    expected = model.predict(X, dt=dt)
+    model.fit(X, y, dt=dt)  # populates the envelope fields the old meta carried
+    design = np.concatenate([model._memory_block(np.asarray(X, dtype=float), dt, None, None), np.ones((40, 1))], axis=1)
+    old_coef = _ridge_solve(design, y, 1e-3)  # what a pre-DP-3 file stored
+    expected = design @ old_coef
     old_meta = {  # mirrors the pre-DP-3 LMUSerializer.save payload (no "schema"/"readout" keys)
         "d": model.d,
         "theta": model.theta,
@@ -431,10 +479,11 @@ def test_loads_pre_dp3_format_npz():
     }
     with tempfile.TemporaryDirectory() as tmp:
         path = str(pathlib.Path(tmp) / "old")
-        np.savez(path, coef=model._coef, meta=json.dumps(old_meta))
+        np.savez(path, coef=old_coef, meta=json.dumps(old_meta))
         restored = LMUSerializer().load(path)
     assert np.array_equal(expected, restored.predict(X, dt=dt))
     assert restored.ridge == 1e-3
+    assert restored._readout.standardized is False  # no statistics in the file: the raw block, as fitted
 
 
 def test_topology_carries_nested_readout_descriptor():

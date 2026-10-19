@@ -14,7 +14,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from juniper_recurrence_model.readouts import READOUT_REGISTRY, LinearReadout, LinearReadoutSpec, RFFReadout, RFFReadoutSpec, build_readout_from_state
+from juniper_recurrence_model.readouts import _GCV_GRID, READOUT_REGISTRY, LinearReadout, LinearReadoutSpec, RFFReadout, RFFReadoutSpec, _gcv_select, _standardize_fit, build_readout_from_state
 
 
 def _block(n: int = 80, p: int = 12, k: int = 0, seed: int = 0):
@@ -107,6 +107,172 @@ def test_gcv_generalizes_better_than_unregularized_on_noisy_near_overparam_data(
     err_plain = float(np.mean((plain.predict(m_te, e_te) - y_te) ** 2))
     err_gcv = float(np.mean((gcv.predict(m_te, e_te) - y_te) ** 2))
     assert err_gcv < err_plain
+
+
+# --- W5.9: the GCV grid's edges are reported, not moved --------------------------------------
+
+
+def _noise_block(seed: int = 1, n: int = 200, p: int = 10):
+    """A target with nothing to fit: the GCV optimum is the intercept-only (null) model."""
+    rng = np.random.default_rng(seed)
+    return rng.normal(size=(n, p)), np.empty((n, 0)), rng.normal(size=(n, 1))
+
+
+def test_gcv_select_reports_the_null_model_and_the_ceiling_on_pure_noise(caplog):
+    M, extra, y = _noise_block()
+    with caplog.at_level("WARNING", logger="juniper_recurrence_model.readouts"):
+        selection = _gcv_select(np.concatenate([M, extra], axis=1), y)
+    assert selection.ridge == float(_GCV_GRID[-1])  # the ceiling: no grid point beats the null model
+    assert selection.at_edge is True
+    assert selection.null_model is True
+    assert selection.gcv_null < selection.gcv_best  # the one off-grid point that is free to evaluate
+    n = M.shape[0]
+    yc = y - y.mean(axis=0)
+    assert selection.gcv_null == pytest.approx(n * float(np.sum(yc**2)) / (n - 1.0) ** 2)
+    assert "intercept-only model" in caplog.text and "abstains at the ceiling" in caplog.text
+
+
+def test_gcv_select_interior_optimum_sets_no_flags_and_logs_nothing(caplog):
+    M, extra, rng = _block(n=200, p=16, k=1, seed=3)
+    design = np.concatenate([M, extra, np.ones((200, 1))], axis=1)
+    y = design @ rng.normal(size=(design.shape[1], 1)) + 0.1 * rng.normal(size=(200, 1))
+    with caplog.at_level("WARNING", logger="juniper_recurrence_model.readouts"):
+        selection = _gcv_select(np.concatenate([M, extra], axis=1), y)
+    assert float(_GCV_GRID[0]) < selection.ridge < float(_GCV_GRID[-1])
+    assert selection.at_edge is False
+    assert selection.null_model is False
+    assert selection.gcv_best < selection.gcv_null
+    assert caplog.text == ""
+
+
+def test_gcv_select_at_the_floor_is_an_edge_but_not_the_null_model(caplog):
+    rng = np.random.default_rng(0)
+    M = rng.normal(size=(200, 8))
+    y = M @ rng.normal(size=(8, 1))  # exact linear target, no noise: the smallest penalty wins
+    with caplog.at_level("WARNING", logger="juniper_recurrence_model.readouts"):
+        selection = _gcv_select(M, y)
+    assert selection.ridge == float(_GCV_GRID[0])
+    assert selection.at_edge is True
+    assert selection.null_model is False
+    assert "edge of the grid" in caplog.text
+
+
+def test_linear_gcv_fit_exposes_the_w5_9_flags_as_booleans():
+    M, extra, y = _noise_block()
+    ro = LinearReadout(ridge="gcv")
+    assert ro.gcv_at_edge_ is None and ro.null_model_ is None  # not determined before a fit
+    ro.fit(M, extra, y)
+    assert ro.gcv_at_edge_ is True and ro.null_model_ is True
+    assert ro.ridge == float(_GCV_GRID[-1])
+    M2, extra2, rng = _block(n=200, p=16, k=1, seed=3)
+    y2 = np.concatenate([M2, extra2, np.ones((200, 1))], axis=1) @ rng.normal(size=(18, 1)) + 0.1 * rng.normal(size=(200, 1))
+    ro.ridge = "gcv"
+    ro.fit(M2, extra2, y2)  # a re-fit resets and re-derives the flags
+    assert ro.gcv_at_edge_ is False and ro.null_model_ is False
+
+
+def test_fixed_ridge_fit_leaves_the_w5_9_flags_undetermined():
+    M, extra, rng = _block(n=60, p=8, seed=2)
+    y = rng.normal(size=(60, 1))
+    for ridge in (0.0, 0.3):
+        ro = LinearReadout(ridge=ridge)
+        ro.fit(M, extra, y)
+        assert ro.gcv_at_edge_ is None and ro.null_model_ is None  # not applicable: None, never False
+
+
+def test_w5_9_flags_are_not_persisted_and_read_none_after_reload():
+    M, extra, y = _noise_block()
+    ro = LinearReadout(ridge="gcv")
+    ro.fit(M, extra, y)
+    arrays, descriptor = ro.save_state()
+    assert "gcv_at_edge_" not in descriptor and "null_model_" not in descriptor
+    restored = LinearReadout.from_state(arrays, descriptor)
+    assert restored.gcv_at_edge_ is None and restored.null_model_ is None
+
+
+def test_rff_gcv_fit_exposes_the_w5_9_flags_and_a_fixed_ridge_does_not():
+    M, extra, y = _noise_block(p=6)
+    gcv = RFFReadout(n_features_out=32, ridge="gcv")
+    gcv.fit(M, extra, y, random_seed=0)
+    assert isinstance(gcv.gcv_at_edge_, bool) and isinstance(gcv.null_model_, bool)
+    assert gcv.gcv_at_edge_ == (gcv.ridge in (float(_GCV_GRID[0]), float(_GCV_GRID[-1])))
+    fixed = RFFReadout(n_features_out=32, ridge=1.0)
+    fixed.fit(M, extra, y, random_seed=0)
+    assert fixed.gcv_at_edge_ is None and fixed.null_model_ is None
+
+
+# --- W5.8 (B): the linear rung standardises the memory block on the train fold when ridge != 0 ---
+
+
+def test_linear_ridge_zero_path_is_untouched_by_standardisation():
+    M, extra, rng = _block(n=50, p=10, k=1, seed=5)
+    y = rng.normal(size=(50, 1))
+    ro = LinearReadout(ridge=0.0)
+    ro.fit(M, extra, y)
+    expected, *_ = np.linalg.lstsq(np.concatenate([M, extra, np.ones((50, 1))], axis=1), y, rcond=None)
+    assert np.array_equal(ro.coef, expected)  # byte-identical to the raw min-norm solve (the conformance baseline)
+    assert ro.standardized is False
+    arrays, descriptor = ro.save_state()
+    assert set(arrays) == {"coef"} and descriptor["standardized"] is False
+
+
+@pytest.mark.parametrize("ridge", [0.3, "gcv"])
+def test_linear_nonzero_ridge_standardises_with_train_fold_statistics(ridge):
+    M, extra, rng = _block(n=80, p=6, k=1, seed=8)
+    M = M * np.array([1.0, 10.0, 100.0, 1e3, 1e4, 1e5])  # columns of wildly different scale
+    y = rng.normal(size=(80, 1))
+    ro = LinearReadout(ridge=ridge)
+    ro.fit(M, extra, y)
+    mean, std = _standardize_fit(M)
+    assert ro.standardized is True
+    assert np.array_equal(ro._mean, mean) and np.array_equal(ro._std, std)
+    # A later block is standardised with the TRAIN statistics, never its own.
+    M_eval, extra_eval, _ = _block(n=30, p=6, k=1, seed=9)
+    M_eval = M_eval * 7.0
+    design_eval = np.concatenate([(M_eval - mean) / std, extra_eval, np.ones((30, 1))], axis=1)
+    assert np.array_equal(ro.predict(M_eval, extra_eval), design_eval @ ro.coef)
+
+
+def test_linear_fixed_ridge_is_column_scale_invariant_once_standardised():
+    """The reason for W5.8 (B): a single penalty on raw columns depends on their units; standardised, it does not."""
+    M, extra, rng = _block(n=120, p=5, k=0, seed=11)
+    y = M @ rng.normal(size=(5, 1)) + rng.normal(size=(120, 1))
+    scale = np.array([1.0, 1e-3, 1e3, 5.0, 0.02])
+    a = LinearReadout(ridge=2.0)
+    a.fit(M, extra, y)
+    b = LinearReadout(ridge=2.0)
+    b.fit(M * scale, extra, y)
+    assert np.allclose(a.predict(M, extra), b.predict(M * scale, extra), rtol=1e-9, atol=1e-9)
+
+
+def test_linear_standardised_fit_persists_its_statistics_and_reloads_bit_exact():
+    M, extra, rng = _block(n=70, p=9, k=1, seed=12)
+    y = rng.normal(size=(70, 1))
+    ro = LinearReadout(ridge=0.5)
+    ro.fit(M, extra, y)
+    arrays, descriptor = ro.save_state()
+    assert set(arrays) == {"coef", "mean", "std"} and descriptor["standardized"] is True
+    restored = LinearReadout.from_state(arrays, descriptor)
+    assert restored.standardized is True
+    assert np.array_equal(ro.predict(M, extra), restored.predict(M, extra))
+
+
+def test_linear_pre_0_5_0_state_without_statistics_predicts_on_the_raw_block():
+    M, extra, rng = _block(n=40, p=4, k=0, seed=13)
+    coef = rng.normal(size=(5, 1))
+    restored = LinearReadout.from_state({"coef": coef}, {"kind": "linear", "ridge": 0.7})  # no mean / std, no flag
+    assert restored.standardized is False
+    assert np.array_equal(restored.predict(M, extra), np.concatenate([M, np.ones((40, 1))], axis=1) @ coef)
+
+
+def test_linear_standardisation_guards_a_zero_variance_column():
+    M, extra, rng = _block(n=40, p=4, k=0, seed=14)
+    M[:, 2] = 3.0
+    y = rng.normal(size=(40, 1))
+    ro = LinearReadout(ridge="gcv")
+    ro.fit(M, extra, y)
+    assert np.all(np.isfinite(ro.predict(M, extra)))
+    assert ro._std[2] == 1.0
 
 
 def test_gcv_invalid_ridge_string_raises():

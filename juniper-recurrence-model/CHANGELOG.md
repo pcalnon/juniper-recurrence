@@ -8,6 +8,41 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Changed
+
+- **The linear readout standardises the memory block on the train fold whenever `ridge != 0.0`**
+  (W5.8 (B) of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  accepted by the owner 2026-10-18). `LinearReadout` now applies the per-column train-fold mean / std
+  (`_standardize_fit`, the statistics the RFF rung already used) to `M` before a `ridge > 0.0` or
+  `ridge="gcv"` solve, and again at `predict`; the `extra` side-channel and the bias column are
+  never standardised. The statistics ride `save_state` (`mean` / `std` arrays, a `standardized`
+  descriptor flag), so a reload is bit-exact, and a pre-0.5.0 state without them predicts on the raw
+  block as before. The `ridge == 0.0` min-norm path -- the bench's ratified conformance baseline and
+  `LMURegressor`'s default -- is byte-identical to 0.4.0. Measured on the W5.1 equities artifact
+  (five expanding folds, `reports/2026-10-05_recurrence-equities-cv-consensus/reconciler-rederive.json`
+  in juniper-ml): GCV on the raw block aggregates **−247**, a fixed `ridge=1.0` on the standardised
+  block **−192**, GCV on the standardised block **−0.195** (λ at the grid ceiling in every fold, the
+  null-model abstention below) and **−8.8e12** for a standardised min-norm solve -- which is why the
+  `0.0` path is left alone. A fixed non-zero `ridge` therefore fits a different, scale-invariant
+  solution from 0.4.0's; `ridge="gcv"` still writes the selected λ back and persists it.
+
+### Added
+
+- **GCV reports an at-edge or null-model selection instead of moving the grid** (plan W5.9; the
+  contract `juniper-recurrence` 0.6.x's `readout_diagnostics` already reads, juniper-recurrence#208).
+  `_gcv_select` now also evaluates the λ → ∞ limit -- the intercept-only fit's GCV
+  `n·‖yc‖² / (n − 1)²`, the one off-grid point that costs nothing -- and returns a `_GCVSelection`
+  (`coef`, `ridge`, `gcv_best`, `gcv_null`, `at_edge`, `null_model`). A fitted `LinearReadout` /
+  `RFFReadout` exposes **`gcv_at_edge_`** (the selected λ is the grid floor `1e-6` or ceiling `1e3`)
+  and **`null_model_`** (the intercept-only fit beats every grid point, so the optimum lies beyond
+  the ceiling and the returned fit, at the ceiling, abstains). Both are `None` -- *not determined*,
+  never *false* -- after a fixed-`ridge` fit and on a readout rebuilt by `from_state`; neither is
+  persisted. Either condition logs a WARNING from `juniper_recurrence_model.readouts`. `_GCV_GRID`
+  is unchanged at `logspace(-6, 3, 60)`: on the equities artifact the optimum beyond the ceiling is
+  the null model in every raw linear fold and three of five RFF folds, so "re-run off the ceiling"
+  is unsatisfiable and a wider grid would only move the edge.
+
 ## [0.4.0] - 2026-10-10
 
 ### Changed
