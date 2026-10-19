@@ -101,7 +101,11 @@ observability = [
 # the service still starts, and /v1/train + /v1/crossval reject ``readout="mlp"`` with a clear 503
 # when the extra is absent. Distinct from [bench-torch] (which is for the offline benchmark only).
 torch = [
-    "juniper-recurrence-model[torch]>=0.4.0,<0.5.0",
+    # Moves with the base floor above. 0.7.0 shipped this extra at >=0.4.0,<0.5.0 against a base of
+    # >=0.5.0,<0.6.0 -- disjoint ranges, so `pip install "juniper-recurrence[torch]==0.7.0"` could not
+    # resolve (found 2026-10-19 in the index's requires_dist). tests/test_pyproject_floors.py pins the
+    # three model ranges and the image lock to one specifier set.
+    "juniper-recurrence-model[torch]>=0.6.0,<0.7.0",
 ]
 # Benchmark / evaluation harness (the bench/ directory; not part of the published dist).
 # juniper-data>=0.9.0 ships the synthetic Δt generators (#187/#188) + scaling meta (#189), the

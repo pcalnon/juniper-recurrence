@@ -33,6 +33,18 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   train route too. The floor is `juniper-recurrence-model>=0.6.0,<0.7.0` (also `[torch]`,
   `[bench-torch]` and the image lock), where the view and the keys live.
 
+### Fixed
+
+- **The `[torch]` extra resolves again.** 0.7.0 raised the base floor to `juniper-recurrence-model>=0.5.0,<0.6.0`
+  but left the `[torch]` extra at `juniper-recurrence-model[torch]>=0.4.0,<0.5.0` (its entry below says
+  otherwise), so the two ranges were disjoint and `pip install "juniper-recurrence[torch]==0.7.0"` cannot
+  resolve; 0.6.1 and earlier were consistent, and the base install and the image (which ships no torch)
+  are unaffected. The extra now follows the base floor (`>=0.6.0,<0.7.0`), and the new
+  `tests/test_pyproject_floors.py` pins `dependencies`, `[torch]`, `[bench-torch]` and the image lock to
+  one `juniper-recurrence-model` range. Found 2026-10-19 in the index's `requires_dist`.
+- The WARNING for an explicit crossval `embargo` below the look-back no longer interpolates the request's
+  value (CodeQL `py/log-injection`); the response's `folding.embargo` carries it.
+
 ## [0.7.0] - 2026-10-19
 
 ### Added

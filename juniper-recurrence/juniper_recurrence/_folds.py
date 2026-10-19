@@ -82,7 +82,8 @@ def build_folds(sequence: SequenceData, *, n_folds: int, scheme: str, embargo: i
     n, lookback = int(sequence.X.shape[0]), int(sequence.X.shape[1])
     resolved_embargo = lookback if embargo is None else int(embargo)
     if embargo is not None and embargo < lookback:
-        logger.warning("crossval embargo=%d is below the look-back of %d windows, so an eval window's history can overlap a train window's; omit embargo for the default of one look-back (plan W5.2)", embargo, lookback)
+        # The request's value stays off the log line (CodeQL py/log-injection); the response's `folding` block carries it.
+        logger.warning("crossval request set an embargo below the look-back of %d windows, so an eval window's history can overlap a train window's; omit embargo for the default of one look-back (plan W5.2)", lookback)
     order = sequence.window_end_date
     groups = sequence.ticker_code
     if embargo_days is not None and order is None:
