@@ -114,8 +114,13 @@ def test_diagnostics_linear_fixed_ridge_reports_the_value_and_no_gcv_flags() -> 
     assert diag.null_model is None  # not determined until the model reports it (W5.9)
 
 
-def test_diagnostics_linear_service_default_ridge_is_fixed_zero() -> None:
-    # A bare request: ridge=None falls back to default_ridge (0.0 today), and the block says so.
+def test_diagnostics_linear_service_default_ridge_is_gcv_and_an_explicit_zero_is_fixed() -> None:
+    # A bare request: ridge=None falls back to Settings().default_ridge -- "gcv" since 0.7.0 (W5.8 (B)) --
+    # and the block says so; a deployment that sets default_ridge back to 0.0 is reported as fixed 0.0.
+    diag = readout_diagnostics(_fitted(theta=2.0, ridge=None, default_ridge=Settings().default_ridge))
+    assert diag.ridge_mode == "gcv"
+    assert GCV_FLOOR <= diag.ridge_selected <= GCV_CEILING
+    assert isinstance(diag.gcv_at_edge, bool) and isinstance(diag.null_model, bool)  # the model reports both (W5.9)
     diag = readout_diagnostics(_fitted(theta=2.0, ridge=None, default_ridge=0.0))
     assert diag.ridge_mode == "fixed"
     assert diag.ridge_selected == 0.0
@@ -136,19 +141,33 @@ def test_diagnostics_gcv_reports_the_selected_lambda_and_the_edge_flag() -> None
     assert GCV_FLOOR <= diag.ridge_selected <= GCV_CEILING
     assert isinstance(diag.gcv_at_edge, bool)
     assert diag.gcv_at_edge == (diag.ridge_selected in (GCV_FLOOR, GCV_CEILING))
+    assert isinstance(diag.null_model, bool)  # model 0.5.0 (W5.9) sets null_model_ on every GCV fit
+
+
+def test_diagnostics_take_the_models_w5_9_flags_verbatim() -> None:
+    # juniper-recurrence-model 0.5.0 sets gcv_at_edge_ / null_model_ on the fitted readout after a GCV
+    # fit; the block carries exactly those, not a re-derivation.
+    model = _fitted(theta=2.0, ridge="gcv")
+    assert isinstance(model._readout.gcv_at_edge_, bool) and isinstance(model._readout.null_model_, bool)
+    diag = readout_diagnostics(model)
+    assert diag.gcv_at_edge is model._readout.gcv_at_edge_
+    assert diag.null_model is model._readout.null_model_
 
 
 @pytest.mark.parametrize("selected, expected", [(GCV_CEILING, True), (GCV_FLOOR, True), (1.0, False)])
 def test_diagnostics_gcv_at_edge_is_derived_from_the_grid_bounds(selected: float, expected: bool) -> None:
     # The flag is a function of the selected lambda and the grid's two ends; pin it at both ends and
-    # in the middle by overriding what the fitted readout reports as its selection.
+    # in the middle by overriding what the fitted readout reports as its selection. The model's own
+    # flag (set since model 0.5.0) wins when present, so clear it to exercise the fallback derivation.
     model = _fitted(theta=2.0, ridge="gcv")
     model._readout.ridge = selected
+    model._readout.gcv_at_edge_ = None
     assert readout_diagnostics(model).gcv_at_edge is expected
 
 
 def test_diagnostics_gcv_at_edge_is_none_when_the_model_hides_its_grid(monkeypatch) -> None:
     model = _fitted(theta=2.0, ridge="gcv")  # the fit itself needs the grid; hide it only from the read
+    model._readout.gcv_at_edge_ = None  # and pretend the readout did not report its own flag (pre-0.5.0 model)
     monkeypatch.delattr(model_readouts, "_GCV_GRID")
     diag = readout_diagnostics(model)
     assert diag.ridge_mode == "gcv"
@@ -198,9 +217,24 @@ def test_diagnostics_block_is_json_safe_floats_and_bools() -> None:
 
 
 def test_train_response_carries_the_fits_diagnostics(fake_data) -> None:
-    body = _client(api_keys=None).post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}, "d": 4, "theta": 3.0}).json()
+    body = _client(api_keys=None).post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}, "d": 4, "theta": 3.0, "ridge": 0.0}).json()
     assert set(body["diagnostics"]) == DIAGNOSTIC_KEYS
     assert body["diagnostics"] == {"readout": "linear", "theta": 3.0, "ridge_mode": "fixed", "ridge_selected": 0.0, "gamma": None, "gcv_at_edge": None, "null_model": None}
+
+
+def test_bare_train_request_gets_the_gcv_default_and_the_response_says_so(fake_data) -> None:
+    # W5.8 (B): a request that omits ``ridge`` is GCV-selected since 0.7.0, and the block announces the
+    # lambda it chose and whether the fit abstained -- the default must not be silent.
+    body = _client(api_keys=None).post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}, "d": 4, "theta": 3.0}).json()
+    diag = body["diagnostics"]
+    assert diag["readout"] == "linear" and diag["ridge_mode"] == "gcv"
+    assert GCV_FLOOR <= diag["ridge_selected"] <= GCV_CEILING
+    assert isinstance(diag["gcv_at_edge"], bool) and isinstance(diag["null_model"], bool)
+
+
+def test_bare_train_request_honours_a_deployment_that_opts_back_to_zero(fake_data) -> None:
+    body = _client(api_keys=None, default_ridge=0.0).post("/v1/train", json={"dataset": {"dataset_id": "ds-1"}, "d": 4, "theta": 3.0}).json()
+    assert body["diagnostics"]["ridge_mode"] == "fixed" and body["diagnostics"]["ridge_selected"] == 0.0
 
 
 def test_train_response_reports_the_resolved_theta_when_the_request_omitted_it(fake_data) -> None:
@@ -215,14 +249,17 @@ def test_train_response_reports_the_gcv_lambda(fake_data) -> None:
     assert diag["ridge_mode"] == "gcv"
     assert GCV_FLOOR <= diag["ridge_selected"] <= GCV_CEILING
     assert isinstance(diag["gcv_at_edge"], bool)
-    assert diag["null_model"] is None
+    assert isinstance(diag["null_model"], bool)  # reported by model 0.5.0 (W5.9)
 
 
 # --- /v1/crossval carries one block per fold, and the status re-serves it -----------------------
 
 
-def test_crossval_response_carries_per_fold_diagnostics(fake_full_data) -> None:
-    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4, "ridge": "gcv"}).json()
+@pytest.mark.parametrize("request_ridge", [{"ridge": "gcv"}, {}], ids=["explicit-gcv", "bare-request"])
+def test_crossval_response_carries_per_fold_diagnostics(fake_full_data, request_ridge) -> None:
+    # Explicit ``ridge="gcv"`` and the bare request (the W5.8 (B) default) are the same fit, and every
+    # fold's block reports the lambda it selected -- the response half of W5.8's acceptance.
+    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4, **request_ridge}).json()
     assert len(body["folds"]) == 3
     for fold in body["folds"]:
         diag = fold["diagnostics"]
@@ -233,7 +270,7 @@ def test_crossval_response_carries_per_fold_diagnostics(fake_full_data) -> None:
         assert GCV_FLOOR <= diag["ridge_selected"] <= GCV_CEILING
         assert isinstance(diag["gcv_at_edge"], bool)
         assert diag["gamma"] is None
-        assert diag["null_model"] is None
+        assert isinstance(diag["null_model"], bool)
 
 
 def test_crossval_per_fold_theta_is_each_folds_own_median(fake_full_data) -> None:

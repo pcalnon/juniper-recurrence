@@ -67,14 +67,19 @@ Both responses carry a **`diagnostics`** block per fit -- once on `POST /v1/trai
 on `POST /v1/crossval` -- with the hyperparameters the fit *resolved*: `theta` (the data-driven
 value a `theta=None` request became, per fold), `ridge_mode` / `ridge_selected` (the lambda
 `ridge="gcv"` selected), `gamma` (the median-heuristic RFF bandwidth), and the `gcv_at_edge` /
-`null_model` flags (`null` means *not determined*; `null_model` is populated once the model
-reports it). The `train` CLI prints the same block under `Readout:`.
+`null_model` flags (booleans on a GCV-selected fit, which juniper-recurrence-model 0.5.0 reports;
+`null` means *not determined*, as on a fixed-ridge fit). The `train` CLI prints the same block under `Readout:`.
 
 `POST /v1/train` and `POST /v1/crossval` accept a **`readout`** selector (DP-3): `"linear"`
 (default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
 `rff_features` / `rff_gamma`), or `"mlp"` (a torch MLP with the `mlp_*` knobs — needs the `[torch]`
 extra; returns `503` if torch is not installed). `ridge` accepts a float or `"gcv"` (closed-form
-generalized-cross-validation selection). See the `juniper-recurrence-model` README for the spectrum.
+generalized-cross-validation selection). A linear-readout request that omits `ridge` gets the
+service's `default_ridge`, **`"gcv"` since 0.7.0** (plan W5.8 (B)): the penalty is GCV-selected on
+the train-fold-standardised memory block, so on a drifting input the fit abstains (lambda at the grid
+ceiling, `null_model: true` in `diagnostics`) rather than extrapolate as the former `0.0` min-norm
+default did. An explicit `ridge: 0.0`, or `JUNIPER_RECURRENCE_DEFAULT_RIDGE=0.0` on the service,
+restores the old behaviour. See the `juniper-recurrence-model` README for the spectrum.
 
 ```bash
 # Train on a juniper-data dataset, then inspect the model.

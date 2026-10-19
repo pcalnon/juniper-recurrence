@@ -29,15 +29,16 @@ def test_defaults():
     assert settings.juniper_data_api_key is None
     assert settings.default_d == 16
     assert settings.default_theta is None
-    assert settings.default_ridge == 0.0
+    assert settings.default_ridge == "gcv"  # W5.8 (B), 0.7.0: a bare linear request abstains rather than extrapolates
     assert settings.log_level == "INFO"  # inherited from SettingsBase
     assert settings.log_format == "text"
 
 
-def test_default_ridge_accepts_gcv():
-    """default_ridge widens to float | Literal['gcv'] (DP-3 P1); the 0.0 default is unchanged."""
-    assert Settings(default_ridge="gcv").default_ridge == "gcv"
-    assert Settings().default_ridge == 0.0
+def test_default_ridge_accepts_gcv_and_a_float():
+    """default_ridge is float | Literal['gcv'] (DP-3 P1); 'gcv' is the default since 0.7.0 (W5.8 (B)) and 0.0 opts back out."""
+    assert Settings().default_ridge == "gcv"
+    assert Settings(default_ridge=0.0).default_ridge == 0.0
+    assert Settings(default_ridge=0.5).default_ridge == 0.5
 
 
 def test_env_prefix_honored(monkeypatch):

@@ -202,7 +202,15 @@ class Settings(SettingsBase):
     # --- LMU hyperparameter defaults (consumed by the PR-2 training path) -------------
     default_d: int = 16
     default_theta: float | None = None
-    default_ridge: float | Literal["gcv"] = 0.0
+    # ``"gcv"`` since 0.7.0 (W5.8 (B) of the juniper-ml recurrence x equities plan; owner ruling
+    # 2026-10-18). A linear-readout request that omits ``ridge`` -- a bare ``/v1/train`` or
+    # ``/v1/crossval``, canopy's registry seed, the ``train`` CLI without ``--ridge`` -- used to get
+    # ``0.0``, the raw min-norm solve, which extrapolates on a drifting input: -2.1e4 aggregate r2 on
+    # the W5.1 equities artifact. GCV on the train-fold-standardised block (juniper-recurrence-model
+    # 0.5.0 standardises for any non-zero ridge) abstains instead (-0.195, lambda at the grid ceiling,
+    # ``null_model: true``), and the response's ``diagnostics`` block says so (W5.10). An explicit
+    # ``ridge`` in the request still wins; ``LMURegressor``'s own constructor default stays ``0.0``.
+    default_ridge: float | Literal["gcv"] = "gcv"
 
     # --- model snapshots (design §4/§11.1) --------------------------------------------
     #
