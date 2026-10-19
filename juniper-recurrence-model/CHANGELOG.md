@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-19
+
 ### Added
 
 - **`SequenceData` carries `ticker_code` and `window_end_date`, and the reader serves a composed
