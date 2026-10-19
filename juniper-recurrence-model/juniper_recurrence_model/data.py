@@ -279,8 +279,7 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
 
     target_dt = _read_target_dt(arrays, split, n_windows)
     seq_lengths = _read_seq_lengths(arrays, split, n_windows, lookback)
-    ticker_code = _read_window_key(arrays, "ticker_code", split, n_windows)
-    window_end_date = _read_window_key(arrays, "window_end_date", split, n_windows)
+    ticker_code, window_end_date = (_read_window_key(arrays, base, split, n_windows) for base in _WINDOW_KEYS)
 
     return SequenceData(X=X, y=y, dt=dt, target_dt=target_dt, seq_lengths=seq_lengths, ticker_code=ticker_code, window_end_date=window_end_date)
 
