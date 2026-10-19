@@ -67,8 +67,8 @@ Both responses carry a **`diagnostics`** block per fit -- once on `POST /v1/trai
 on `POST /v1/crossval` -- with the hyperparameters the fit *resolved*: `theta` (the data-driven
 value a `theta=None` request became, per fold), `ridge_mode` / `ridge_selected` (the lambda
 `ridge="gcv"` selected), `gamma` (the median-heuristic RFF bandwidth), and the `gcv_at_edge` /
-`null_model` flags (`null` means *not determined*; `null_model` is populated once the model
-reports it). The `train` CLI prints the same block under `Readout:`.
+`null_model` flags (booleans on a GCV-selected fit, which juniper-recurrence-model 0.5.0 reports;
+`null` means *not determined*, as on a fixed-ridge fit). The `train` CLI prints the same block under `Readout:`.
 
 `POST /v1/train` and `POST /v1/crossval` accept a **`readout`** selector (DP-3): `"linear"`
 (default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
