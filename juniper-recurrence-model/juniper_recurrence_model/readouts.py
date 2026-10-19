@@ -8,7 +8,9 @@ readout a *configurable spectrum*:
 
 * **Rung 0** — plain min-norm least-squares (``ridge=0.0``; the back-compat default).
 * **Rung 1** — regularised linear (``ridge>0.0``) + closed-form **GCV** penalty selection
-  (``ridge="gcv"``). *This module (P1).*
+  (``ridge="gcv"``). *This module (P1).* Since 0.5.0 this rung standardises the memory block on
+  the train fold (W5.8 (B)) and reports when the GCV optimum sits at a grid edge or is the null
+  model (W5.9) — see :class:`LinearReadout` and :func:`_gcv_select`.
 * **Rung 2a** — a numpy nonlinear readout (random Fourier features + ridge). *Added in P2.*
 * **Rung 2b** — an optional torch MLP readout behind a ``[torch]`` extra. *Added in P3.*
 
@@ -28,10 +30,13 @@ model's ``random_seed`` — fixed across folds, never from a module-global RNG.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Protocol
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "RidgeParam",
@@ -50,7 +55,10 @@ __all__ = [
 RidgeParam = float | Literal["gcv"]
 
 #: Log-spaced grid of candidate ridge penalties for GCV selection (Rung 1). One SVD of the
-#: (centred) design matrix makes each grid evaluation O(rank), so a fine grid is cheap.
+#: (centred) design matrix makes each grid evaluation O(rank), so a fine grid is cheap. The grid is
+#: deliberately **not** extended past 1e3 (plan W5.9): on the equities artifact the optimum beyond
+#: the ceiling is the null model (λ → ∞) in every raw linear fold, so a wider grid would only move
+#: the ceiling; :func:`_gcv_select` reports an at-edge / null-model selection instead.
 _GCV_GRID: np.ndarray = np.logspace(-6.0, 3.0, 60)
 
 
@@ -116,7 +124,33 @@ def _ridge_solve(design: np.ndarray, y: np.ndarray, ridge: float) -> np.ndarray:
     return np.linalg.solve(gram + penalty, design.T @ y)
 
 
-def _gcv_select(features: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
+def _standardize_fit(M: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per-column mean/std of ``M`` (train-fold-only). Zero-variance columns get std=1 (no NaN)."""
+    mean = M.mean(axis=0)
+    std = M.std(axis=0)
+    std = np.where(std > 0.0, std, 1.0)  # guard: a constant column would otherwise yield 0/0 -> NaN
+    return mean, std
+
+
+@dataclass(frozen=True)
+class _GCVSelection:
+    """What :func:`_gcv_select` resolved: the fit, the selected λ, and the W5.9 diagnostics.
+
+    ``gcv_best`` is the GCV value at ``ridge``; ``gcv_null`` is the GCV of the intercept-only fit
+    (the λ → ∞ limit, ``n·‖yc‖² / (n − 1)²``). ``at_edge`` says the selected λ is the grid's floor or
+    ceiling; ``null_model`` says the intercept-only fit beats every grid point, so the true optimum
+    lies beyond the ceiling and the returned fit — at the ceiling — is an abstention.
+    """
+
+    coef: np.ndarray
+    ridge: float
+    gcv_best: float
+    gcv_null: float
+    at_edge: bool
+    null_model: bool
+
+
+def _gcv_select(features: np.ndarray, y: np.ndarray) -> _GCVSelection:
     """Closed-form GCV ridge selection over :data:`_GCV_GRID` (Rung 1).
 
     Centres ``features`` / ``y`` (so the intercept is unpenalised and recovered separately), takes
@@ -124,7 +158,16 @@ def _gcv_select(features: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]
     O(rank) using the projected coefficients ``g = Uᵀ yc`` — no held-out split and no inner-CV
     refit (design §4 Rung 1). ``tr H(λ) = Σ sᵢ²/(sᵢ²+λ)``; the unpenalised intercept contributes
     one further degree of freedom, so the effective trace is ``1 + tr H``. Returns the coefficient
-    vector in the bias-augmented ``[features | 1]`` layout and the selected λ.
+    vector in the bias-augmented ``[features | 1]`` layout, the selected λ and the W5.9 diagnostics.
+
+    **W5.9 — the grid's edges are reported, not moved.** As λ → ∞ every shrinkage factor → 1, so
+    ``RSS → ‖yc‖²`` and ``tr H → 0``: the intercept-only (null-model) GCV is ``n·‖yc‖² / (n − 1)²``,
+    the one point off the grid that is free to evaluate. When it is below the best grid value the
+    optimum lies beyond the ceiling and the fit returned — at the ceiling λ — abstains (train r² ≈ 0);
+    when the selected λ is the grid's floor or ceiling the optimum may lie off the grid either way.
+    Both are logged at WARNING and returned as ``at_edge`` / ``null_model`` so the fitted readout,
+    and through it the service response (W5.10), can say so. On the equities artifact of the W5.1
+    note every raw linear fold and three of five RFF folds select the null model.
     """
     n = features.shape[0]
     feat_mean = features.mean(axis=0)
@@ -150,16 +193,40 @@ def _gcv_select(features: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]
     filt = s / (s2 + best_lam)  # s_i/(s_i^2+λ)
     coef_feat = vt.T @ (filt[:, None] * g)  # (p, out)
     coef_bias = y_mean - feat_mean @ coef_feat  # (out,)
-    return np.concatenate([coef_feat, coef_bias[None, :]], axis=0), best_lam
+    coef = np.concatenate([coef_feat, coef_bias[None, :]], axis=0)
+    # W5.9: the λ → ∞ limit (intercept only) is the one off-grid point that costs nothing to evaluate.
+    gcv_null = (n * yc_energy / (n - 1.0) ** 2) if n > 1 else np.inf
+    at_edge = best_lam == float(_GCV_GRID[0]) or best_lam == float(_GCV_GRID[-1])
+    null_model = bool(gcv_null < best_gcv)
+    if null_model:
+        logger.warning("GCV: the intercept-only model (GCV %.6g) beats every grid point (best %.6g at lambda=%.6g); the optimum lies beyond the grid ceiling %.6g and the fit abstains at the ceiling", gcv_null, best_gcv, best_lam, float(_GCV_GRID[-1]))
+    elif at_edge:
+        logger.warning("GCV selected lambda=%.6g at the edge of the grid [%.6g, %.6g]; the optimum may lie off the grid", best_lam, float(_GCV_GRID[0]), float(_GCV_GRID[-1]))
+    return _GCVSelection(coef=coef, ridge=best_lam, gcv_best=float(best_gcv), gcv_null=float(gcv_null), at_edge=bool(at_edge), null_model=null_model)
 
 
 class LinearReadout:
     """Rung 0/1 — a (optionally ridge-regularised) linear readout over ``[ M | extra | 1 ]``.
 
-    ``ridge=0.0`` is the back-compat min-norm ``lstsq`` solve; ``ridge>0.0`` is the regularised
-    normal-equation solve (the bias column is never penalised); ``ridge="gcv"`` selects the penalty
-    by closed-form generalised cross-validation at ``fit`` and writes the selected λ back to
-    :attr:`ridge` (so it is persisted for retraining fidelity).
+    ``ridge=0.0`` is the back-compat min-norm ``lstsq`` solve on the **raw** memory block — the
+    conformance baseline the bench ratifies, byte-identical to the pre-DP-3 model. ``ridge>0.0`` is
+    the regularised normal-equation solve (the bias column is never penalised); ``ridge="gcv"``
+    selects the penalty by closed-form generalised cross-validation at ``fit`` and writes the
+    selected λ back to :attr:`ridge` (so it is persisted for retraining fidelity).
+
+    **Standardisation (0.5.0, plan W5.8 (B)).** Whenever ``ridge != 0.0`` the memory block ``M`` is
+    standardised per column with the **train-fold** mean / std (:func:`_standardize_fit`, the same
+    statistics the RFF rung uses) before the solve, and the fitted statistics are applied again at
+    ``predict``. A single penalty cannot be right for columns whose scales differ by orders of
+    magnitude — on the W5.1 equities artifact GCV on the raw block scores −247 and standardisation
+    with a fixed ``ridge=1.0`` −192, while the two together score −0.195 (a null-model abstention,
+    reported through :attr:`gcv_at_edge_` / :attr:`null_model_`). The ``extra`` side-channel and
+    the bias column are never standardised, and the ``ridge=0.0`` path is untouched (a standardised
+    min-norm solve is a different, far worse, solution on that artifact: −8.8e12).
+
+    Fit diagnostics (W5.9): after a ``ridge="gcv"`` fit :attr:`gcv_at_edge_` and :attr:`null_model_`
+    are booleans; after a fixed-``ridge`` fit, and on a readout rebuilt by :meth:`from_state`, they
+    are ``None`` (*not determined*). They are not persisted.
     """
 
     kind: ClassVar[str] = "linear"
@@ -167,6 +234,10 @@ class LinearReadout:
     def __init__(self, ridge: RidgeParam = 0.0) -> None:
         self.ridge: RidgeParam = ridge
         self._coef: np.ndarray | None = None
+        self._mean: np.ndarray | None = None  # train-fold column statistics; set only when the fit standardised (ridge != 0.0)
+        self._std: np.ndarray | None = None
+        self.gcv_at_edge_: bool | None = None  # W5.9: the selected λ sits at the grid floor / ceiling (GCV fits only)
+        self.null_model_: bool | None = None  # W5.9: the intercept-only fit beats every grid point (GCV fits only)
 
     @property
     def is_fitted(self) -> bool:
@@ -174,23 +245,38 @@ class LinearReadout:
 
     @property
     def coef(self) -> np.ndarray | None:
+        """Coefficients in ``[block | extra | 1]`` layout, where ``block`` is the standardised ``M`` when the fit standardised."""
         return self._coef
 
+    @property
+    def standardized(self) -> bool:
+        """``True`` when the fitted solve ran on the train-fold-standardised memory block (``ridge != 0.0``)."""
+        return self._mean is not None
+
+    def _block(self, M: np.ndarray) -> np.ndarray:
+        return M if self._mean is None else (M - self._mean) / self._std
+
     def _design(self, M: np.ndarray, extra: np.ndarray) -> np.ndarray:
-        return _assemble_design(M, extra)
+        return _assemble_design(self._block(M), extra)
 
     def fit(self, M: np.ndarray, extra: np.ndarray, y: np.ndarray, *, M_val: np.ndarray | None = None, extra_val: np.ndarray | None = None, y_val: np.ndarray | None = None, random_seed: int | None = None) -> None:
+        self._mean = self._std = None
+        self.gcv_at_edge_ = self.null_model_ = None
         if isinstance(self.ridge, str):
             if self.ridge != "gcv":
                 raise ValueError(f"unknown ridge mode {self.ridge!r}; expected a float or 'gcv'")
-            features = np.concatenate([M, extra], axis=1)  # GCV centres internally; bias recovered separately
-            self._coef, self.ridge = _gcv_select(features, y)
+            self._mean, self._std = _standardize_fit(M)  # W5.8 (B): train-fold statistics
+            features = np.concatenate([self._block(M), extra], axis=1)  # GCV centres internally; bias recovered separately
+            selection = _gcv_select(features, y)
+            self._coef, self.ridge = selection.coef, selection.ridge
+            self.gcv_at_edge_, self.null_model_ = selection.at_edge, selection.null_model
             return
-        design = self._design(M, extra)
         if self.ridge > 0.0:
-            self._coef = _ridge_solve(design, y, float(self.ridge))
+            self._mean, self._std = _standardize_fit(M)  # W5.8 (B): train-fold statistics
+            self._coef = _ridge_solve(self._design(M, extra), y, float(self.ridge))
         else:
-            self._coef, *_ = np.linalg.lstsq(design, y, rcond=None)
+            # ridge == 0.0: the raw min-norm solve, byte-identical to the pre-0.5.0 path (never standardised).
+            self._coef, *_ = np.linalg.lstsq(self._design(M, extra), y, rcond=None)
 
     def predict(self, M: np.ndarray, extra: np.ndarray) -> np.ndarray:
         if self._coef is None:
@@ -200,12 +286,19 @@ class LinearReadout:
     def save_state(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         if self._coef is None:
             raise RuntimeError("cannot serialize an unfitted readout")
-        return {"coef": self._coef}, {"kind": self.kind, "ridge": float(self.ridge)}
+        arrays: dict[str, np.ndarray] = {"coef": self._coef}
+        if self._mean is not None:
+            arrays["mean"] = self._mean  # the train-fold statistics the coefficients were solved against
+            arrays["std"] = self._std
+        return arrays, {"kind": self.kind, "ridge": float(self.ridge), "standardized": self._mean is not None}
 
     @classmethod
     def from_state(cls, arrays: dict[str, np.ndarray], descriptor: dict[str, Any]) -> LinearReadout:
         readout = cls(ridge=float(descriptor.get("ridge", 0.0)))
         readout._coef = arrays["coef"]
+        if "mean" in arrays:  # a 0.5.0+ standardised fit; a pre-0.5.0 state has no statistics and predicts on the raw block
+            readout._mean = arrays["mean"]
+            readout._std = arrays["std"]
         return readout
 
 
@@ -221,14 +314,6 @@ class LinearReadoutSpec:
 
 
 # --- Rung 2a: random Fourier features (numpy nonlinear readout) -----------------------
-
-
-def _standardize_fit(M: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Per-column mean/std of ``M`` (train-fold-only). Zero-variance columns get std=1 (no NaN)."""
-    mean = M.mean(axis=0)
-    std = M.std(axis=0)
-    std = np.where(std > 0.0, std, 1.0)  # guard: a constant column would otherwise yield 0/0 -> NaN
-    return mean, std
 
 
 def _median_gamma(mz: np.ndarray, rng: np.random.Generator, max_rows: int = 256) -> float:
@@ -278,6 +363,10 @@ class RFFReadout:
         self._mean: np.ndarray | None = None
         self._std: np.ndarray | None = None
         self._beta: np.ndarray | None = None
+        self.gcv_at_edge_: bool | None = None  # W5.9: as on LinearReadout (GCV fits only; not persisted)
+        self.null_model_: bool | None = None
+        self.gcv_at_edge_: bool | None = None  # W5.9: as on LinearReadout (GCV fits only; not persisted)
+        self.null_model_: bool | None = None
 
     @property
     def is_fitted(self) -> bool:
@@ -303,10 +392,13 @@ class RFFReadout:
         self._W = rng.normal(0.0, gamma, size=(p, d_out))
         self._b = rng.uniform(0.0, 2.0 * np.pi, size=d_out)
         phi = np.sqrt(2.0 / d_out) * np.cos(mz @ self._W + self._b)
+        self.gcv_at_edge_ = self.null_model_ = None
         if isinstance(self.ridge, str):
             if self.ridge != "gcv":
                 raise ValueError(f"unknown ridge mode {self.ridge!r}; expected a float or 'gcv'")
-            self._beta, self.ridge = _gcv_select(np.concatenate([phi, extra], axis=1), y)
+            selection = _gcv_select(np.concatenate([phi, extra], axis=1), y)
+            self._beta, self.ridge = selection.coef, selection.ridge
+            self.gcv_at_edge_, self.null_model_ = selection.at_edge, selection.null_model
         elif self.ridge > 0.0:
             self._beta = _ridge_solve(_assemble_design(phi, extra), y, float(self.ridge))
         else:

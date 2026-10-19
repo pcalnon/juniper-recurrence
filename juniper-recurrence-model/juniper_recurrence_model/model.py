@@ -71,14 +71,18 @@ class LMURegressor(TrainableModel):
     readout:
         An immutable readout **spec** (see :mod:`juniper_recurrence_model.readouts`). ``None``
         (default) builds a :class:`~juniper_recurrence_model.readouts.LinearReadoutSpec` from
-        ``ridge`` — so ``LMURegressor(d, theta, ridge=…)`` is byte-identical to the pre-DP-3 model.
-        Passing both a non-default ``ridge`` and a ``readout`` is rejected (one source of truth).
+        ``ridge`` — so ``LMURegressor(d, theta)`` (``ridge=0.0``) is byte-identical to the pre-DP-3
+        model. Passing both a non-default ``ridge`` and a ``readout`` is rejected (one source of truth).
     ridge:
         Convenience for the default linear readout's L2 penalty (the bias column is never
-        penalised). ``0.0`` (default) is the plain min-norm least-squares solve. A positive float
-        is the regularised normal-equation solve. ``"gcv"`` selects the penalty by closed-form
-        generalised cross-validation at ``fit`` (the selected λ is written back to ``self.ridge``).
-        Ignored when an explicit ``readout`` spec is supplied.
+        penalised). ``0.0`` (default) is the plain min-norm least-squares solve on the raw memory
+        block. A positive float is the regularised normal-equation solve. ``"gcv"`` selects the
+        penalty by closed-form generalised cross-validation at ``fit`` (the selected λ is written
+        back to ``self.ridge``; the fitted readout's ``gcv_at_edge_`` / ``null_model_`` say whether
+        the selection sits at the grid edge or abstains as the null model). Since 0.5.0 every
+        non-zero ``ridge`` standardises the memory block with the train-fold statistics before the
+        solve (plan W5.8 (B)); the ``0.0`` path is untouched. Ignored when an explicit ``readout``
+        spec is supplied.
     time_unit:
         Declared real-time unit of ``dt`` / ``theta`` (carried in the topology meta).
     random_seed:
