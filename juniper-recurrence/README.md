@@ -74,7 +74,12 @@ reports it). The `train` CLI prints the same block under `Readout:`.
 (default, closed-form least squares), `"rff"` (nonlinear random-Fourier-features readout, with
 `rff_features` / `rff_gamma`), or `"mlp"` (a torch MLP with the `mlp_*` knobs — needs the `[torch]`
 extra; returns `503` if torch is not installed). `ridge` accepts a float or `"gcv"` (closed-form
-generalized-cross-validation selection). See the `juniper-recurrence-model` README for the spectrum.
+generalized-cross-validation selection). A linear-readout request that omits `ridge` gets the
+service's `default_ridge`, **`"gcv"` since 0.7.0** (plan W5.8 (B)): the penalty is GCV-selected on
+the train-fold-standardised memory block, so on a drifting input the fit abstains (lambda at the grid
+ceiling, `null_model: true` in `diagnostics`) rather than extrapolate as the former `0.0` min-norm
+default did. An explicit `ridge: 0.0`, or `JUNIPER_RECURRENCE_DEFAULT_RIDGE=0.0` on the service,
+restores the old behaviour. See the `juniper-recurrence-model` README for the spectrum.
 
 ```bash
 # Train on a juniper-data dataset, then inspect the model.

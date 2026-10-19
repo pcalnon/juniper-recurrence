@@ -17,7 +17,7 @@ service:                               # -> juniper_recurrence Settings
   rate_limit_enabled: false            # a tight driver loop must not be throttled
   default_d: 16
   default_theta: null                  # null = data-driven θ
-  default_ridge: 0.0
+  default_ridge: gcv                   # the 0.7.0 service default (W5.8 (B)); the train: block below pins its own ridge
   # host / port / juniper_data_url are launcher-owned and REJECTED here (§5.6 rule 6)
 
 dataset:                               # -> juniper-data POST /v1/datasets + DatasetRef (driver)

@@ -56,6 +56,15 @@
 # constraint, and it accepted the set. Both new pins are pure-Python wheels, so the arm64
 # pre-flight is unaffected. The ``pyproject.toml`` floors do not move: both ranges already admit
 # these releases.
+#
+# MOVED 2026-10-19, TARGETED, for the 0.7.0 image (W5.8 (B) + W5.9 of the same plan):
+# ``juniper-recurrence-model`` 0.4.0 -> **0.5.0** (train-fold standardisation on the linear rung for
+# any non-zero ridge, and the ``gcv_at_edge_`` / ``null_model_`` fit diagnostics the W5.10 response
+# block reads). The ONLY pin change; the count is unchanged at 31. 0.5.0 changed none of its own
+# requirements (its PyPI ``requires_dist`` equals 0.4.0's), so no other pin can move; the line was
+# moved by hand as on 2026-10-17, and the pin is a pure-Python wheel (the arm64 pre-flight is
+# unaffected). The ``pyproject.toml`` floor moves with it this time: the service's new
+# ``default_ridge: "gcv"`` is safe only on a model that standardises the linear rung's memory block.
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -91,7 +100,7 @@ juniper-model-core==0.3.1
     #   juniper-service-core
 juniper-observability==0.4.1
     # via juniper-recurrence (pyproject.toml)
-juniper-recurrence-model==0.4.0
+juniper-recurrence-model==0.5.0
     # via juniper-recurrence (pyproject.toml)
 juniper-service-core==0.7.1
     # via juniper-recurrence (pyproject.toml)

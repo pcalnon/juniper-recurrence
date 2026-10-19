@@ -31,6 +31,33 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   made null-model-aware without it, and the W5.8 (B) default (`default_ridge: "gcv"`), which
   abstains silently, is gated on the response announcing the lambda it chose.
 
+### Changed
+
+- **The service's `default_ridge` is `"gcv"`; the floor is `juniper-recurrence-model>=0.5.0`**
+  (W5.8 (B) of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  accepted by the owner 2026-10-18, gated on W5.10 above). A linear-readout request that omits
+  `ridge` -- a bare `POST /v1/train` or `POST /v1/crossval`, canopy's registry seed (no `readout`,
+  no `ridge`), the `train` CLI without `--ridge` -- used to get `0.0`, the raw min-norm solve, which
+  extrapolates on a non-stationary input (the W5.1 cause of record). It now gets closed-form GCV on
+  the memory block that juniper-recurrence-model 0.5.0 standardises with the train-fold statistics
+  for any non-zero ridge, and the response's `diagnostics` block reports the lambda it chose and
+  whether the fit abstained (`gcv_at_edge` / `null_model`, both booleans now that the model sets
+  them). Measured on the W5.1 equities artifact, five expanding folds
+  (`util/ad-hoc/2026-10-19_w5_8b_eh_acceptance.py` in juniper-ml, mirroring the route's per-fold
+  fit): the old default aggregates **−2.1e4** eval r² (embargo 2; −2.3e4 with the route's default
+  embargo 0), the new default **−0.195** (−0.190), with lambda = 1000 at the grid ceiling and
+  `null_model: true` in every fold -- the abstention the consensus re-derivation measured
+  (`reports/2026-10-05_recurrence-equities-cv-consensus/reconciler-rederive.json`: GCV alone on the
+  raw block −247, standardisation alone with `ridge=1.0` −192, both together −0.195). The
+  alternative that retains a fit, a default *readout* change, was declined (W5.11). An explicit
+  `ridge: 0.0` in the request, or `JUNIPER_RECURRENCE_DEFAULT_RIDGE=0.0` on the deployment, restores
+  the old behaviour; `LMURegressor`'s own constructor default is unchanged. The floor moves to
+  `juniper-recurrence-model>=0.5.0,<0.6.0` (also the `[torch]` / `[bench-torch]` extras and the
+  image lock) because GCV without the standardisation scores −247: the default is safe only on the
+  standardising model. `conf/experiments/irregular-sine-rff.yaml` sets `service.default_ridge: gcv`
+  in the same change (its `train:` block pins the RFF readout at `ridge: 1.0` and is unaffected).
+
 ## [0.6.1] - 2026-10-18
 
 ### Fixed
