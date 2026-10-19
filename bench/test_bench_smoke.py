@@ -199,3 +199,165 @@ def test_full_view_is_derived_from_the_three_partitions():
     legacy = dict(out)
     legacy["X_full"] = sentinel
     assert np.array_equal(datasets._full(legacy, "X"), sentinel)
+
+
+# --- W5.2: the trainval pool, the window keys, and date-cut folds per entity ---------------------------------
+
+
+def _panel_arrays(n_per: int = 30, lookback: int = 4) -> dict:
+    """Two tickers x three partitions with the W5.2 keys -- the shape juniper-data's equities_seq emits.
+
+    Each partition holds ticker 0's windows then ticker 1's (split-major outside, entity blocks inside).
+    ``window_end_date`` is a ``YYYYMMDD``-style integer that rises with the window; the splits sit in
+    successive years so ``test`` is recognisable by its dates.
+    """
+    rng = np.random.default_rng(0)
+    out: dict = {}
+    for split, n in (("train", n_per), ("val", n_per // 2), ("test", n_per // 3)):
+        parts: dict = {
+            k: []
+            for k in ("X", "y_reg", "dt", "target_dt", "ticker_code", "window_end_date")
+        }
+        base = {"train": 20200101, "val": 20210101, "test": 20220101}[split]
+        for code in (0, 1):
+            parts["X"].append(rng.standard_normal((n, lookback, 2)).astype(np.float32))
+            parts["y_reg"].append(rng.standard_normal((n, 1)).astype(np.float32))
+            dt = np.ones((n, lookback), dtype=np.float32)
+            dt[:, 0] = 0.0
+            parts["dt"].append(dt)
+            parts["target_dt"].append(np.ones(n, dtype=np.float32))
+            parts["ticker_code"].append(np.full(n, code, dtype=np.int64))
+            parts["window_end_date"].append(base + np.arange(n, dtype=np.int64))
+        for key, chunks in parts.items():
+            out[f"{key}_{split}"] = np.concatenate(chunks, axis=0)
+    return out
+
+
+def test_trainval_view_excludes_test_and_carries_the_window_keys():
+    out = _panel_arrays()
+    arrays = dict(out)
+    X = datasets._composed(arrays, "X", "trainval")
+    assert X.shape[0] == out["X_train"].shape[0] + out["X_val"].shape[0]
+    groups = datasets._composed(arrays, "ticker_code", "trainval")
+    order = datasets._composed(arrays, "window_end_date", "trainval")
+    assert sorted(set(groups.tolist())) == [0, 1]
+    assert np.all(np.diff(groups) >= 0), "the composed view is entity-major"
+    assert order.max() < 20220101, "no test window in the pool"
+    # The full view is still the three partitions, and _full is its "full" case.
+    assert datasets._full(dict(out), "X").shape[0] == sum(
+        out[f"X_{s}"].shape[0] for s in ("train", "val", "test")
+    )
+
+
+def test_equities_dataset_pools_trainval_and_cuts_folds_on_the_date(monkeypatch):
+    """``equities_seq`` loads the trainval pool with the keys and embargo = look-back; model-core then cuts
+    every fold on one global date with the per-entity embargo (no network: the generator is stubbed)."""
+    import juniper_data.generators.equities_seq as eq
+
+    out = _panel_arrays(n_per=30, lookback=4)
+    monkeypatch.setattr(
+        eq.EquitiesSeqGenerator, "generate", staticmethod(lambda params: dict(out))
+    )
+    ds = datasets.equities_seq(
+        symbols=("AAPL", "MSFT"), lookback=4, name="equities_seq_panel"
+    )
+    assert ds.name == "equities_seq_panel" and ds.grid == "irregular"
+    assert ds.embargo == 4
+    assert ds.X.shape[0] == 2 * (30 + 15), "train + val of both tickers; test excluded"
+    assert ds.order is not None and ds.groups is not None
+    folds = walk_forward_folds(
+        ds.X.shape[0], n_folds=3, embargo=ds.embargo, order=ds.order, groups=ds.groups
+    )
+    assert folds, "the panel yields folds"
+    for fold in folds:
+        train, ev = np.asarray(fold.train_idx), np.asarray(fold.eval_idx)
+        cut = int(ds.order[ev].min())
+        assert ds.order[train].max() < cut, (
+            "every train window precedes every eval window on the global date"
+        )
+        for code in (0, 1):
+            before = np.sort(ds.order[(ds.groups == code) & (ds.order < cut)])
+            kept = np.sort(ds.order[train[ds.groups[train] == code]])
+            assert np.array_equal(
+                kept, before[: max(0, before.shape[0] - ds.embargo)]
+            ), "the last `embargo` windows of each entity before the cut are dropped"
+
+
+def test_run_dataset_passes_the_keys_and_the_row_embargo_to_model_core(monkeypatch):
+    from bench import run_benchmark
+
+    captured: dict = {}
+    real = run_benchmark.walk_forward_folds
+
+    def spy(n, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        return real(n, **kwargs)
+
+    monkeypatch.setattr(run_benchmark, "walk_forward_folds", spy)
+    monkeypatch.setattr(run_benchmark, "_TORCH_AVAILABLE", False)
+    out = _panel_arrays(n_per=60, lookback=4)
+    arrays = dict(out)
+    ds = datasets.Dataset(
+        "panel",
+        "irregular",
+        datasets._composed(arrays, "X", "trainval"),
+        datasets._composed(arrays, "y_reg", "trainval"),
+        datasets._composed(arrays, "dt", "trainval"),
+        datasets._composed(arrays, "target_dt", "trainval"),
+        order=datasets._composed(arrays, "window_end_date", "trainval"),
+        groups=datasets._composed(arrays, "ticker_code", "trainval"),
+        embargo=4,
+    )
+    result = run_benchmark.run_dataset(ds)
+    assert (
+        captured["embargo"] == 4
+        and captured["order"] is ds.order
+        and captured["groups"] is ds.groups
+    )
+    assert result["folding"] == {
+        "embargo": 4,
+        "ordered": True,
+        "grouped": True,
+        "n_entities": 2,
+        "n_folds": run_benchmark._N_FOLDS,
+    }
+    # The synthetic path is unchanged: row-index folds, the harness embargo.
+    run_benchmark.run_dataset(datasets.irregular_sine(n_steps=240, lookback=12, seed=0))
+    assert (
+        captured["embargo"] == run_benchmark._EMBARGO
+        and captured["order"] is None
+        and captured["groups"] is None
+    )
+
+
+def test_panel_row_is_a_registered_extension_and_band_2b_covers_it():
+    from bench import run_benchmark
+
+    assert "equities_seq_panel" in datasets.DATASETS
+    assert "equities_seq_panel" not in datasets.PRIMARY_DATASETS
+    assert datasets.DATASETS["equities_seq_panel"].keywords == {
+        "symbols": ("AAPL", "MSFT"),
+        "name": "equities_seq_panel",
+    }
+    var = f"lmu_var_d{run_benchmark._HEADLINE_D}"
+    rkey = f"lmu_var_d{run_benchmark._HEADLINE_D}_ridge{run_benchmark._RIDGE_VARIANT}"
+    row = {
+        "mean": {"rmse": 0.02, "r2": -0.1},
+        "std": {"rmse": 0.001, "r2": 0.03},
+        "n_folds": 5,
+    }
+    models = {
+        var: row,
+        f"lmu_fixed_d{run_benchmark._HEADLINE_D}": row,
+        "naive_persistence": row,
+        "linear_ridge": row,
+        rkey: row,
+    }
+    bands = run_benchmark.evaluate_bands(
+        {"equities_seq_panel": {"grid": "irregular", "models": models}}
+    )
+    assert any(
+        b["band"].startswith("2b — equities_seq_panel") and not b["primary"]
+        for b in bands
+    )
