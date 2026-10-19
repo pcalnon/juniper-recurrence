@@ -16,6 +16,7 @@ __all__ = [
     "DatasetDescriptor",
     "TrainRequest",
     "TrainResponse",
+    "ReadoutDiagnostics",
     "EventModel",
     "StatusResponse",
     "PredictRequest",
@@ -176,6 +177,34 @@ class TrainRequest(BaseModel):
         return self
 
 
+class ReadoutDiagnostics(BaseModel):
+    """The resolved readout hyperparameters of one fit (W5.10 of juniper-ml
+    ``notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md``;
+    the response half of F-S7).
+
+    Every number that decided a candidate in the W5.1 cause note -- the data-driven theta each fold
+    resolved, the lambda GCV selected, the RFF bandwidth -- came from an in-process read the service
+    could not provide: the request carries ``theta=None`` / ``ridge="gcv"`` / ``rff_gamma="median"``
+    and the response said nothing about what they became. This block says it, per fit: once per
+    ``POST /v1/train`` and once per fold of ``POST /v1/crossval``. It is read off the fitted model
+    after the solve and changes no number.
+
+    The two flags are the hook for the model-side detection W5.9 adds in juniper-recurrence-model
+    0.5.0: ``gcv_at_edge`` the service already derives from the selected lambda and the GCV grid;
+    ``null_model`` (the GCV optimum lies beyond the grid ceiling, at lambda -> infinity, so the fit
+    is the intercept-only model) needs the model's own evaluation and stays ``None`` until the
+    fitted readout reports it. ``None`` on either flag means *not determined*, never *false*.
+    """
+
+    readout: ReadoutKind = Field(description="The readout rung this fit used: 'linear' (Rung 0/1), 'rff' (Rung 2a) or 'mlp' (Rung 2b).")
+    theta: float = Field(gt=0, description="The LMU window length the fit used: the request's theta, or -- when theta was omitted -- the data-driven value the model resolved (the median per-window elapsed time of the data it was fitted on, so it can differ per fold).")
+    ridge_mode: Literal["fixed", "gcv"] | None = Field(default=None, description="How the ridge penalty was chosen: 'fixed' (a float, explicit or the service default), 'gcv' (closed-form generalised cross-validation at fit time), or null for a rung with no ridge penalty (mlp).")
+    ridge_selected: float | None = Field(default=None, description="The ridge penalty the solve used: the fixed value, or the lambda GCV selected from its grid. Null for a rung with no ridge penalty (mlp).")
+    gamma: float | None = Field(default=None, description="The RFF bandwidth the fit used -- the request's value, or the median-heuristic value the model resolved. Null unless readout='rff'.")
+    gcv_at_edge: bool | None = Field(default=None, description="Whether the GCV-selected lambda sits at either end of the GCV grid (the floor 1e-6 or the ceiling 1e3), where the true optimum may lie beyond the grid. Null when the penalty was not GCV-selected, or when it could not be determined.")
+    null_model: bool | None = Field(default=None, description="Whether the GCV optimum lies beyond the grid ceiling at lambda -> infinity, so the fit is the intercept-only null model. Populated once the model reports it (plan W5.9, juniper-recurrence-model 0.5.0); null means not determined, never false.")
+
+
 class TrainResponse(BaseModel):
     """``POST /v1/train`` result: the ``TrainResult`` plus the dataset descriptor.
 
@@ -198,6 +227,7 @@ class TrainResponse(BaseModel):
     operation_id: str = Field(
         description="Identity of this fit (uuid4 hex), minted when the route took the service's train_lock. GET /v1/training/status reports the same id while the fit runs and after it ends; pass it as expect_operation_id to /v1/predict and POST /v1/model/snapshots to prove the in-memory model is this one (W1.5).",
     )
+    diagnostics: ReadoutDiagnostics = Field(description="The resolved readout hyperparameters of this fit (W5.10): the theta it used, how its ridge penalty was chosen and what it became, the RFF bandwidth, and the GCV edge / null-model flags.")
 
 
 class EventModel(BaseModel):
@@ -358,12 +388,18 @@ class CrossValRequest(BaseModel):
 
 
 class CrossValFoldModel(BaseModel):
-    """One fold's outcome: the model's own train-time metrics + the held-out eval metrics."""
+    """One fold's outcome: the model's own train-time metrics + the held-out eval metrics.
+
+    ``diagnostics`` (W5.10) is what that fold's fresh model resolved its hyperparameters to --
+    with ``theta=None`` each fold resolves its own theta from its own training slice, and with
+    ``ridge="gcv"`` each fold selects its own lambda, so the per-fold values are the only record.
+    """
 
     fold: int
     train_metrics: dict[str, float]
     eval_metrics: dict[str, float]
     n_epochs: int
+    diagnostics: ReadoutDiagnostics = Field(description="The resolved readout hyperparameters of this fold's fit (W5.10): theta, ridge mode and value, RFF bandwidth, GCV edge / null-model flags.")
 
 
 class CrossValResponse(BaseModel):
