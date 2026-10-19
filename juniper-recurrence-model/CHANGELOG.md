@@ -8,6 +8,21 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Added
+
+- **`SequenceData` carries `ticker_code` and `window_end_date`, and the reader serves a composed
+  `trainval` view** (W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`,
+  the model half). `sequence_data_from_arrays` / `load_sequence_npz` read `ticker_code_{split}`
+  (the entity id) and `window_end_date_{split}` (the window's last day, a `YYYYMMDD` integer) when
+  the artifact has them -- `(W,)`, integer dtype, else refused -- into two new optional fields;
+  they are not fit kwargs but the `groups` / `order` keys for
+  `juniper_model_core.crossval.walk_forward_folds`, so a panel's folds can be cut on the global
+  date with every ticker's earlier windows in train. `split="trainval"` composes train | val the
+  way `full` composes train | val | test (`derive_composed_split`, of which `derive_full_split` is
+  now the `"full"` case): the cross-validation pool that leaves the final `test` partition for a
+  single out-of-sample read. `full` is unchanged, row for row.
+
 ## [0.5.0] - 2026-10-19
 
 ### Changed
