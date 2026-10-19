@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-19
+
 ### Added
 
 - **`POST /v1/train` and every fold of `POST /v1/crossval` report the hyperparameters the fit
