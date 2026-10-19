@@ -154,7 +154,8 @@ def crossval(
         duration = time.perf_counter() - start
         metrics.record_crossval(duration, result.eval_aggregate)
         logger.info("cross-validation complete: dataset=%s folds=%s duration=%.3fs eval_aggregate=%s", descriptor["dataset_id"], len(result.folds), duration, result.eval_aggregate)
-        logger.info("cross-validation diagnostics: dataset=%s per_fold=%s", descriptor["dataset_id"], [diag.model_dump(exclude_none=True) for diag in diagnostics])
+        # The dataset is named by the line above; this one carries only model-resolved values.
+        logger.info("cross-validation diagnostics: per_fold=%s", [diag.model_dump(exclude_none=True) for diag in diagnostics])
         return _to_response(result, dataset, diagnostics)
     finally:
         state.crossval_lock.release()

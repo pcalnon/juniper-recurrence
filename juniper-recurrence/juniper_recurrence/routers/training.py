@@ -121,7 +121,9 @@ def train(
         # W5.10: what the fit resolved its hyperparameters to -- the theta a ``theta=None`` request
         # became, the lambda ``ridge="gcv"`` selected, the gamma ``rff_gamma="median"`` resolved.
         diagnostics = readout_diagnostics(model)
-        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s diagnostics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics, diagnostics.model_dump(exclude_none=True))
+        logger.info("training complete: dataset=%s epochs=%s duration=%.3fs metrics=%s", descriptor["dataset_id"], result.n_epochs, duration, result.final_metrics)
+        # The dataset is named by the line above; this one carries only model-resolved values.
+        logger.info("training diagnostics: %s", diagnostics.model_dump(exclude_none=True))
         response = TrainResponse(
             final_metrics=result.final_metrics,
             # W0.7: LMURegressor.fit scores final_metrics on the arrays it was fitted on (no X_val is
