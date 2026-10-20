@@ -25,7 +25,9 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   unchanged (row-index folds, embargo 2). The new informational row `equities_seq_panel` (`AAPL` + `MSFT`)
   sits beside `equities_seq`; Band 2b covers both. Four bench tests pin the pool, the keys, the per-entity
   embargo on the date-cut folds, the `run_dataset` seam and the registry (the generator is stubbed; no
-  network). Needs juniper-recurrence-model >= 0.6.0, the app's own floor since 0.8.0.
+  network). Needs juniper-recurrence-model >= 0.6.0, the app's own floor since 0.8.0. `_full`'s derivation
+  moved into `_composed`, leaving an 8-line shim; the symbol-loss screen's `WEAKENED` finding on it is the
+  intended shape, waived with an enumerated `Allow-Symbol-Loss: func:_full` trailer in the PR range.
 
 ## [0.8.0] - 2026-10-20
 
