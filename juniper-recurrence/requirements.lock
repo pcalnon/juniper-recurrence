@@ -65,6 +65,13 @@
 # moved by hand as on 2026-10-17, and the pin is a pure-Python wheel (the arm64 pre-flight is
 # unaffected). The ``pyproject.toml`` floor moves with it this time: the service's new
 # ``default_ridge: "gcv"`` is safe only on a model that standardises the linear rung's memory block.
+#
+# MOVED 2026-10-19 (later), TARGETED, for the 0.8.0 image (W5.2 of the same plan):
+# ``juniper-recurrence-model`` 0.5.0 -> **0.6.0** (the composed ``trainval`` view and the
+# ``ticker_code`` / ``window_end_date`` keys the crossval route cuts its folds on). The ONLY pin
+# change; the count is unchanged at 31; 0.6.0 changed none of its own requirements (verify its
+# PyPI ``requires_dist`` against 0.5.0's when it publishes), so no other pin can move; a
+# pure-Python wheel, so the arm64 pre-flight is unaffected. The ``pyproject.toml`` floor moves with it.
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -100,7 +107,7 @@ juniper-model-core==0.3.1
     #   juniper-service-core
 juniper-observability==0.4.1
     # via juniper-recurrence (pyproject.toml)
-juniper-recurrence-model==0.5.0
+juniper-recurrence-model==0.6.0
     # via juniper-recurrence (pyproject.toml)
 juniper-service-core==0.7.1
     # via juniper-recurrence (pyproject.toml)
