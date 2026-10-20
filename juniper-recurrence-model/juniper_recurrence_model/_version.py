@@ -4,4 +4,4 @@ Kept import-free so setuptools can parse ``__version__`` statically at build
 time (``[tool.setuptools.dynamic]`` in pyproject.toml) without importing numpy.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

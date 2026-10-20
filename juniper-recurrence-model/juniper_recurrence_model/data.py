@@ -31,7 +31,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-__all__ = ["DEFAULT_TARGET", "TARGET_MODES", "SequenceData", "TargetMode", "derive_full_split", "load_sequence_npz", "sequence_data_from_arrays"]
+__all__ = ["DEFAULT_TARGET", "TARGET_MODES", "SequenceData", "TargetMode", "derive_composed_split", "derive_full_split", "load_sequence_npz", "sequence_data_from_arrays"]
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,13 @@ class SequenceData:
 
     ``X`` is ``(W, L, F)``; ``y`` is ``(W, output_dim)``; ``dt`` is ``(W, L)`` with
     ``dt[:, 0] == 0``. ``target_dt`` ``(W,)`` and ``seq_lengths`` ``(W,)`` are optional.
+
+    ``ticker_code`` and ``window_end_date`` (both ``(W,)``, integer; plan W5.2, 0.6.0) are the
+    per-window entity id and end date a panel artifact carries (``equities_seq`` emits both;
+    the dates are ``YYYYMMDD`` integers, which sort chronologically as they are). They are
+    **not** fit kwargs -- :meth:`fit_kwargs` leaves them out -- but the keys a caller hands to
+    ``juniper_model_core.crossval.walk_forward_folds`` as ``groups`` / ``order`` so folds are
+    cut on the global date with every entity's earlier windows in train and later ones in eval.
     """
 
     X: np.ndarray
@@ -65,6 +72,8 @@ class SequenceData:
     dt: np.ndarray
     target_dt: np.ndarray | None = None
     seq_lengths: np.ndarray | None = None
+    ticker_code: np.ndarray | None = None
+    window_end_date: np.ndarray | None = None
 
     def fit_kwargs(self) -> dict[str, Any]:
         """The auxiliary-array keywords for ``LMURegressor.fit`` / ``predict`` (the D3 contract)."""
@@ -91,6 +100,15 @@ def load_sequence_npz(path: Any, split: str = "train", *, target: TargetMode = D
 #: Partition suffixes that compose the whole dataset, in the order juniper-data laid them
 #: down within each entity. Order is load-bearing -- see :func:`derive_full_split`.
 _FULL_COMPONENT_SPLITS = ("train", "val", "test")
+
+#: The composed views a reader may ask for beyond the three partitions: ``full`` (train | val |
+#: test) and, since 0.6.0 (plan W5.2), ``trainval`` (train | val) -- the cross-validation pool
+#: that leaves the final ``test`` partition untouched for a single out-of-sample read (W5.3).
+_COMPOSED_VIEWS: dict[str, tuple[str, ...]] = {"full": _FULL_COMPONENT_SPLITS, "trainval": ("train", "val")}
+
+#: The per-window keys a panel artifact carries beside the data (W5.2): read into
+#: :class:`SequenceData` when present, never required, never fit kwargs.
+_WINDOW_KEYS = ("ticker_code", "window_end_date")
 
 #: Per-window key naming the entity a window belongs to, when the generator emits one.
 #: Its presence is what makes the legacy ``_full`` row order exactly reconstructible.
@@ -127,7 +145,23 @@ def derive_full_split(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     Keys already present in ``arrays`` are never overwritten: a legacy artifact that still
     ships ``*_full`` keeps the producer's own arrays, byte for byte.
     """
-    present = [s for s in _FULL_COMPONENT_SPLITS if f"X_{s}" in arrays]
+    return derive_composed_split(arrays, "full")
+
+
+def derive_composed_split(arrays: dict[str, np.ndarray], view: str) -> dict[str, np.ndarray]:
+    """Return ``arrays`` plus a synthesized ``*_{view}`` family composed from its partitions.
+
+    ``view`` is one of :data:`_COMPOSED_VIEWS`: ``"full"`` (train | val | test; see
+    :func:`derive_full_split` for why the row order is a stable sort by ``ticker_code``, not a
+    concatenation) or ``"trainval"`` (train | val; plan W5.2, 0.6.0) -- the cross-validation pool
+    that excludes the final ``test`` partition, laid down the same entity-major way so a
+    multi-ticker pool is exactly the ``full`` view with each ticker's ``test`` block removed.
+    Partitions the artifact lacks are skipped (a two-way artifact's ``trainval`` is its train
+    set); keys already present are never overwritten.
+    """
+    if view not in _COMPOSED_VIEWS:
+        raise ValueError(f"view must be one of {tuple(_COMPOSED_VIEWS)}; got {view!r}")
+    present = [s for s in _COMPOSED_VIEWS[view] if f"X_{s}" in arrays]
     if not present:
         return arrays
 
@@ -138,9 +172,9 @@ def derive_full_split(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
     derived: dict[str, np.ndarray] = {}
     for base in composable:
-        if f"{base}_full" in arrays:
+        if f"{base}_{view}" in arrays:
             continue  # the producer's own array wins
-        derived[f"{base}_full"] = np.concatenate([np.asarray(arrays[f"{base}_{s}"]) for s in present], axis=0)
+        derived[f"{base}_{view}"] = np.concatenate([np.asarray(arrays[f"{base}_{s}"]) for s in present], axis=0)
 
     if not derived:
         return arrays
@@ -176,23 +210,29 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
       (F-S2), which used to happen silently. A continuous ``y_{split}`` -- the regression
       target juniper-data's synthetic generators emit -- is logged at DEBUG.
 
-    ``split`` must be ``"train"`` / ``"val"`` / ``"test"`` / ``"full"`` -- the four the app's
-    request schema admits; anything else is refused before the artifact is read.
+    ``split`` must be ``"train"`` / ``"val"`` / ``"test"`` / ``"full"`` / ``"trainval"`` -- the
+    five the app's request schema admits; anything else is refused before the artifact is read.
     ``split="full"`` is served from the artifact's own ``*_full`` family when it has one, and
     otherwise from :func:`derive_full_split`. juniper-data stopped emitting that family in
     decision 11, so without the fallback every post-#369 artifact would fail this read --
-    which is how ``POST /v1/crossval`` would break.
+    which is how ``POST /v1/crossval`` would break. ``split="trainval"`` (0.6.0, plan W5.2) is
+    the composed train | val pool from :func:`derive_composed_split`: what cross-validation
+    selects over, leaving ``test`` for a single out-of-sample read.
+
+    ``ticker_code_{split}`` and ``window_end_date_{split}`` are read into the result when present
+    (``(W,)``, integer dtype) and left ``None`` otherwise; they ride the composed views like every
+    other per-window key, so a panel pool keeps each window's entity and date.
     """
     if target not in TARGET_MODES:
         raise ValueError(f"target must be one of {TARGET_MODES}; got {target!r}")
-    # The four splits the app's request schema admits (``SplitName``). Spelled as an inline literal
-    # rather than derived from _FULL_COMPONENT_SPLITS: ``split`` reaches the target-fallback log lines,
+    # The five splits the app's request schema admits (``SplitName``). Spelled as an inline literal
+    # rather than derived from _COMPOSED_VIEWS: ``split`` reaches the target-fallback log lines,
     # and a comparison against a literal display is what static analysis (CodeQL
     # ``py/log-injection``) recognises as validating a caller-supplied string.
-    if split not in ("train", "val", "test", "full"):
-        raise ValueError(f"split must be one of 'train' / 'val' / 'test' / 'full'; got {split!r}")
-    if split == "full" and f"X_{split}" not in arrays:
-        arrays = derive_full_split(arrays)
+    if split not in ("train", "val", "test", "full", "trainval"):
+        raise ValueError(f"split must be one of 'train' / 'val' / 'test' / 'full' / 'trainval'; got {split!r}")
+    if split in _COMPOSED_VIEWS and f"X_{split}" not in arrays:
+        arrays = derive_composed_split(arrays, split)
     if f"X_{split}" not in arrays:
         raise ValueError(f"NPZ artifact is missing required key 'X_{split}'")
     X = np.asarray(arrays[f"X_{split}"])
@@ -239,8 +279,28 @@ def sequence_data_from_arrays(arrays: dict[str, np.ndarray], split: str = "train
 
     target_dt = _read_target_dt(arrays, split, n_windows)
     seq_lengths = _read_seq_lengths(arrays, split, n_windows, lookback)
+    ticker_code, window_end_date = (_read_window_key(arrays, base, split, n_windows) for base in _WINDOW_KEYS)
 
-    return SequenceData(X=X, y=y, dt=dt, target_dt=target_dt, seq_lengths=seq_lengths)
+    return SequenceData(X=X, y=y, dt=dt, target_dt=target_dt, seq_lengths=seq_lengths, ticker_code=ticker_code, window_end_date=window_end_date)
+
+
+def _read_window_key(arrays: dict[str, np.ndarray], base: str, split: str, n_windows: int) -> np.ndarray | None:
+    """``{base}_{split}`` when present: ``(W,)`` of an integer dtype (W5.2; see :data:`_WINDOW_KEYS`).
+
+    ``ticker_code`` is the entity id (an index into the artifact's ``ticker_vocab``) and
+    ``window_end_date`` the window's last observed day as a ``YYYYMMDD`` integer. A ``(W, 1)``
+    column or a float array is refused rather than reshaped or truncated: both are the keys the
+    fold cut is made on, and a silent coercion there changes which windows share a fold.
+    """
+    key = f"{base}_{split}"
+    if key not in arrays:
+        return None
+    values = np.asarray(arrays[key])
+    if values.shape != (n_windows,):
+        raise ValueError(f"{key} shape {values.shape} != {(n_windows,)}")
+    if not np.issubdtype(values.dtype, np.integer):
+        raise ValueError(f"{key} must be an integer dtype, got {values.dtype}")
+    return values
 
 
 def _select_target(arrays: dict[str, np.ndarray], split: str, target: str) -> np.ndarray:
