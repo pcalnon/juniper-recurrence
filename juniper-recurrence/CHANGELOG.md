@@ -9,6 +9,26 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Changed
+
+- **The bench's equities rows pool `trainval` and cut a panel's folds on the global date per entity; a multi-ticker row `equities_seq_panel` joins the single-ticker one** (W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`, the owed
+  bench half; `bench/` is not part of the published distribution). `bench/run_benchmark.py` cut row-index folds
+  (`walk_forward_folds(n, embargo=2)`) over the composed `full` view, so on a multi-ticker request -- an
+  entity-major pool -- ticker A's 2021 landed in train beside ticker B's 2015 in eval, and the last fold
+  evaluated the `test` partition the plan reserves (F-P7 / W5.3). `bench/datasets.py`'s `Dataset` now carries
+  `order` (`window_end_date`), `groups` (`ticker_code`) and the row's own `embargo`; `equities_seq` loads the
+  composed `trainval` view (juniper-recurrence-model 0.6.0's `derive_composed_split`; `_full` is its `"full"`
+  case) with those keys and `embargo = lookback`; `run_dataset` passes `order` / `groups` / the row's embargo
+  to model-core -- the seam `POST /v1/crossval` uses -- and records a `folding` block (`embargo`, `ordered`,
+  `grouped`, `n_entities`, `n_folds`) that the report's per-dataset header prints. The synthetic rows are
+  unchanged (row-index folds, embargo 2). The new informational row `equities_seq_panel` (`AAPL` + `MSFT`)
+  sits beside `equities_seq`; Band 2b covers both. Four bench tests pin the pool, the keys, the per-entity
+  embargo on the date-cut folds, the `run_dataset` seam and the registry (the generator is stubbed; no
+  network). Needs juniper-recurrence-model >= 0.6.0, the app's own floor since 0.8.0. `_full`'s derivation
+  moved into `_composed`, leaving an 8-line shim; the symbol-loss screen's `WEAKENED` finding on it is the
+  intended shape, waived with an enumerated `Allow-Symbol-Loss: func:_full` trailer in the PR range.
+
 ## [0.8.0] - 2026-10-20
 
 ### Changed

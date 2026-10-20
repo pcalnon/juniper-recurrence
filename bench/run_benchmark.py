@@ -33,6 +33,8 @@ _RESULTS = Path(__file__).resolve().parent / "results"
 _HEADLINE_D = 16
 _D_GRID = (8, 16, 32)
 _N_FOLDS = 5
+# The synthetic rows' embargo (in windows). A dataset that carries its own `embargo` -- the equities rows set
+# it to the look-back (plan W5.2) -- overrides this in run_dataset.
 _EMBARGO = 2
 # Regularized-readout variant. The LMURegressor default ridge=0 (plain lstsq) is an intentional
 # juniper-model-core conformance setting ("overfit-tiny exactly") that overfits low-signal real
@@ -60,7 +62,27 @@ def run_dataset(ds: datasets.Dataset) -> dict[str, Any]:
     )  # data-driven memory window, held constant across LMU variants
     if not np.isfinite(theta) or theta <= 0:
         theta = float(ds.X.shape[1])
-    folds = walk_forward_folds(ds.X.shape[0], n_folds=_N_FOLDS, embargo=_EMBARGO)
+    # W5.2: a panel's folds are cut on the global date per entity (model-core's `order=` / `groups=`,
+    # the seam the service's crossval route uses), with the row's own embargo -- the equities rows: one
+    # look-back. A row-index cut over an entity-major pool would put ticker A's 2021 in train and ticker
+    # B's 2015 in eval. A keyless synthetic series keeps its row-index folds and the harness embargo.
+    embargo = _EMBARGO if ds.embargo is None else int(ds.embargo)
+    folds = walk_forward_folds(
+        ds.X.shape[0],
+        n_folds=_N_FOLDS,
+        embargo=embargo,
+        order=ds.order,
+        groups=ds.groups,
+    )
+    folding = {
+        "embargo": embargo,
+        "ordered": ds.order is not None,
+        "grouped": ds.groups is not None,
+        "n_entities": int(np.unique(ds.groups).shape[0])
+        if ds.groups is not None
+        else 1,
+        "n_folds": len(folds),
+    }
     aux_real = {"dt": ds.dt, "target_dt": ds.target_dt}
     aux_fixed = {"dt": baselines.uniform_dt(ds.dt), "target_dt": ds.target_dt}
 
@@ -130,6 +152,7 @@ def run_dataset(ds: datasets.Dataset) -> dict[str, Any]:
         "grid": ds.grid,
         "n_windows": int(ds.X.shape[0]),
         "theta": theta,
+        "folding": folding,
         "models": {**models, **sweep},
     }
 
@@ -190,7 +213,7 @@ def evaluate_bands(results: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     # Δt-LMU matches/beats linear on the *stationary* target. See recurrence#28 + findings §3.2.
     rkey = f"lmu_var_d{_HEADLINE_D}_ridge{_RIDGE_VARIANT}"
     for name in results:
-        if name == "equities_seq" and rkey in results[name]["models"]:
+        if name.startswith("equities_seq") and rkey in results[name]["models"]:
             vr, lr = r2(name, rkey), r2(name, "linear_ridge")
             bands.append(
                 {
@@ -280,8 +303,12 @@ def _render_report(
         lines.append("")
     lines += ["## Per-dataset metrics (walk-forward CV; mean ± std across folds)", ""]
     for name, res in results.items():
+        folding = res.get("folding") or {}
+        extra = f", embargo={folding['embargo']}" if "embargo" in folding else ""
+        if folding.get("grouped"):
+            extra += f", {folding['n_entities']} entities, folds cut on the date"
         lines.append(
-            f"### `{name}` ({res['grid']}-Δt, n_windows={res['n_windows']}, θ={res['theta']:.3f}, {_N_FOLDS} folds)"
+            f"### `{name}` ({res['grid']}-Δt, n_windows={res['n_windows']}, θ={res['theta']:.3f}, {_N_FOLDS} folds{extra})"
         )
         lines.append("")
         lines.append("| model | rmse | mae | r2 |")

@@ -1,19 +1,24 @@
 """Dataset generation for the recurrence benchmark.
 
 Generates the §3 datasets directly via the ``juniper-data`` generators (no live service),
-returning the full ordered window set + the per-step Δt. Uses the ``*_full`` arrays (every
-window, chronologically ordered) so the walk-forward CV does its own splitting.
+returning one ordered window set + the per-step Δt so the walk-forward CV does its own splitting.
+The synthetic rows use the composed ``full`` view (every window); the equities rows use the
+composed ``trainval`` view (train | val, entity-major -- plan W5.2), so the final ``test``
+partition is never in a fold, and carry the per-window keys the folds are cut on.
 
-Generator output (verified): ``X_full (n,T,F)``, ``y_full (n,output_dim)``, ``dt_full (n,T)``,
-``target_dt_full (n,)`` (+ ``observed_mask_full``, ``*_train`` / ``*_test`` splits we ignore).
-For ``equities_seq`` the regression target is ``y_reg_full`` (next-day close), not the one-hot
-``y_full`` direction label.
+Generator output (verified): ``X_{split} (n,T,F)``, ``y_{split} (n,output_dim)``, ``dt_{split} (n,T)``,
+``target_dt_{split} (n,)`` (+ ``observed_mask_{split}``) for ``train`` / ``val`` / ``test``; the composed
+views are derived by juniper-recurrence-model (``derive_composed_split``, 0.6.0). For ``equities_seq``
+the regression target is ``y_reg_{split}`` (the stationary next-day log-return), not the one-hot
+``y_{split}`` direction label, and the artifact also carries ``window_end_date_{split}`` (``YYYYMMDD``
+integers) and ``ticker_code_{split}``.
 
 The ``DATASETS`` set is the pre-registered benchmark scope (DP-5 guardrail). Beyond the three
 synthetic datasets of the ratified eval it adds four **extensions**: a noise-robustness sweep
 (``*_noise0.10`` / ``*_noise0.25`` — does the Δt advantage survive observation noise?), the
-``delay_product`` capacity dataset (design §8a), the ``ar_p`` linear floor (plan W-5), and a
-real-data irregular-Δt sanity check (``equities_seq``).
+``delay_product`` capacity dataset (design §8a), the ``ar_p`` linear floor (plan W-5), and two
+real-data irregular-Δt sanity checks (``equities_seq``, one ticker; ``equities_seq_panel``, two
+tickers whose folds are cut on the global date per entity -- plan W5.2).
 """
 
 from __future__ import annotations
@@ -46,6 +51,15 @@ class Dataset:
     y: np.ndarray  # (n, output_dim)
     dt: np.ndarray  # (n, T) real per-step gaps (dt[:, 0] == 0)
     target_dt: np.ndarray  # (n,) irregular forecast horizon
+    # W5.2 (juniper-recurrence-model 0.6.0): the per-window keys a panel's folds are cut on, and the
+    # row's own embargo. ``order`` is ``window_end_date`` (``YYYYMMDD`` ints) and ``groups`` is
+    # ``ticker_code``; both ``None`` for a synthetic series, whose folds stay row-index folds.
+    # ``embargo`` is in windows; ``None`` means the harness default (``run_benchmark._EMBARGO``). The
+    # equities rows set it to the look-back -- the gap that keeps an eval window's history clear of
+    # every train window's -- as ``POST /v1/crossval`` does by default since juniper-recurrence 0.8.0.
+    order: np.ndarray | None = None
+    groups: np.ndarray | None = None
+    embargo: int | None = None
 
 
 def _full(out: dict[str, np.ndarray], key: str) -> np.ndarray:
@@ -53,30 +67,38 @@ def _full(out: dict[str, np.ndarray], key: str) -> np.ndarray:
 
     Decision 11 (juniper-data#369) retired the ``*_full`` family from the NPZ contract,
     so the generators below emit only ``train`` / ``val`` / ``test`` and this used to be
-    a bare ``KeyError`` on every dataset.
+    a bare ``KeyError`` on every dataset. The ``"full"`` case of :func:`_composed`.
+    """
+    return _composed(out, key, "full")
 
-    ``derive_full_split`` rebuilds the view ENTITY-major, stable-sorting on
-    ``ticker_code`` when the artifact carries one. That is load-bearing for
-    ``equities_seq``: juniper-data laid its ``_full`` down entity-major while the
-    partitions are split-major, so a plain ``np.concatenate`` would hold the same rows in
-    a DIFFERENT order for any multi-ticker request, and walk-forward CV slices by row
-    index -- a change to what the benchmark measures, not a refactor. A legacy artifact
-    that still ships ``*_full`` keeps the producer's own arrays, byte for byte.
+
+def _composed(out: dict[str, np.ndarray], key: str, view: str) -> np.ndarray:
+    """Read one array from a composed view -- ``"full"`` (train | val | test) or ``"trainval"`` (train | val) -- deriving the view on first use.
+
+    ``derive_composed_split`` (juniper-recurrence-model 0.6.0) rebuilds either view ENTITY-major,
+    stable-sorting on ``ticker_code`` when the artifact carries one. That is load-bearing for
+    the equities rows: juniper-data laid its retired ``_full`` down entity-major while the
+    partitions are split-major, so a plain ``np.concatenate`` would hold the same rows in a
+    DIFFERENT order for any multi-ticker request, and model-core's folds slice by row index
+    unless given ``order`` / ``groups`` -- a change to what the benchmark measures, not a
+    refactor. A legacy artifact that still ships ``*_full`` keeps the producer's own arrays,
+    byte for byte. ``trainval`` (plan W5.2) is the cross-validation pool: the final ``test``
+    partition is never in a fold.
 
     The derived keys are merged back into ``out`` so the reconstruction runs once per
     dataset rather than once per call.
     """
-    full_key = f"{key}_full"
-    if full_key not in out:
-        from juniper_recurrence_model.data import derive_full_split
+    view_key = f"{key}_{view}"
+    if view_key not in out:
+        from juniper_recurrence_model.data import derive_composed_split
 
-        out.update(derive_full_split(out))
-    if full_key not in out:
+        out.update(derive_composed_split(out, view))
+    if view_key not in out:
         available = ", ".join(sorted(out)) or "<empty>"
         raise KeyError(
-            f"{full_key!r} could not be derived; generator emitted: {available}"
+            f"{view_key!r} could not be derived; generator emitted: {available}"
         )
-    return np.asarray(out[full_key])
+    return np.asarray(out[view_key])
 
 
 def irregular_sine(
@@ -242,11 +264,17 @@ def equities_seq(
     end_date: str = "2022-01-01",
     lookback: int = 32,
     regression_target: str = "log_return",
+    name: str = "equities_seq",
 ) -> Dataset:
-    """Real irregular-Δt sequences from one equity's daily history (calendar gaps = genuine Δt).
+    """Real irregular-Δt sequences from equities' daily history (calendar gaps = genuine Δt).
 
-    Uses a **single ticker** so the concatenated window set is one chronological series (clean
-    walk-forward CV — no cross-ticker interleaving). The regression target ``y_reg`` is the
+    The default is a **single ticker** (one chronological series); ``equities_seq_panel`` passes
+    two. Either way the window set is the composed ``trainval`` pool -- the final ``test``
+    partition is never in a fold (plan W5.2) -- and the dataset carries the per-window
+    ``window_end_date`` / ``ticker_code`` keys plus ``embargo = lookback``, so ``run_dataset``
+    cuts a panel's folds on the global date with a per-entity embargo of one look-back (the
+    route's own rule since juniper-recurrence 0.8.0) instead of by row index over an
+    entity-major pool. The regression target ``y_reg`` is the
     **stationary next-day log-return** (``regression_target="log_return"``, juniper-data ≥ 0.8.0),
     not the raw next-day close: the raw price level is non-stationary and a closed-form LMU readout
     extrapolates it badly (a r²≈−50 artifact — see the juniper-ml findings doc §3.2 and
@@ -275,13 +303,22 @@ def equities_seq(
             regression_target=regression_target,
         )
     )
+    pool = "trainval"
+    has_keys = all(
+        f"{key}_{split}" in out
+        for key in ("window_end_date", "ticker_code")
+        for split in ("train", "val")
+    )
     return Dataset(
-        "equities_seq",
+        name,
         "irregular",
-        _full(out, "X"),
-        _full(out, "y_reg"),
-        _full(out, "dt"),
-        _full(out, "target_dt"),
+        _composed(out, "X", pool),
+        _composed(out, "y_reg", pool),
+        _composed(out, "dt", pool),
+        _composed(out, "target_dt", pool),
+        order=_composed(out, "window_end_date", pool) if has_keys else None,
+        groups=_composed(out, "ticker_code", pool) if has_keys else None,
+        embargo=int(lookback),
     )
 
 
@@ -314,4 +351,11 @@ DATASETS = {
     "ar_p": ar_p,
     "delay_product": delay_product,
     "equities_seq": equities_seq,
+    # W5.2: the multi-ticker row. Two entities whose windows interleave in time; the folds are cut on
+    # the global date per entity (see run_dataset), which a row-index cut over the entity-major pool
+    # would get wrong (ticker A's 2021 in train, ticker B's 2015 in eval). Informational, like the
+    # single-ticker row; needs the [bench-equities] extra and network at generation time.
+    "equities_seq_panel": partial(
+        equities_seq, symbols=("AAPL", "MSFT"), name="equities_seq_panel"
+    ),
 }
