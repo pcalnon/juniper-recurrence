@@ -26,7 +26,7 @@ def test_split_defaults_to_train():
     assert DatasetRef(dataset_id="x").split == "train"
 
 
-@pytest.mark.parametrize("split", ["train", "val", "test", "full"])
+@pytest.mark.parametrize("split", ["train", "val", "test", "full", "trainval"])
 def test_the_four_contract_splits_validate(split):
     """All four names the contract defines are accepted, not just the two that used to be documented.
 
@@ -75,4 +75,4 @@ def test_a_bad_split_is_a_422_at_the_request_boundary():
 def test_the_openapi_schema_advertises_the_four_splits():
     """The narrowing is also a documentation fix: the four names now appear in the published schema."""
     schema = TestClient(build_app(Settings(api_keys=None))).app.openapi()
-    assert schema["components"]["schemas"]["DatasetRef"]["properties"]["split"]["enum"] == ["train", "val", "test", "full"]
+    assert schema["components"]["schemas"]["DatasetRef"]["properties"]["split"]["enum"] == ["train", "val", "test", "full", "trainval"]  # trainval: the W5.2 CV pool

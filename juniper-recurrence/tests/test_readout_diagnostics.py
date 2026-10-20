@@ -61,14 +61,14 @@ def full_npz_arrays() -> dict[str, np.ndarray]:
     """A contract-valid ``full`` split (20 windows) whose per-window elapsed time varies, so a
     data-driven theta differs between folds of different sizes."""
     rng = np.random.default_rng(0)
-    n_windows, lookback, n_features = 20, 5, 2
+    n_windows, lookback, n_features = 40, 5, 2  # 40 against a look-back of 5: three folds survive the W5.2 default embargo
     X = rng.standard_normal((n_windows, lookback, n_features)).astype("float32")
     dt = np.zeros((n_windows, lookback), dtype="float32")
     dt[:, 1:] = rng.uniform(0.5, 2.0, size=(n_windows, lookback - 1)).astype("float32")
     y = rng.standard_normal((n_windows,)).astype("float32")
     target_dt = rng.uniform(0.5, 2.0, size=(n_windows,)).astype("float32")
     seq_lengths = np.full((n_windows,), lookback, dtype="int64")
-    return {"X_full": X, "y_reg_full": y, "dt_full": dt, "target_dt_full": target_dt, "seq_lengths_full": seq_lengths}
+    return {"X_train": X, "y_reg_train": y, "dt_train": dt, "target_dt_train": target_dt, "seq_lengths_train": seq_lengths}
 
 
 @pytest.fixture
@@ -279,8 +279,8 @@ def test_crossval_per_fold_theta_is_each_folds_own_median(fake_full_data) -> Non
     # in-process.
     from juniper_model_core.crossval import walk_forward_folds
 
-    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4}).json()
-    elapsed = np.sum(fake_full_data["dt_full"], axis=1)
+    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4, "embargo": 0}).json()
+    elapsed = np.sum(fake_full_data["dt_train"], axis=1)
     folds = walk_forward_folds(elapsed.shape[0], n_folds=3, scheme="expanding", embargo=0, min_train=None)
     expected = [float(np.median(elapsed[np.asarray(fold.train_idx)])) for fold in folds]
     assert [f["diagnostics"]["theta"] for f in body["folds"]] == pytest.approx(expected)

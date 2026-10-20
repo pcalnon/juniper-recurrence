@@ -19,6 +19,11 @@ each fold's model is kept after its fit and its resolved hyperparameters -- thet
 and lambda, the RFF bandwidth, the GCV edge / null-model flags -- are read into that fold's
 ``diagnostics`` block. The executor's ``FoldResult`` carries metrics only, and the per-fold factory
 is the one seam that sees the model, so the route captures it there.
+
+W5.2 (entity-grouped chronological CV): the pool is the ``trainval`` view (never ``test``), and
+``juniper_recurrence._folds.build_folds`` cuts the folds on the global ``window_end_date`` with a
+per-entity embargo that defaults to the look-back, dropping train windows whose label crosses the
+cut; the ``folding`` block on the response says what was done.
 """
 
 from __future__ import annotations
@@ -30,14 +35,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from juniper_data_client import JuniperDataClientError
-from juniper_model_core.crossval import CrossValResult, cross_validate, walk_forward_folds
+from juniper_model_core.crossval import CrossValResult, cross_validate
 from juniper_recurrence_model import LMURegressor
 
 from juniper_recurrence import metrics
+from juniper_recurrence._folds import POOL_SPLIT, build_folds
 from juniper_recurrence._readout import build_lmu_regressor, readout_diagnostics
 from juniper_recurrence.data import load_sequence_data
 from juniper_recurrence.routers._common import get_settings, get_state, map_data_error
-from juniper_recurrence.schemas import CrossValFoldModel, CrossValRequest, CrossValResponse, CrossValStatusResponse, DatasetDescriptor, ReadoutDiagnostics
+from juniper_recurrence.schemas import CrossValFolding, CrossValFoldModel, CrossValRequest, CrossValResponse, CrossValStatusResponse, DatasetDescriptor, ReadoutDiagnostics
 from juniper_recurrence.settings import Settings
 from juniper_recurrence.state import AppState
 
@@ -46,11 +52,11 @@ router = APIRouter(tags=["crossval"])
 logger = logging.getLogger(__name__)
 
 
-def _to_response(result: CrossValResult, dataset: DatasetDescriptor, diagnostics: list[ReadoutDiagnostics]) -> CrossValResponse:
+def _to_response(result: CrossValResult, dataset: DatasetDescriptor, diagnostics: list[ReadoutDiagnostics], folding: CrossValFolding) -> CrossValResponse:
     """Render a :class:`~juniper_model_core.crossval.CrossValResult` as the API response model.
 
     ``diagnostics`` is one block per fold in ``result.folds`` order (W5.10); the two are zipped by
-    position and must agree in length.
+    position and must agree in length. ``folding`` is how the folds were cut (W5.2).
     """
     if len(diagnostics) != len(result.folds):
         raise RuntimeError(f"per-fold diagnostics ({len(diagnostics)}) do not match the folds ({len(result.folds)})")
@@ -61,6 +67,7 @@ def _to_response(result: CrossValResult, dataset: DatasetDescriptor, diagnostics
         eval_aggregate=result.eval_aggregate,
         eval_std=result.eval_std,
         dataset=dataset,
+        folding=folding,
     )
 
 
@@ -70,7 +77,7 @@ def crossval(
     state: Annotated[AppState, Depends(get_state)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> CrossValResponse:
-    """Synchronously cross-validate the LMU over walk-forward folds of the dataset's ``_full`` split."""
+    """Synchronously cross-validate the LMU over walk-forward folds of the dataset's ``trainval`` pool (W5.2)."""
     if not state.crossval_lock.acquire(blocking=False):
         logger.warning("POST /v1/crossval rejected: a cross-validation run is already in progress")
         raise HTTPException(status.HTTP_409_CONFLICT, "a cross-validation run is already in progress")
@@ -83,7 +90,7 @@ def crossval(
                 name=req.dataset.name,
                 generator=req.dataset.generator,
                 params=req.dataset.params,
-                split="full",  # CV always derives folds from the full chronological set (D-CV-4)
+                split=POOL_SPLIT,  # W5.2: train | val, entity-major; ``test`` is reserved for one out-of-sample read
                 timeout=settings.juniper_data_timeout_seconds,
             )
         except (JuniperDataClientError, ValueError) as exc:
@@ -94,15 +101,10 @@ def crossval(
         theta = req.theta if req.theta is not None else settings.default_theta
 
         try:
-            folds = walk_forward_folds(
-                sequence.X.shape[0],
-                n_folds=req.n_folds,
-                scheme=req.scheme,
-                embargo=req.embargo,
-                min_train=req.min_train,
-            )
+            folds, spec = build_folds(sequence, n_folds=req.n_folds, scheme=req.scheme, embargo=req.embargo, min_train=req.min_train, embargo_days=req.embargo_days)
         except ValueError as exc:
             raise HTTPException(422, f"invalid cross-validation configuration: {exc}") from exc
+        folding = CrossValFolding(**spec.__dict__)
 
         # The per-fold model factory, built once up front to validate the readout config (torch
         # availability for readout='mlp', knob combinations) and fail fast with a clean error rather
@@ -130,6 +132,7 @@ def crossval(
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
         logger.info("cross-validation start: dataset=%s folds=%s scheme=%s d=%s theta=%s readout=%s", descriptor["dataset_id"], len(folds), req.scheme, d, theta, req.readout or "linear")
+        logger.info("cross-validation folding: pool=%s lookback=%d embargo=%d embargo_days=%s grouped=%s ordered=%s n_entities=%s dropped_label_availability=%d dropped_embargo_days=%d", POOL_SPLIT, spec.lookback, spec.embargo, spec.embargo_days, spec.grouped, spec.ordered, spec.n_entities, spec.dropped_label_availability, spec.dropped_embargo_days)
         start = time.perf_counter()
         # W5.10: the executor returns metrics only and discards each fold's model, and the factory
         # is the one seam that sees it -- so keep every fold's model here, keyed by the executor's
@@ -150,13 +153,13 @@ def crossval(
         )
         diagnostics = [readout_diagnostics(fold_models[fold.fold]) for fold in result.folds]
         dataset = DatasetDescriptor(**descriptor)
-        state.set_crossval(result, dataset, diagnostics)
+        state.set_crossval(result, dataset, diagnostics, folding)
         duration = time.perf_counter() - start
         metrics.record_crossval(duration, result.eval_aggregate)
         logger.info("cross-validation complete: dataset=%s folds=%s duration=%.3fs eval_aggregate=%s", descriptor["dataset_id"], len(result.folds), duration, result.eval_aggregate)
         # The dataset is named by the line above; this one carries only model-resolved values.
         logger.info("cross-validation diagnostics: per_fold=%s", [diag.model_dump(exclude_none=True) for diag in diagnostics])
-        return _to_response(result, dataset, diagnostics)
+        return _to_response(result, dataset, diagnostics, folding)
     finally:
         state.crossval_lock.release()
 
@@ -164,8 +167,8 @@ def crossval(
 @router.get("/v1/crossval/status", response_model=CrossValStatusResponse)
 def crossval_status(state: Annotated[AppState, Depends(get_state)]) -> CrossValStatusResponse:
     """The most recent cross-validation result (persisted in-process), or ``idle`` if none has run."""
-    state_name, result, dataset, diagnostics = state.crossval_status()
+    state_name, result, dataset, diagnostics, folding = state.crossval_status()
     return CrossValStatusResponse(
         state=state_name,
-        result=_to_response(result, dataset, diagnostics) if result is not None and dataset is not None else None,
+        result=_to_response(result, dataset, diagnostics, folding) if result is not None and dataset is not None and folding is not None else None,
     )
