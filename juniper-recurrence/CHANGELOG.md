@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-20
+
 ### Changed
 
 - **`POST /v1/crossval` selects over the `trainval` pool and cuts a panel's folds on the global
