@@ -411,7 +411,15 @@ class JuniperRecurrenceClient:
         """``POST /v1/train`` — synchronously fit the LMU regressor on a dataset split.
 
         Supply exactly one of ``dataset_id`` / ``name`` / ``generator``. Returns the
-        ``TrainResponse`` (``final_metrics``, ``n_epochs``, ``stopped_reason``, ``dataset``).
+        ``TrainResponse``: ``final_metrics`` (scored on the training split itself, which
+        ``metrics_scope: "in_sample"`` labels), ``n_epochs``, ``stopped_reason``, ``dataset``,
+        the fit's ``operation_id``, and ``diagnostics`` -- what the readout resolved its
+        hyperparameters to: the ``theta`` it used (the data-driven value when ``theta`` was
+        omitted), ``ridge_mode`` / ``ridge_selected`` (the lambda chosen under ``ridge="gcv"``),
+        the RFF ``gamma``, and the ``gcv_at_edge`` / ``null_model`` flags, where ``None`` means
+        not determined, never false. ``metrics_scope`` and ``operation_id`` arrive with
+        juniper-recurrence 0.6.0 and ``diagnostics`` with 0.7.0; the body is returned as served,
+        so an older service simply omits them.
         Raises :class:`JuniperRecurrenceConflictError` (409) if a run is already in progress.
 
         ``timeout`` overrides the client-wide request timeout for this call alone —
@@ -496,7 +504,7 @@ class JuniperRecurrenceClient:
         params: Optional[dict[str, Any]] = None,
         split: str = "train",
         scheme: str = "expanding",
-        embargo: int = 0,
+        embargo: Optional[int] = None,
         min_train: Optional[int] = None,
         d: Optional[int] = None,
         theta: Optional[float] = None,
@@ -511,15 +519,28 @@ class JuniperRecurrenceClient:
         mlp_patience: Optional[int] = None,
         timeout: Optional[float] = None,
     ) -> dict[str, Any]:
-        """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the whole dataset.
+        """``POST /v1/crossval`` — synchronous walk-forward cross-validation over the dataset.
 
-        The folds are cut from the ``full`` split: the artifact's own ``*_full`` arrays when it has
-        them, and otherwise a view rebuilt server-side from ``train | val | test``. juniper-data
-        stopped emitting the ``*_full`` family, so the rebuilt case is now the ordinary one; the
-        ``split`` argument below is not used by this endpoint, which always cross-validates the
-        whole set.
+        From juniper-recurrence 0.8.0 the folds are cut from the ``trainval`` pool (train | val, so
+        the final ``test`` partition is never in a fold), and when the artifact carries
+        ``ticker_code`` / ``window_end_date`` a panel's folds are cut on the global date per entity.
+        An older service cut them from the ``full`` view: the artifact's own ``*_full`` arrays, or
+        one rebuilt server-side from ``train | val | test``. Either way the ``split`` argument below
+        is not used by this endpoint.
 
-        Returns the ``CrossValResponse`` (per-fold ``folds`` + ``eval_aggregate`` / ``eval_std``).
+        ``embargo`` is the gap, in windows per entity, between a fold's train and eval windows.
+        Omitted (the default), the service picks it: one look-back from 0.8.0, which keeps every
+        eval window's history clear of every train window, and 0 before. An explicit value is
+        honoured even below the look-back (0.8.0 logs a WARNING), so pass ``embargo=0`` only to
+        reproduce an unembargoed run.
+
+        Returns the ``CrossValResponse``: per-fold ``folds`` (each fold's ``train_metrics``,
+        ``eval_metrics``, ``n_epochs`` and, from 0.7.0, its ``diagnostics`` -- that fold's resolved
+        readout hyperparameters, as on :meth:`train`), ``eval_aggregate`` / ``eval_std``,
+        ``dataset``, and from 0.8.0 ``folding`` -- how the folds were cut: ``lookback``, the
+        resolved ``embargo``, ``embargo_days``, ``grouped`` / ``ordered``, ``n_entities``,
+        ``n_folds`` and the train windows dropped by the label-availability rule and by
+        ``embargo_days`` (``dropped_label_availability`` / ``dropped_embargo_days``).
         ``scheme`` is ``"expanding"`` or ``"rolling"``. Raises 409 if a CV run is already running.
 
         ``timeout`` overrides the client-wide request timeout for this call alone —
@@ -531,8 +552,9 @@ class JuniperRecurrenceClient:
             "dataset": _dataset_ref(dataset_id=dataset_id, name=name, generator=generator, params=params, split=split),
             "n_folds": n_folds,
             "scheme": scheme,
-            "embargo": embargo,
         }
+        if embargo is not None:
+            body["embargo"] = embargo
         if min_train is not None:
             body["min_train"] = min_train
         if d is not None:
