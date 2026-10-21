@@ -45,9 +45,10 @@ client.train(name="equities", d=16)
 # Predict — inline X with Δt, or a dataset reference
 client.predict(dataset_id="ds-1")
 
-# Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's
-# own *_full arrays when present, otherwise rebuilt from train | val | test)
-result = client.crossval(name="equities", n_folds=4, scheme="expanding", embargo=2)
+# Walk-forward cross-validation over the trainval pool (juniper-recurrence 0.8.0, whose response
+# reports the embargo it used under "folding"; older services use the whole `full` view). Omit
+# `embargo` to take the service's default, one look-back from 0.8.0.
+result = client.crossval(name="equities", n_folds=4, scheme="expanding")
 print(result["eval_aggregate"])
 
 # Inspect
