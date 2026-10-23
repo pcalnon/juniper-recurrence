@@ -8,6 +8,22 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crossval` no longer sends `embargo: 0` on every call, so the service's look-back default applies.**
+  The parameter defaulted to `0` and was always sent, and juniper-recurrence 0.8.0's `POST /v1/crossval`
+  honours an explicit value (it logs a WARNING below the look-back), so every caller who did not pass
+  `embargo` ran with no embargo -- the leakage that W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md` made the
+  service's default (one look-back per entity) to prevent. `embargo` now defaults to `None` and is sent only
+  when given; `embargo=0` still asks for an unembargoed run. Against a service older than 0.8.0, whose own
+  default was 0, nothing changes.
+- **Documentation: the `train` / `crossval` docstrings and the README describe the fields juniper-recurrence
+  0.6.0–0.8.0 added.** `train` returns `metrics_scope` and `operation_id` (0.6.0) and `diagnostics`, the
+  resolved readout hyperparameters (0.7.0); each `crossval` fold carries `diagnostics` (0.7.0) and the
+  response a `folding` block (0.8.0); and from 0.8.0 the folds are cut from the `trainval` pool, not the
+  `full` view. The README's example no longer passes `embargo=2`.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

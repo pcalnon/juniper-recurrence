@@ -22,9 +22,13 @@ def _client(**settings_kwargs) -> TestClient:
 
 @pytest.fixture
 def full_npz_arrays() -> dict[str, np.ndarray]:
-    """A contract-valid 3-D sequence NPZ mapping for the ``full`` split (20 windows)."""
+    """A contract-valid 3-D sequence NPZ mapping: a ``train`` partition of 40 windows (the ``trainval`` pool is train | val; with no ``val`` it is the train set).
+
+    40 windows against a look-back of 5 leaves every one of three folds a training set under the
+    W5.2 default embargo (one look-back): fold 0 trains on 10 − 5 rows.
+    """
     rng = np.random.default_rng(0)
-    n_windows, lookback, n_features = 20, 5, 2
+    n_windows, lookback, n_features = 40, 5, 2
     X = rng.standard_normal((n_windows, lookback, n_features)).astype("float32")
     dt = np.zeros((n_windows, lookback), dtype="float32")
     dt[:, 1:] = rng.uniform(0.5, 2.0, size=(n_windows, lookback - 1)).astype("float32")
@@ -32,12 +36,63 @@ def full_npz_arrays() -> dict[str, np.ndarray]:
     target_dt = rng.uniform(0.5, 2.0, size=(n_windows,)).astype("float32")
     seq_lengths = np.full((n_windows,), lookback, dtype="int64")
     return {
-        "X_full": X,
-        "y_reg_full": y,
-        "dt_full": dt,
-        "target_dt_full": target_dt,
-        "seq_lengths_full": seq_lengths,
+        "X_train": X,
+        "y_reg_train": y,
+        "dt_train": dt,
+        "target_dt_train": target_dt,
+        "seq_lengths_train": seq_lengths,
     }
+
+
+@pytest.fixture
+def three_partition_npz_arrays() -> dict[str, np.ndarray]:
+    """A two-ticker artifact with train / val / test partitions and the W5.2 keys, laid down split-major as juniper-data does."""
+    rng = np.random.default_rng(1)
+    lookback, n_features = 5, 2
+    counts = {"train": 24, "val": 8, "test": 8}
+    out: dict[str, np.ndarray] = {}
+    for split, per_ticker in counts.items():
+        n = 2 * per_ticker
+        out[f"X_{split}"] = rng.standard_normal((n, lookback, n_features)).astype("float32")
+        dt = np.zeros((n, lookback), dtype="float32")
+        dt[:, 1:] = 1.0
+        out[f"dt_{split}"] = dt
+        out[f"y_reg_{split}"] = rng.standard_normal((n,)).astype("float32")
+        out[f"target_dt_{split}"] = np.ones((n,), dtype="float32")
+        out[f"seq_lengths_{split}"] = np.full((n,), lookback, dtype="int64")
+        out[f"ticker_code_{split}"] = np.repeat(np.array([0, 1], dtype=np.int32), per_ticker)
+    # Consecutive YYYYMMDD days per ticker, train before val before test, the same calendar for both tickers.
+    base = np.datetime64("2020-01-01")
+    offset = 0
+    for split, per_ticker in counts.items():
+        days = (base + np.arange(offset, offset + per_ticker).astype("timedelta64[D]")).astype("datetime64[D]")
+        ymd = np.asarray([int(str(d)[0:4]) * 10000 + int(str(d)[5:7]) * 100 + int(str(d)[8:10]) for d in days], dtype=np.int32)
+        out[f"window_end_date_{split}"] = np.tile(ymd, 2)
+        offset += per_ticker
+    return out
+
+
+@pytest.fixture
+def fake_three_partition_data(monkeypatch, three_partition_npz_arrays) -> dict[str, np.ndarray]:
+    class _FakeDataClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def get_latest(self, name):
+            return {"dataset_id": f"latest-of-{name}"}
+
+        def create_dataset(self, **kwargs):
+            return {"dataset_id": "created-1"}
+
+        def download_artifact_npz(self, dataset_id):
+            return three_partition_npz_arrays
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("juniper_recurrence.data.JuniperDataClient", _FakeDataClient)
+    monkeypatch.setattr("juniper_recurrence.data.validate_npz_contract", lambda arrays, **kw: "sequence")
+    return three_partition_npz_arrays
 
 
 @pytest.fixture
@@ -77,9 +132,34 @@ def test_crossval_happy_path(fake_full_data):
     assert "accuracy" not in body["eval_aggregate"]  # RK-6
     assert set(body["eval_std"]) == set(body["eval_aggregate"])
     assert all(f["n_epochs"] == 1 for f in body["folds"])
-    # CV always operates on the full chronological split.
-    assert body["dataset"]["split"] == "full"
-    assert body["dataset"]["n_windows"] == 20
+    # CV selects over the trainval pool (W5.2); with no val partition that is the train set.
+    assert body["dataset"]["split"] == "trainval"
+    assert body["dataset"]["n_windows"] == 40
+    assert body["folding"] == {"lookback": 5, "embargo": 5, "embargo_days": None, "grouped": False, "ordered": False, "n_entities": None, "n_folds": 3, "dropped_label_availability": 0, "dropped_embargo_days": 0}
+
+
+def test_crossval_pool_excludes_test_and_cuts_a_panel_on_the_date(fake_three_partition_data):
+    # W5.2 at the route: the pool is train | val (never test), both tickers' keys cut the folds, and the
+    # response's folding block says so.
+    arrays = fake_three_partition_data
+    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 3, "d": 4}).json()
+    assert body["dataset"]["split"] == "trainval"
+    assert body["dataset"]["n_windows"] == arrays["X_train"].shape[0] + arrays["X_val"].shape[0]
+    folding = body["folding"]
+    assert folding["grouped"] is True and folding["ordered"] is True and folding["n_entities"] == 2
+    assert folding["embargo"] == 5 and folding["n_folds"] == len(body["folds"]) >= 1
+    assert folding["dropped_label_availability"] >= 0
+
+
+def test_crossval_embargo_days_is_accepted_and_reported(fake_three_partition_data):
+    body = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 2, "d": 4, "embargo": 0, "embargo_days": 2.5}).json()
+    assert body["folding"]["embargo_days"] == 2.5 and body["folding"]["embargo"] == 0
+
+
+def test_crossval_embargo_days_without_dates_422(fake_full_data):
+    resp = _client(api_keys=None).post("/v1/crossval", json={"dataset": {"dataset_id": "ds-1"}, "n_folds": 2, "d": 4, "embargo_days": 2.0})
+    assert resp.status_code == 422
+    assert "embargo_days needs" in resp.text
 
 
 def test_crossval_readout_rff(fake_full_data):
@@ -142,7 +222,8 @@ def test_crossval_status_idle_then_persisted(fake_full_data):
     # the persisted result matches what the POST returned (most-recent-result persistence)
     assert done["result"]["n_folds"] == 3
     assert done["result"]["eval_aggregate"] == posted["eval_aggregate"]
-    assert done["result"]["dataset"]["split"] == "full"
+    assert done["result"]["dataset"]["split"] == "trainval"
+    assert done["result"]["folding"] == posted["folding"]
 
 
 def test_crossval_rolling_with_embargo_and_min_train(fake_full_data):

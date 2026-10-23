@@ -9,6 +9,64 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Changed
+
+- **The bench's equities rows pool `trainval` and cut a panel's folds on the global date per entity; a multi-ticker row `equities_seq_panel` joins the single-ticker one** (W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`, the owed
+  bench half; `bench/` is not part of the published distribution). `bench/run_benchmark.py` cut row-index folds
+  (`walk_forward_folds(n, embargo=2)`) over the composed `full` view, so on a multi-ticker request -- an
+  entity-major pool -- ticker A's 2021 landed in train beside ticker B's 2015 in eval, and the last fold
+  evaluated the `test` partition the plan reserves (F-P7 / W5.3). `bench/datasets.py`'s `Dataset` now carries
+  `order` (`window_end_date`), `groups` (`ticker_code`) and the row's own `embargo`; `equities_seq` loads the
+  composed `trainval` view (juniper-recurrence-model 0.6.0's `derive_composed_split`; `_full` is its `"full"`
+  case) with those keys and `embargo = lookback`; `run_dataset` passes `order` / `groups` / the row's embargo
+  to model-core -- the seam `POST /v1/crossval` uses -- and records a `folding` block (`embargo`, `ordered`,
+  `grouped`, `n_entities`, `n_folds`) that the report's per-dataset header prints. The synthetic rows are
+  unchanged (row-index folds, embargo 2). The new informational row `equities_seq_panel` (`AAPL` + `MSFT`)
+  sits beside `equities_seq`; Band 2b covers both. Four bench tests pin the pool, the keys, the per-entity
+  embargo on the date-cut folds, the `run_dataset` seam and the registry (the generator is stubbed; no
+  network). Needs juniper-recurrence-model >= 0.6.0, the app's own floor since 0.8.0. `_full`'s derivation
+  moved into `_composed`, leaving an 8-line shim; the symbol-loss screen's `WEAKENED` finding on it is the
+  intended shape, waived with an enumerated `Allow-Symbol-Loss: func:_full` trailer in the PR range.
+
+## [0.8.0] - 2026-10-20
+
+### Changed
+
+- **`POST /v1/crossval` selects over the `trainval` pool and cuts a panel's folds on the global
+  date, per entity** (W5.2 of juniper-ml
+  `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
+  findings F-P7 / F-SCI2). The pool is juniper-recurrence-model 0.6.0's composed `trainval` view
+  (train | val, entity-major), so the final `test` partition is never in a fold -- on the W5.1
+  equities row the old `full`-view fold 4 evaluated the entire `test` partition, and the row's CV
+  population becomes 1,522 windows. When the artifact carries `ticker_code` and `window_end_date`,
+  model-core's `walk_forward_folds` is called with `groups` / `order`: every ticker's windows before
+  the cut are train and after it eval, and the embargo purge is applied per entity. **`embargo`
+  (windows) now defaults to the look-back** rather than 0 -- the gap that keeps an eval window's
+  history clear of every train window; an explicit smaller value is honoured (the E-G suite sweeps
+  it) and logged at WARNING. Two date-based rules follow: a train window whose
+  `window_end_date + target_dt` reaches the cut is dropped (its label is not known at the cut), and
+  the new optional **`embargo_days`** drops train windows ending within that many days of the cut
+  (422 on an artifact without dates). `window_end_date` is a `YYYYMMDD` integer and is converted to
+  day ordinals for the arithmetic. A keyless single series keeps its row-index folds. The response
+  and `GET /v1/crossval/status` carry a **`folding`** block (`lookback`, the resolved `embargo`,
+  `embargo_days`, `grouped`, `ordered`, `n_entities`, `n_folds`, `dropped_label_availability`,
+  `dropped_embargo_days`); `dataset.split` reads `trainval`. `SplitName` admits `trainval` on the
+  train route too. The floor is `juniper-recurrence-model>=0.6.0,<0.7.0` (also `[torch]`,
+  `[bench-torch]` and the image lock), where the view and the keys live.
+
+### Fixed
+
+- **The `[torch]` extra resolves again.** 0.7.0 raised the base floor to `juniper-recurrence-model>=0.5.0,<0.6.0`
+  but left the `[torch]` extra at `juniper-recurrence-model[torch]>=0.4.0,<0.5.0` (its entry below says
+  otherwise), so the two ranges were disjoint and `pip install "juniper-recurrence[torch]==0.7.0"` cannot
+  resolve; 0.6.1 and earlier were consistent, and the base install and the image (which ships no torch)
+  are unaffected. The extra now follows the base floor (`>=0.6.0,<0.7.0`), and the new
+  `tests/test_pyproject_floors.py` pins `dependencies`, `[torch]`, `[bench-torch]` and the image lock to
+  one `juniper-recurrence-model` range. Found 2026-10-19 in the index's `requires_dist`.
+- The WARNING for an explicit crossval `embargo` below the look-back no longer interpolates the request's
+  value (CodeQL `py/log-injection`); the response's `folding.embargo` carries it.
+
 ## [0.7.0] - 2026-10-19
 
 ### Added

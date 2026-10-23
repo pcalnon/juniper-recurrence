@@ -45,7 +45,7 @@ keys are configured; health + docs are always exempt):
 | `/v1/health`, `/v1/health/ready` | GET | Liveness / readiness (exempt). |
 | `/v1/train` | POST | Train the LMU on a dataset (synchronous); returns the `TrainResult`, with `metrics_scope: "in_sample"` labelling its `final_metrics`, and the fit's `operation_id`. |
 | `/v1/training/status` | GET | `idle` / `training` / `restoring` / `trained` / `restored` / `failed`, the operation it describes (`operation_id`, `busy_since`, `dataset_id`, `requested_by`), `model_operation_id`, a `failure` under `failed`, + last metrics + training events. |
-| `/v1/crossval` | POST | Walk-forward cross-validation over the whole dataset (the `full` split — the artifact's own `*_full` when present, otherwise rebuilt from `train \| val \| test`) (synchronous); returns aggregated per-fold metrics. |
+| `/v1/crossval` | POST | Walk-forward cross-validation over the `trainval` pool (train \| val, rebuilt entity-major; `test` is never in a fold). On an artifact with `ticker_code` / `window_end_date` the folds are cut on the global date with a per-entity embargo (default: one look-back) and a label-availability rule; `embargo_days` adds a duration gap. The response's `folding` block says what was done. Synchronous; returns aggregated per-fold metrics. |
 | `/v1/crossval/status` | GET | Most recent cross-validation result (aggregate + per-fold). |
 | `/v1/predict` | POST | Continuous predictions for inline `X` (+ `dt`) or a dataset ref; optional `expect_operation_id` (`409` when it does not name the model's operation). |
 | `/v1/model/snapshots` | GET / POST | List snapshots / save the current model; the save takes an optional `expect_operation_id`, like `/v1/predict`. |

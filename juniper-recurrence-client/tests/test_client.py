@@ -78,6 +78,24 @@ def test_crossval_passes_config() -> None:
 
 
 @responses.activate
+def test_crossval_omits_embargo_by_default() -> None:
+    # Omitted, the service picks the embargo: one look-back from juniper-recurrence 0.8.0 (0 before).
+    # The client used to send `embargo: 0` on every call, which the service honours.
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 3, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client().crossval(name="equities", n_folds=3)
+    sent = json.loads(responses.calls[0].request.body)
+    assert "embargo" not in sent
+
+
+@responses.activate
+def test_crossval_sends_an_explicit_zero_embargo() -> None:
+    responses.add(responses.POST, f"{BASE_URL}/v1/crossval", json={"task_type": "regression", "n_folds": 3, "folds": [], "eval_aggregate": {}, "eval_std": {}, "dataset": {}}, status=200)
+    _client().crossval(name="equities", n_folds=3, embargo=0)
+    sent = json.loads(responses.calls[0].request.body)
+    assert sent["embargo"] == 0
+
+
+@responses.activate
 def test_crossval_status_model_dataset() -> None:
     responses.add(responses.GET, f"{BASE_URL}/v1/crossval/status", json={"state": "done", "result": None}, status=200)
     responses.add(responses.GET, f"{BASE_URL}/v1/model", json={"topology": {"model_type": "lmu"}, "metrics": {}}, status=200)
