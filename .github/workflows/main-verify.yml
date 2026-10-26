@@ -38,11 +38,18 @@
 #        screen of the catch-up BASE .. <merge>. Uploads the JSON reports as an artifact.
 #        FAILs the job on a compositional-loss finding. Seconds to run (AST + git).
 #          CATCH-UP BASE (ml#880 G3.1): a quoted `[skip ci]` in a merge-commit body skips
-#          this workflow entirely, so a window of merges can land un-screened. BASE is
-#          therefore resolved to the head_sha of the most recent SUCCESSFUL main-verify run
-#          on main WHEN it is an ancestor of HEAD, so the NEXT run sweeps every merge
-#          skipped in between; it falls back to github.event.before (the push's first
-#          parent), then HEAD^1. The chosen base + reason are echoed to the step summary.
+#          this workflow entirely, so a window of merges can land un-screened. BASE therefore
+#          reaches back to the last tip KNOWN SCREENED that is an ancestor of HEAD, so the
+#          NEXT run sweeps every skipped merge in between. The property BASE needs is
+#          COVERAGE, never cleanliness: it ratchets on SCREENED, not on GREEN. Tiers, in
+#          order: the newest completed run whose `Assert screens reached a verdict` step
+#          succeeded (a FINDING is a verdict and advances the base; only an exit->=2
+#          INVOCATION error does not); else the legacy last-SUCCESSFUL tip; else
+#          github.event.before (the push's first parent); else HEAD^1. The chosen base +
+#          reason are echoed to the step summary. Resolving it from run-level
+#          `status=success` alone let a finding pin the base, so every later merge
+#          re-screened the same window and failed on someone else's damage. Design: juniper-ml
+#          notes/JUNIPER_2026-08-23_JUNIPER-ML_MAIN-VERIFY-CATCHUP-BASE-SCREENED-NOT-GREEN-DESIGN.md
 #      * notify -- on failure only. Upserts a STABLE-TITLE dedup tracking issue (ml#928): ONE
 #        open issue per red streak; each subsequent failing SHA COMMENTS on it. Dedup binds
 #        to the workflow's OWN authorship (creator=github-actions[bot] + exact title +
@@ -67,8 +74,9 @@
 # Security Notes:
 #    - Runs on push:main + manual dispatch only (never on forks / PRs).
 #    - Workflow-level permissions are 'contents: read'; the symbol-screen job adds
-#      'actions: read' (gh api reads the last successful run for the catch-up base) and only
-#      the notify job elevates ('issues: write') to upsert the tracking issue.
+#      'actions: read' (gh api reads recent main-verify runs and their job steps for the
+#      screened catch-up base) and only the notify job elevates ('issues: write') to
+#      upsert the tracking issue.
 #    - The one repo secret consumed is SLACK_WEBHOOK_URL (non-blocking notify; a missing
 #      secret skips the step and a post failure never fails the run).
 #
@@ -110,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read # gh api reads the last successful main-verify run for the catch-up base
+      actions: read # gh api reads recent main-verify runs + their job steps for the screened catch-up base
     steps:
       - name: Checkout Code (full history)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -140,10 +148,12 @@ jobs:
         run: |
           set -uo pipefail
           # CATCH-UP BASE (ml#880 G3.1): a quoted `[skip ci]` in a merge-commit body skips THIS
-          # workflow entirely, so a window of merges can land un-screened. Resolve BASE to the
-          # head_sha of the most recent SUCCESSFUL main-verify run on main WHEN it is an ancestor
-          # of HEAD, so the next run sweeps every merge skipped in between. Fall back to
-          # github.event.before (the push's first parent), then HEAD^1 (force-push / dispatch).
+          # workflow entirely, so a window of merges can land un-screened. BASE therefore reaches
+          # back to the last tip KNOWN SCREENED that is an ancestor of HEAD, so the next run
+          # sweeps every merge skipped in between. Tiers, in order: TIER 1 below; else TIER 2, the
+          # legacy last-SUCCESSFUL tip; else github.event.before (the push's first parent); else
+          # HEAD^1 (force-push / dispatch).
+          #
           # TIER 1 (screened): the newest completed run whose `Symbol & Docs Screen` job reached a
           # VERDICT -- clean or not -- observed as the conclusion of its `Assert screens reached a
           # verdict` step. That step exits non-zero ONLY on a screen INVOCATION error (exit >=2),
@@ -226,9 +236,10 @@ jobs:
           set -uo pipefail
           set +e # this step handles screen exit codes manually
           echo "=== juniper-recurrence - Post-Merge Sequence-Safety Screens ==="
-          # BASE is resolved by the preceding "Resolve catch-up base" step: the last SUCCESSFUL
-          # main-verify tip when it is an ancestor of HEAD (sweeping any [skip ci]-skipped window),
-          # else github.event.before, else HEAD^1. Defensive re-fallback here if it is empty.
+          # BASE is resolved by the preceding "Resolve catch-up base" step: the last tip KNOWN
+          # SCREENED when it is an ancestor of HEAD (sweeping any [skip ci]-skipped window), else
+          # the last successful tip, else github.event.before, else HEAD^1. Defensive re-fallback
+          # here if it is empty.
           base="$BASE_REF"
           if [ -z "$base" ] || ! git rev-parse --verify -q "${base}^{commit}" >/dev/null 2>&1; then
             base="$(git rev-parse --verify -q 'HEAD^1' || git rev-parse HEAD)"

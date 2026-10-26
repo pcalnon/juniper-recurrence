@@ -20,10 +20,13 @@
 #    This repo has no single ci.yml with a required-checks aggregator -- its CI is one lane per
 #    package (ci-recurrence-app / -model / -client / -bench, ci-pre-commit, ci-docs) -- so, like
 #    sequence-safety.yml, this is a STANDALONE workflow: never wired into any required-checks
-#    aggregate and not a required context. It shipped ADVISORY (`--advisory` reports and exits 0)
-#    on 2026-08-25 and went BLOCKING on 2026-08-26 once the three negative controls passed against
-#    the non-advisory invocation. Promotion to a required context, if ever, is an owner-only
-#    branch-protection decision; this workflow makes NO protection change.
+#    aggregate. That is a workflow property; being REQUIRED is a branch-ruleset property, and
+#    `Memory Budget` IS a required context: ruleset `juniper-recurrent-rules` (20634527) has
+#    listed it since 2026-08-27, so a red run blocks the merge. Re-checked 2026-10-26 with
+#    `gh api repos/pcalnon/juniper-recurrence/rulesets/20634527`; read the ruleset, never this
+#    comment. It shipped ADVISORY (`--advisory` reports and exits 0) on 2026-08-25 and went
+#    BLOCKING on 2026-08-26 once the three negative controls passed against the non-advisory
+#    invocation. This workflow makes NO protection change.
 #
 #    No package lane collects the top-level tests/ directory, so this workflow runs the gate's
 #    own suite (tests/test_memory_budget_check.py: the no-worsening rule, the ratchet never
