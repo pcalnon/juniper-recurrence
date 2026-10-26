@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-26
+
 ### Fixed
 
 - **`crossval` no longer sends `embargo: 0` on every call, so the service's look-back default applies.**
