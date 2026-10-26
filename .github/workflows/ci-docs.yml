@@ -56,4 +56,6 @@ jobs:
           pip install "juniper-doc-tools>=0.1.0,<0.2.0"
 
       - name: Validate documentation links
-        run: juniper-check-doc-links --cross-repo skip
+        # --exclude tmp: the repo's gitignored tmp/ (owner ruling, 2026-10-26). The checker walks the tree, not
+        # git's files, so scratch under tmp/ would be scanned and fail.
+        run: juniper-check-doc-links --exclude tmp --cross-repo skip
