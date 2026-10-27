@@ -113,6 +113,8 @@ pip install juniper-recurrence-model
 ```
 
 ```python
+from pathlib import Path
+
 import numpy as np
 from juniper_recurrence_model import LMURegressor, LMUSerializer
 
@@ -131,7 +133,8 @@ result = model.fit(X, y, dt=dt)      # closed-form readout solve — determinist
 preds = model.predict(X, dt=dt)      # (n, 1)
 print(result.final_metrics["r2"])
 
-LMUSerializer().save(model, "/tmp/lmu")   # lossless round-trip to /tmp/lmu.npz
+Path("tmp").mkdir(exist_ok=True)         # the repo's gitignored tmp/, never /tmp
+LMUSerializer().save(model, "tmp/lmu")    # lossless round-trip to tmp/lmu.npz
 ```
 
 `dt` (Δt) and the readout mask both default to uniform gaps and the final step, so the plain

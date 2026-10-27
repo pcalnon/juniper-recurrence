@@ -19,6 +19,8 @@ CHANGELOG.md
 *.md.bak
 dist/
 build/
+# A tmp/ scratch dir in this build context (owner ruling, 2026-10-26); the repo-root tmp/ is outside the context.
+tmp/
 
 # -- Credentials. Docker does NOT honour .gitignore, and this image is PUBLIC.
 #    The Dockerfile copies a DIRECTORY allowlist, which is not a file allowlist:

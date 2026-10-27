@@ -28,11 +28,11 @@ reference section in the same PR rather than waiving the budget gate.
   belongs to `juniper-data`, and the `bench/` harness pulls through `juniper-data` /
   `juniper-data-client`. Anything written under `data/` is invisible to `git status`, survives no
   review, and is **deleted without warning by `git worktree remove`**. Full context: § Conventions.
-- **`/tmp/` is prohibited** as the home for any script that produces, modifies or analyzes
-  repository content — it is reaped when sessions, sandboxes or containers end, and the scripts are
-  irrecoverable. Scratch *data* there is fine; source files are not. This is an ecosystem-wide rule
-  from the parent `Juniper/AGENTS.md` "Cross-Project Conventions"; permanent utilities live in
-  `util/`, single-use ones in `util/ad-hoc/`.
+- **Nothing is written under `/tmp`** — no script, scratch data, test output or pid file. It is a
+  tmpfs aged daily (a file untouched for ten days is deleted, in use or not), and in the week to
+  2026-10-26 it emptied a live test stack's pid files and venv three times. Temp files go in the
+  repo's gitignored `tmp/` (§ Conventions → Temporary files); permanent utilities live in `util/`,
+  single-use ones in `util/ad-hoc/`.
 
 ## What this is
 
@@ -120,6 +120,35 @@ juniper-recurrence/
 - Dataset capability belongs to `juniper-data`; this repo never generates or vendors datasets (the `data/` path is gitignored). The `bench/` harness pulls datasets through `juniper-data` / `juniper-data-client`.
 - Observability via `juniper-observability` (`[prometheus]>=0.4.0` for the app's `/metrics`; `>=0.3.1` for the client). Imports are guarded — the app and client run without the extra installed.
 - Independent publish per package: the app on `juniper-recurrence-v*` tags, the model on `juniper-recurrence-model-v*` tags, the client on `juniper-recurrence-client-v*` tags (path-scoped so they never cross-fire). TestPyPI-first, then PyPI, via OIDC trusted publishing.
+
+### Temporary files: `tmp/`, never `/tmp` (mandatory)
+
+**No file is ever written under `/tmp`** (nor `/var/tmp`) by this repo's scripts, tests, tools, services, sessions
+or agents (owner directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
+daily (`q /tmp 1777 root root 10d`): a file untouched for ten days is deleted while still in use, and a reboot
+erases the rest. In the week to 2026-10-26 it emptied a live test stack's pid files and venv three times. macOS
+ages `/tmp` too.
+
+- This repo's temp root is its gitignored `tmp/`. `TMPDIR` points at the **primary** checkout's (it outlives any
+  worktree); a worktree-isolated session writes its own scratch files into its worktree's `tmp/`.
+- Sessions get `TMPDIR` from the juniper-ml launcher and a user-level SessionStart hook, so `tempfile`, `mktemp` and
+  pytest's `tmp_path` follow it.
+- In code: never a `/tmp/...` literal and never `${TMPDIR:-/tmp}`; tests use `tmp_path`; state another process must
+  find (pid files, run directories) lives at a fixed path under the primary's `tmp/` or `~/.local/state/`, never one
+  derived from `TMPDIR`.
+- Out of scope: GitHub-hosted CI runners and a container's own `/tmp`.
+- Ecosystem rule and rationale: `juniper-ml/notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`.
+- **Owner rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
+  - `juniper-check-doc-links` ignores `tmp/`: every invocation passes `--exclude tmp`.
+  - pytest does not ignore `tmp/`: no `norecursedirs`, `--ignore` or `collect_ignore` entry names it.
+  - A local Docker build ignores `tmp/`: the build context's `.dockerignore` lists it.
+  - A script that counts matches with `grep` or `find` chooses its scope deliberately: the repo with its `tmp/`
+    excluded, or `tmp/` alone; it searches both only for a stated edge case that needs both. Existing counting
+    scripts are to be modified to make that choice explicit, not left to `.gitignore` or a tool's defaults.
+  - Full-tree copies of the repo, and copies of log files, may live in `tmp/`.
+  - **Retention.** A file a work arc writes to `tmp/` is kept until it is no longer needed, no work arc (its own
+    included) uses it, and it is no longer needed for documentation or reference, and, where needed, until it has
+    been archived in an appropriate non-temporary directory. Only then may it be deleted.
 
 ## Testing
 

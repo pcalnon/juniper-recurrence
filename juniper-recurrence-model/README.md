@@ -62,6 +62,8 @@ to `fit` / `predict`; both default to uniform gaps and the final step, so the ba
 `predict(X)` works too. It reports canonical regression metrics (`mse`, `rmse`, `mae`, `r2`).
 
 ```python
+from pathlib import Path
+
 import numpy as np
 from juniper_recurrence_model import LMURegressor, LMUSerializer
 
@@ -75,7 +77,8 @@ result = model.fit(X, y, dt=dt)                 # closed-form readout solve
 preds = model.predict(X, dt=dt)                 # (n, 1)
 print(result.final_metrics["r2"], model.describe_topology()["model_type"])
 
-LMUSerializer().save(model, "/tmp/lmu")   # writes /tmp/lmu.npz (lossless round-trip)
+Path("tmp").mkdir(exist_ok=True)          # a gitignored tmp/ (in a Juniper repo), never /tmp
+LMUSerializer().save(model, "tmp/lmu")    # writes tmp/lmu.npz (lossless round-trip)
 ```
 
 `LMURegressor` passes model-core's conformance kit unchanged

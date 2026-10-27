@@ -8,7 +8,7 @@ visual anywhere" — the analysis surface was the markdown bands report and noth
 Run it::
 
     python -m bench.plots                       # every dataset, into bench/plots/
-    python -m bench.plots --out-dir /tmp/p      # elsewhere (cf. run_benchmark --results-dir)
+    python -m bench.plots --out-dir tmp/plots   # elsewhere, e.g. the repo's gitignored tmp/ (cf. run_benchmark --results-dir)
     python -m bench.plots --datasets multi_sine irregular_sine
     python -m bench.plots --skip-forecast       # comparison + dataset figures only (no fitting)
 
