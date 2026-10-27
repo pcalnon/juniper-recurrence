@@ -142,7 +142,9 @@ ages `/tmp` too.
   - `juniper-check-doc-links` ignores `tmp/`: every invocation passes `--exclude tmp`.
   - pytest does not ignore `tmp/`: no `norecursedirs`, `--ignore` or `collect_ignore` entry names it.
   - A local Docker build ignores `tmp/`: the build context's `.dockerignore` lists it.
-  - `tmp/` is a valid search location: a script that counts matches with `grep` or `find` includes it.
+  - A script that counts matches with `grep` or `find` chooses its scope deliberately: the repo with its `tmp/`
+    excluded, or `tmp/` alone; it searches both only for a stated edge case that needs both. Existing counting
+    scripts are to be modified to make that choice explicit, not left to `.gitignore` or a tool's defaults.
   - Full-tree copies of the repo, and copies of log files, may live in `tmp/`.
   - **Retention.** A file a work arc writes to `tmp/` is kept until it is no longer needed, no work arc (its own
     included) uses it, and it is no longer needed for documentation or reference, and, where needed, until it has
