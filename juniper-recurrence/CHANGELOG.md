@@ -9,6 +9,8 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-04
+
 ### Changed
 
 - **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (owner directive, 2026-10-26), and the owner's
@@ -34,6 +36,25 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   network). Needs juniper-recurrence-model >= 0.6.0, the app's own floor since 0.8.0. `_full`'s derivation
   moved into `_composed`, leaving an 8-line shim; the symbol-loss screen's `WEAKENED` finding on it is the
   intended shape, waived with an enumerated `Allow-Symbol-Loss: func:_full` trailer in the PR range.
+
+### Fixed
+
+- **`juniper-model-core` floor raised to `>=0.3.0`: with model-core 0.2.0 installed, every `POST /v1/crossval`
+  answered 500.** `_folds.build_folds` (new in 0.8.0) passes `groups=` to model-core's `walk_forward_folds` on
+  every request -- `groups=None` for a keyless single series -- and that keyword-only parameter first shipped in
+  juniper-model-core 0.3.0 (2026-06-18). 0.2.0's signature has neither `groups` nor `**kwargs`, so the call raises
+  `TypeError: walk_forward_folds() got an unexpected keyword argument 'groups'`, single-series requests included.
+  0.8.0 declared `juniper-model-core[crossval]>=0.2.0,<0.4.0`, so pip resolved `juniper-recurrence==0.8.0` with
+  model-core 0.2.0 and `pip check` stayed clean. Measured 2026-11-04 on `main` (`e9d0026e`) with 0.2.0 forced: the
+  bench lost 4 of 41 (`bench/run_benchmark.py:70` and `bench/test_bench_smoke.py:268` / `:295` raised that
+  `TypeError`, and `bench/test_app_e2e.py::test_app_e2e_trains_and_predicts_on_irregular_dt` got
+  `POST /v1/crossval -> 500`), and the app suite failed 22 of 362, every one a crossval test. With 0.3.0 or 0.3.2
+  swapped in, all of them pass. Now the resolver refuses 0.8.1 with model-core 0.2.0 (`ResolutionImpossible`),
+  `pip check` names an existing 0.2.0 install, and `pip install -U juniper-recurrence` moves it to 0.3.x. The bench
+  installs through this pin, so it is covered too; the image lock already pins 0.3.1 and does not move.
+  `juniper-recurrence-model` keeps `>=0.2.0`: it never passes `groups=`, and its own suite passes on model-core
+  0.2.0. `tests/test_pyproject_floors.py` now fails if the floor admits 0.1.0 or 0.2.0 again, or if the image
+  lock's model-core pin leaves the range.
 
 ## [0.8.0] - 2026-10-20
 
