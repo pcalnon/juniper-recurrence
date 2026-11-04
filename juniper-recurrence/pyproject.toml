@@ -24,7 +24,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.2.0,
+# Real runtime deps. All upstreams are published to PyPI (juniper-model-core 0.3.0,
 # juniper-service-core 0.5.0 (create_app(lifespan=) plus the SEC-F01 enforce_auth_posture
 # boot-time auth-posture self-check the lifespan calls), juniper-recurrence-model 0.3.0, juniper-data-client
 # 0.4.2), so the app pins them directly — no editable-sibling / cross-repo-clone
@@ -66,7 +66,12 @@ dependencies = [
     # not a 500 whose Sentry event could carry the real key, and FailedAuthThrottle.check()
     # no longer adds a table entry for every unseen client address.
     "juniper-service-core>=0.7.1,<0.8.0",
-    "juniper-model-core[crossval]>=0.2.0,<0.4.0",
+    # Floor raised to 0.3.0 (2026-11-04). _folds.build_folds, which cuts the folds of every POST /v1/crossval,
+    # passes groups= to walk_forward_folds on every call (None for a keyless series), and groups= first
+    # shipped in model-core 0.3.0. Under the old >=0.2.0 floor an env holding 0.2.0 passed pip check while
+    # every crossval request raised TypeError and answered 500. bench/run_benchmark.py makes the same call
+    # and installs through this pin. juniper-recurrence-model keeps >=0.2.0: it never passes groups=.
+    "juniper-model-core[crossval]>=0.3.0,<0.4.0",
     "juniper-recurrence-model>=0.6.0,<0.7.0",
     "juniper-data-client>=0.6.0,<0.7.0",
 ]
