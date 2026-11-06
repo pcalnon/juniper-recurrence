@@ -26,6 +26,8 @@ on:
     paths:
       - "juniper-recurrence-model/**"
       - ".github/workflows/ci-recurrence-model.yml"
+      # tests/test_publish_smoke_pins.py reads the publish workflow's import-smoke pins.
+      - ".github/workflows/publish-recurrence-model.yml"
   pull_request:
     # Deliberately UNFILTERED (2026-08-12). Previously a `paths:` filter here meant the
     # whole workflow — gate included — never ran on a PR that did not touch this package,
@@ -69,7 +71,7 @@ jobs:
           if [[ "${EVENT_NAME}" != "pull_request" ]]; then
             changed=true
           elif git diff --name-only "origin/${BASE_REF}...HEAD" \
-               | grep -qE '^(juniper-recurrence-model/|\.github/workflows/ci-recurrence-model\.yml$)'; then
+               | grep -qE '^(juniper-recurrence-model/|\.github/workflows/(ci|publish)-recurrence-model\.yml$)'; then
             changed=true
           else
             changed=false

@@ -8,6 +8,20 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The TestPyPI import smoke installs the package's own runtime ranges.** `publish-recurrence-model.yml`
+  installed `juniper-model-core>=0.1.0,<0.2.0` for the smoke while `dependencies` requires `>=0.2.0,<0.4.0`, so
+  every publish since the floor rose to 0.2.0 smoked the wheel against a model-core its own metadata excludes.
+  0.6.0's publish (run 39197693617) installed `juniper-model-core-0.1.0`, printed pip's "juniper-recurrence-model
+  0.6.0 requires juniper-model-core<0.4.0,>=0.2.0, but you have juniper-model-core 0.1.0 which is incompatible",
+  and passed: pip reports that conflict without failing. The smoke now installs `>=0.2.0,<0.4.0`, and
+  `tests/test_publish_smoke_pins.py` fails when the smoke's by-name pins and `dependencies` disagree in name,
+  range, extras or marker. `ci-recurrence-model.yml`'s change filter and `on.push` paths now name the publish
+  workflow, so a PR that edits only the smoke line runs the test. Item 3 of juniper-ml's
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-11-06_recurrence-equities-0-8-1-published-owner-rulings-recorded-ml-floor-next.md`;
+  the owner approved the fix on 2026-11-06.
+
 ## [0.6.0] - 2026-10-19
 
 ### Added
