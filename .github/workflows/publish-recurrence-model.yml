@@ -169,8 +169,10 @@ jobs:
           # Runtime deps for the import smoke come from the default (production)
           # index, installed separately by name — never via an extra-index on the
           # target resolution above. (The top-level import pulls in numpy +
-          # juniper-model-core.)
-          pip install "numpy>=1.24" "juniper-model-core>=0.1.0,<0.2.0"
+          # juniper-model-core.) These are the package's own `dependencies`
+          # ranges: juniper-recurrence-model/tests/test_publish_smoke_pins.py
+          # fails when this line and pyproject.toml disagree.
+          pip install "numpy>=1.24" "juniper-model-core>=0.2.0,<0.4.0"
           python -c "import juniper_recurrence_model; print('TestPyPI install OK', juniper_recurrence_model.__version__)"
 
   publish-pypi:
