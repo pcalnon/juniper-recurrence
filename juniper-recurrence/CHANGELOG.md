@@ -9,6 +9,24 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Security
+
+- **The image picks up R-OBS-SC-2's two security patches.** `requirements.lock` moves
+  `juniper-observability` 0.4.1 -> 0.4.2 and `juniper-service-core` 0.7.1 -> 0.7.2, and nothing
+  else (31 pins; its header records the regeneration). The image installs that lock
+  (`Dockerfile:36`).
+  - **service-core 0.7.2** is the one that changes this service. `app.py` adds service-core's
+    `SecurityMiddleware` without a `failed_auth_throttle`, so the middleware builds the default
+    `FailedAuthThrottle`. Under 0.7.1 its `Retry-After` was truncated: with 9.4 s of the window
+    left it said 9, and a client that obeyed it woke while the window was still closed and was
+    rejected again. 0.7.2 rounds the wait up, with the same floor of 1.
+  - **observability 0.4.2**'s fixes are all in `configure_sentry`, and this image has no Sentry
+    path (the lock installs no `sentry-sdk`), so that pin is consistency with the sibling services.
+  - Regenerated with `--upgrade-package` for the two packages only, compiled onto a copy of the
+    lock so every other pin is held (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`).
+    Both new pins are pure-Python wheels, and the arm64 pre-flight passes for all 31 pins. The
+    `pyproject.toml` floors move in the next release PR.
+
 ## [0.8.1] - 2026-11-04
 
 ### Changed
