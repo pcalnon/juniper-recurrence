@@ -30,6 +30,34 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Fixed
 
+- **Each PyPI publish sends TestPyPI and PyPI the same files, and checks them by sha256** (repo-wide:
+  `publish-recurrence-app.yml`, `publish-recurrence-client.yml` and `publish-recurrence-model.yml`; recorded here, as
+  repo-wide CI changes are). The port of juniper-cascor#763 and #767, after the owner's directive of 2026-11-15:
+  "deploy to pypi should send the same artifact that was already sent to testpypi. an identical hash check, of the
+  artifacts after testpypi deploy and prior to pypi deploy, might also be helpful here to prevent this from slipping
+  through the cracks again." These publishers already built once and gave both publish jobs one artifact, and every
+  release so far is byte-identical on the two indexes (26 versions compared on 2026-11-15), but nothing checked it:
+  both uploads set `skip-existing`, which silently keeps an earlier file under the same name; the artifact expired
+  after 7 days while the `pypi` gate may wait 30; and "Re-run all jobs" re-ran the build, whose artifact every later
+  download takes. juniper-ml's run 38045867684 published a second build of juniper-ci-tools 0.9.1 to PyPI that way.
+  - The build job records `SHA256SUMS` and uploads it with the dist as one artifact, kept 90 days. A re-run attempt
+    finds that artifact and builds nothing.
+  - Each publish job checks the downloaded files against `SHA256SUMS` before it uploads. TestPyPI's JSON must list
+    exactly those files and sha256 after the TestPyPI upload, before the install check (whose sparse checkout now
+    follows it), and again before the PyPI upload; PyPI's JSON must do the same after the PyPI upload. Neither
+    upload sets `skip-existing`.
+  - Only the three uploading jobs hold `id-token: write`; it was workflow-level, so the build, which runs the package's
+    build backend, could mint an OIDC token. The workflow level is `contents: read`.
+  - A dispatch from a release tag with `-f republish_from_testpypi=true` runs a new job alone, `Republish the tested
+    files (dispatch only)`: behind the `pypi` gate, it copies TestPyPI's files for that version to PyPI, each checked
+    by sha256, and builds nothing. It is the first rung of the owner's recovery ladder (the README's Publishing
+    section). A dispatch without the input still re-fires the whole publish.
+  - The template steps and the republish job are verbatim copies of juniper-cascor's, applied by juniper-ml's
+    `util/ad-hoc/2026-11-15_juniper-recurrence_one_artifact_publish_port.py`. `tests/test_publish_one_artifact.py`
+    pins the wiring and what each workflow kept, and runs each template step's own Python against a stand-in index
+    and GitHub API on 127.0.0.1. `ci-recurrence-app.yml`'s change filter now names the three publish workflows, so it
+    runs on a pull request that edits only one of them.
+
 - **A failing informational Python 3.15 leg no longer shows as a failed check** (repo-wide, recorded here as the
   bench is; the owner's report of 2026-11-15: the 3.15 checks "are supposed to produce an informational message
   without affecting the ability of code to commit, push, PR, or merge"). juniper-recurrence#234's job-level

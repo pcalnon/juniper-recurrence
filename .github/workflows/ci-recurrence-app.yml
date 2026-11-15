@@ -37,6 +37,10 @@ on:
     paths:
       - "juniper-recurrence/**"
       - ".github/workflows/ci-recurrence-app.yml"
+      # tests/test_publish_one_artifact.py reads the three PyPI publish workflows.
+      - ".github/workflows/publish-recurrence-app.yml"
+      - ".github/workflows/publish-recurrence-client.yml"
+      - ".github/workflows/publish-recurrence-model.yml"
   pull_request:
     # Deliberately UNFILTERED — see the header. Job-level gating is in `changes`.
     branches: [main]
@@ -71,11 +75,12 @@ jobs:
         run: |
           set -euo pipefail
           # push / workflow_dispatch keep the historical behaviour: `on.push` already
-          # path-filters, and a push has no base ref to diff against.
+          # path-filters, and a push has no base ref to diff against. The three PyPI publish workflows count as
+          # the app's: tests/test_publish_one_artifact.py reads them, and must run on a PR that edits only one.
           if [[ "${EVENT_NAME}" != "pull_request" ]]; then
             changed=true
           elif git diff --name-only "origin/${BASE_REF}...HEAD" \
-               | grep -qE '^(juniper-recurrence/|\.github/workflows/ci-recurrence-app\.yml$)'; then
+               | grep -qE '^(juniper-recurrence/|\.github/workflows/(ci-recurrence-app|publish-recurrence-(app|client|model))\.yml$)'; then
             changed=true
           else
             changed=false

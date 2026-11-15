@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.3.0
-**Last Updated**: 2026-09-09
+**Version**: 0.3.1
+**Last Updated**: 2026-11-15
 
 ---
 
@@ -68,3 +68,11 @@ Publishing is tag-triggered (`juniper-recurrence-client-v*`) via
 `.github/workflows/publish-recurrence-client.yml` (OIDC trusted publishing, TestPyPI → PyPI),
 mirroring the model and app publish workflows. Bump `_version.py` + cut the `[Unreleased]`
 CHANGELOG section in the release PR.
+
+Each run builds once, and TestPyPI and PyPI get those same files, checked by sha256 against each index's JSON
+(juniper-cascor's one-artifact template). A release that did not reach PyPI, in this order: dispatch
+`gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
+which copies TestPyPI's files to PyPI and builds nothing; if that fails, within 30 days of the release run,
+**Re-run failed jobs** on it; otherwise cut a new patch version. Never "Re-run all jobs" on a publish run. The
+full ladder, and what to do for a tag cut before this change or after a plain dispatch reached TestPyPI:
+`juniper-recurrence/README.md` § Publishing.
