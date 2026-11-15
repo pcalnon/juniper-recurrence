@@ -127,19 +127,29 @@ jobs:
         working-directory: juniper-recurrence-model
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        id: checkout
+        continue-on-error: ${{ matrix.experimental == true }}
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        id: setup-python
+        continue-on-error: ${{ matrix.experimental == true }}
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package + test extras
+        id: install-package-test-extras
+        continue-on-error: ${{ matrix.experimental == true }}
         run: pip install --upgrade "pip>=26.1.1" && pip install -e ".[test]"
 
       - name: Run unit tests with coverage
+        id: run-unit-tests-with-coverage
+        continue-on-error: ${{ matrix.experimental == true }}
         run: |
           python -m pytest --cov=juniper_recurrence_model --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
 
       - name: Enforce per-file coverage gate (blocking; base lane)
+        id: enforce-per-file-coverage-gate-blocking
+        continue-on-error: ${{ matrix.experimental == true }}
         # Per-file coverage rollout C-5 (juniper-ml
         # notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md):
         # exit 1 if any source file's statement coverage < 90 OR a packaged
@@ -153,6 +163,30 @@ jobs:
         run: |
           pip install "juniper-ci-tools>=0.9.0,<0.10.0"
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
+
+      - name: Report the informational Python 3.15 result
+        # Python 3.15 is INFORMATIONAL (phase 1 of the 3.15 migration). On the 3.15 leg every step above
+        # carries `continue-on-error: ${{ matrix.experimental == true }}`, so a failing step neither stops
+        # this job nor turns its check red, and no merge, push or deployment waits on it. This step says
+        # what failed instead: a warning annotation, and a table in the job summary.
+        if: always() && matrix.experimental == true
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+          PY_LEG: ${{ matrix.python-version }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          steps = json.loads(os.environ["STEPS_JSON"])
+          leg = os.environ["PY_LEG"]
+          failed = [k for k, v in steps.items() if v.get("outcome") not in ("success", "skipped")]
+          rows = "\n".join(f"| `{k}` | {v.get('outcome')} |" for k, v in steps.items())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(f"### Python {leg}: informational, blocks nothing\n\n| Step | Outcome |\n|---|---|\n{rows}\n")
+          if failed:
+              print(f"::warning title=Python {leg} (informational)::{len(failed)} step(s) failed on Python {leg}: {', '.join(failed)}. Nothing is blocked; see this job's summary.")
+          else:
+              print(f"::notice title=Python {leg} (informational)::every step passed on Python {leg}")
+          PY
 
   build:
     name: Build distribution
