@@ -4,7 +4,7 @@
 **Repository**: pcalnon/juniper-recurrence
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.3.0
+**Version**: 0.3.1
 **Last Updated**: 2026-11-15
 
 ---
@@ -74,4 +74,5 @@ Each run builds once, and TestPyPI and PyPI get those same files, checked by sha
 `gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
 which copies TestPyPI's files to PyPI and builds nothing; if that fails, within 30 days of the release run,
 **Re-run failed jobs** on it; otherwise cut a new patch version. Never "Re-run all jobs" on a publish run. The
-full ladder: `juniper-recurrence/README.md` § Publishing.
+full ladder, and what to do for a tag cut before this change or after a plain dispatch reached TestPyPI:
+`juniper-recurrence/README.md` § Publishing.

@@ -67,7 +67,7 @@ juniper-recurrence/
 ├── .gitignore
 ├── .github/
 │   ├── CODEOWNERS
-│   └── workflows/                   # per-package CI + publish (path-scoped) + repo-wide gates and nets
+│   └── workflows/                   # per-package CI (path-scoped) + publish (tag-guarded) + repo-wide gates and nets
 │       ├── ci-recurrence-app.yml
 │       ├── ci-recurrence-model.yml
 │       ├── ci-recurrence-client.yml
@@ -119,7 +119,7 @@ juniper-recurrence/
 - Package naming: `-core` = genuinely shared abstraction (homed in juniper-ml); `juniper-<model>-model` = model-specific core (homed here). This repo's core is therefore `juniper-recurrence-model`.
 - Dataset capability belongs to `juniper-data`; this repo never generates or vendors datasets (the `data/` path is gitignored). The `bench/` harness pulls datasets through `juniper-data` / `juniper-data-client`.
 - Observability via `juniper-observability` (`[prometheus]>=0.4.0` for the app's `/metrics`; `>=0.3.1` for the client). Imports are guarded — the app and client run without the extra installed.
-- Independent publish per package: the app on `juniper-recurrence-v*` tags, the model on `juniper-recurrence-model-v*` tags, the client on `juniper-recurrence-client-v*` tags (path-scoped so they never cross-fire). TestPyPI-first, then PyPI, via OIDC trusted publishing. Each run builds once; both indexes get those files, checked by sha256. Never "Re-run all jobs" on a publish run; recovery ladder: `juniper-recurrence/README.md` § Publishing.
+- Independent publish per package: the app on `juniper-recurrence-v*` tags, the model on `juniper-recurrence-model-v*` tags, the client on `juniper-recurrence-client-v*` tags (every Release fires all three publishers; each build job's tag-prefix guard skips a sibling's tag). TestPyPI-first, then PyPI, via OIDC trusted publishing. Each run builds once; both indexes get those files, checked by sha256. Never "Re-run all jobs" on a publish run; recovery ladder: `juniper-recurrence/README.md` § Publishing.
 
 ### Temporary files: `tmp/`, never `/tmp` (mandatory)
 

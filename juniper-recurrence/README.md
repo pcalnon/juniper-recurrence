@@ -193,9 +193,20 @@ The owner's recovery ladder (2026-11-15), in this order. Every rung publishes th
 3. **Otherwise, cut a new patch version.**
 
 **Never "Re-run all jobs"** on a publish run, nor `gh run rerun <id>` without `--failed`. Dispatch from the tag: both
-publish environments admit tags only. A dispatch without `republish_from_testpypi` re-fires the whole publish and
-builds again, so it works only while TestPyPI does not hold the version yet. Rung 1 needs a tag whose workflow has
-the republish job: one cut after the one-artifact publish change of 2026-11-15 merged. An older tag's workflow has none.
+publish environments admit tags only.
+
+**A dispatch without `republish_from_testpypi` is only for a release that never reached TestPyPI.** It re-fires the
+whole publish and builds again. If that re-fire puts its own files on TestPyPI and its PyPI job then fails, the ladder
+above targets the wrong run: while the release run's artifact exists, rung 1 refuses, because that run's `SHA256SUMS`
+disagree with TestPyPI's files, and rung 2 on the release run re-uploads a build TestPyPI rejects. Use **Re-run failed
+jobs** on the dispatch run instead, within 30 days of it.
+
+**The ladder holds only for a tag cut after the one-artifact publish change of 2026-11-15 merged.** An older tag's
+workflow is the old one: no republish job, `skip-existing` on both uploads, no sha256 check, a rebuild on every
+dispatch, and a 7-day artifact. Never dispatch such a tag: a plain dispatch would rebuild, skip the TestPyPI upload,
+test TestPyPI's original files and then push the rebuild to PyPI (the juniper-ci-tools 0.9.1 defect, which "Re-run all
+jobs" caused there). For such a tag, use **Re-run failed jobs** on its release run within 7 days of it; otherwise cut a
+new patch version.
 
 ## Ecosystem
 
