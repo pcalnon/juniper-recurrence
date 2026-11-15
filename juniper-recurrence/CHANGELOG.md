@@ -9,6 +9,25 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ## [Unreleased]
 
+### Added
+
+- **CI runs every lane's tests on Python 3.15 as well, as an informational leg that blocks nothing** (repo-wide,
+  recorded here as the bench is). Phase 1 of the ecosystem's Python 3.15 migration (the owner's request of
+  2026-11-14): 3.15 results are reported, and no merge, commit or deployment waits on them.
+  - The `test` jobs of `ci-recurrence-app.yml`, `ci-recurrence-model.yml` and `ci-recurrence-client.yml` gain
+    `Test (Python 3.15)`, and `ci-recurrence-bench.yml`'s gains `Bench smoke (Python 3.15)`: an `include` entry
+    with `experimental: true`, plus a job-level `continue-on-error: ${{ matrix.experimental == true }}` that is
+    true on that leg alone. A red 3.15 leg leaves `needs.test.result` unchanged, so `App`, `Model`, `Client` and
+    `Bench required checks`, and the `build` / `docker` jobs that need `test`, are unaffected. No 3.15 context is
+    in ruleset `20634527`.
+  - The pattern was measured on juniper-data#538 (run 43655144734), with its 3.15 leg failed on purpose: the leg's
+    check read `failure`, that repo's gate read the job's result as `success`, and every job that needed it ran.
+  - The bench's 3.15 leg also runs on a `juniper-data-published` dispatch. The expression does not depend on the
+    event, so a red 3.15 leg leaves that run's conclusion unchanged too.
+  - `requires-python`, the classifiers, the ruff and mypy targets, the single-version `Pre-commit (all-files)` and
+    `test-torch` jobs, and the image's `python:3.13-slim` base are unchanged.
+  - `AGENTS.md` § Testing and the README's Development section describe the leg.
+
 ### Security
 
 - **The image picks up R-OBS-SC-2's two security patches.** `requirements.lock` moves

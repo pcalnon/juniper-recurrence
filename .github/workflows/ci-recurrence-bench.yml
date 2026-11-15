@@ -115,10 +115,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.bench == 'true'
+    # The Python 3.15 leg is INFORMATIONAL: phase 1 of the ecosystem's 3.15 migration (owner request,
+    # 2026-11-14) runs it so its results show, but it must block no merge. It is the only leg with
+    # `experimental: true`, so this expression is true on it alone: a failure there leaves the job's
+    # result, which `Bench required checks` reads as `needs.test.result`, unchanged. The expression
+    # does not depend on the event, so on a `juniper-data-published` dispatch a red 3.15 leg leaves
+    # the run's conclusion unchanged too. Measured on juniper-data#538 (run 43655144734): with its 3.15
+    # leg failed on purpose, that repo's gate read the job's result as success and every job that
+    # needed it ran. `Bench smoke (Python 3.15)` is in no ruleset. Keep both until the owner makes
+    # 3.15 a required version (phase 3 of the migration).
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
+        include:
+          # Informational, never required: see the comment above `continue-on-error`.
+          - python-version: "3.15"
+            experimental: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -203,8 +217,9 @@ jobs:
   # Branch-protection-stable aggregate (audit CI-07): the matrix `test` job fans out to one check per
   # Python version, whose names shift when the matrix changes -- awkward to pin as required checks. This
   # single job depends on the whole matrix (a matrix job's `result` is `success` only when every leg
-  # succeeds), so branch protection can require one stable check for the bench lane. `if: always()` so
-  # it runs even when `test` fails and reports that failure rather than being skipped. Mirrors the
+  # succeeds, except the informational Python 3.15 leg, whose `continue-on-error` keeps its failure out
+  # of the result), so branch protection can require one stable check for the bench lane. `if: always()`
+  # so it runs even when `test` fails and reports that failure rather than being skipped. Mirrors the
   # `required-checks` aggregate in ci-recurrence-app.yml; named distinctly so the two never collide.
   required-checks:
     name: Bench required checks
