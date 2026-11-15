@@ -135,8 +135,12 @@ jobs:
             experimental: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        id: checkout
+        continue-on-error: ${{ matrix.experimental == true }}
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        id: setup-python
+        continue-on-error: ${{ matrix.experimental == true }}
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -144,6 +148,8 @@ jobs:
       # onto PyPI's CDN. Wait until it is actually installable rather than quietly
       # testing the previous release. Payload values reach the shell only through env.
       - name: Wait for the dispatched juniper-data release to be installable
+        id: wait-for-the-dispatched-juniper-data-rel
+        continue-on-error: ${{ matrix.experimental == true }}
         if: github.event_name == 'repository_dispatch'
         env:
           VERSION: ${{ github.event.client_payload.version }}
@@ -173,6 +179,8 @@ jobs:
       # matplotlib guard is a skipif, so omitting the extra would turn the G-5 plotting module
       # into untested code that still reports a green lane. Small pure wheel, no network.
       - name: Install app extras for the bench harness
+        id: install-app-extras-for-the-bench-harness
+        continue-on-error: ${{ matrix.experimental == true }}
         run: |
           pip install --upgrade "pip>=26.1.1"
           pip install "./juniper-recurrence[test,bench,bench-plots]"
@@ -184,6 +192,8 @@ jobs:
       # re-evaluates a requirement conditional on an extra (measured, pip 26.2.1) -- so
       # the version assertion below is the only check that the swap took effect.
       - name: Pin the dispatched juniper-data release
+        id: pin-the-dispatched-juniper-data-release
+        continue-on-error: ${{ matrix.experimental == true }}
         if: github.event_name == 'repository_dispatch'
         env:
           VERSION: ${{ github.event.client_payload.version }}
@@ -212,7 +222,33 @@ jobs:
       # guard. test_bench_smoke.py importorskips juniper_data, which the [bench]
       # extra provides, so the suite actually executes rather than skipping.
       - name: Run bench smoke suite
+        id: run-bench-smoke-suite
+        continue-on-error: ${{ matrix.experimental == true }}
         run: python -m pytest bench/ -ra -p no:dash -p no:playwright
+
+      - name: Report the informational Python 3.15 result
+        # Python 3.15 is INFORMATIONAL (phase 1 of the 3.15 migration). On the 3.15 leg every step above
+        # carries `continue-on-error: ${{ matrix.experimental == true }}`, so a failing step neither stops
+        # this job nor turns its check red, and no merge, push or deployment waits on it. This step says
+        # what failed instead: a warning annotation, and a table in the job summary.
+        if: always() && matrix.experimental == true
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+          PY_LEG: ${{ matrix.python-version }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          steps = json.loads(os.environ["STEPS_JSON"])
+          leg = os.environ["PY_LEG"]
+          failed = [k for k, v in steps.items() if v.get("outcome") not in ("success", "skipped")]
+          rows = "\n".join(f"| `{k}` | {v.get('outcome')} |" for k, v in steps.items())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(f"### Python {leg}: informational, blocks nothing\n\n| Step | Outcome |\n|---|---|\n{rows}\n")
+          if failed:
+              print(f"::warning title=Python {leg} (informational)::{len(failed)} step(s) failed on Python {leg}: {', '.join(failed)}. Nothing is blocked; see this job's summary.")
+          else:
+              print(f"::notice title=Python {leg} (informational)::every step passed on Python {leg}")
+          PY
 
   # Branch-protection-stable aggregate (audit CI-07): the matrix `test` job fans out to one check per
   # Python version, whose names shift when the matrix changes -- awkward to pin as required checks. This

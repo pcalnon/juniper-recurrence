@@ -28,6 +28,26 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
     `test-torch` jobs, and the image's `python:3.13-slim` base are unchanged.
   - `AGENTS.md` § Testing and the README's Development section describe the leg.
 
+### Fixed
+
+- **A failing informational Python 3.15 leg no longer shows as a failed check** (repo-wide, recorded here as the
+  bench is; the owner's report of 2026-11-15: the 3.15 checks "are supposed to produce an informational message
+  without affecting the ability of code to commit, push, PR, or merge"). juniper-recurrence#234's job-level
+  `continue-on-error` keeps each lane's `required checks` aggregate green, but a 3.15 leg that failed would still
+  conclude `failure` on its own check: a red X and "Some checks were not successful" on the pull request, a merge
+  state of `UNSTABLE`, and a failing `gh pr checks`. All four 3.15 legs pass on `main` today, so this lands before
+  the first red one.
+  - Every step of the `test` jobs of `ci-recurrence-app.yml`, `ci-recurrence-model.yml`, `ci-recurrence-client.yml`
+    and `ci-recurrence-bench.yml` now carries `id:` and `continue-on-error: ${{ matrix.experimental == true }}`, so
+    on the 3.15 leg a failing step neither stops the job nor turns its check red, and the steps after it still run.
+    A last step, `Report the informational Python 3.15 result`, reports each failed step as a `::warning`
+    annotation and as a table in the job summary, and emits a `::notice` when every step passed. The blocking legs
+    are unchanged: the expression is false on them.
+  - Measured first on juniper-ml#2578 (head `91591864`): its `Regression Tests (Python 3.15)` check concluded
+    `success` while two of its steps failed, and carried the warning annotation.
+  - Applied by juniper-ml's `util/ad-hoc/2026-11-15_py315_informational_green_legs.py`, a textual edit checked by
+    re-parsing each workflow (same steps in the same order, plus the report step; no other job changed).
+
 ### Security
 
 - **The image picks up R-OBS-SC-2's two security patches.** `requirements.lock` moves
