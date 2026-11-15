@@ -258,7 +258,7 @@ lives in each package's `CHANGELOG.md`.
 ## Development
 
 Each package is tested from its own subdirectory (CI runs the Python 3.12 / 3.13 / 3.14 matrix at 90%
-coverage):
+coverage, plus an informational Python 3.15 leg that reports results but blocks no merge):
 
 ```bash
 cd juniper-recurrence-model  && pip install -e ".[test]"               && python -m pytest
