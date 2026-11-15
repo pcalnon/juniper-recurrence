@@ -166,6 +166,37 @@ separately on `juniper-recurrence-model-v*` tags.
 gh release create juniper-recurrence-v0.2.0 --generate-notes
 ```
 
+The client (`juniper-recurrence-client`) publishes the same way on `juniper-recurrence-client-v*` tags, each package
+from its own workflow. Each run builds once, and both indexes get those same files: the build records their sha256 in
+`SHA256SUMS`, each publish job checks the files against it before uploading, and TestPyPI's JSON must list exactly
+those sha256 after the TestPyPI upload and again before the PyPI upload, and PyPI's after it. The steps are a verbatim
+copy of juniper-cascor's template:
+[One Artifact, Checked Against TestPyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#one-artifact-checked-against-testpypi).
+
+### A release that did not reach PyPI
+
+The owner's recovery ladder (2026-11-15), in this order. Every rung publishes the files TestPyPI took, or nothing
+([juniper-cascor's account](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)).
+
+1. **Republish TestPyPI's files.** Dispatch the package's workflow from its release tag. Only the job
+   `Republish the tested files (dispatch only)` runs: it waits at the `pypi` gate (an approval, then the 5-minute
+   timer), builds nothing, and copies TestPyPI's files for that version to PyPI, each checked by sha256.
+
+   ```bash
+   gh workflow run publish-recurrence-app.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-v<version> -f republish_from_testpypi=true
+   gh workflow run publish-recurrence-model.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-model-v<version> -f republish_from_testpypi=true
+   gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true
+   ```
+
+2. **If that fails, within 30 days of the release run: Re-run failed jobs** on that run. The re-run reuses the run's
+   artifact, kept 90 days, and waits at the gate again.
+3. **Otherwise, cut a new patch version.**
+
+**Never "Re-run all jobs"** on a publish run, nor `gh run rerun <id>` without `--failed`. Dispatch from the tag: both
+publish environments admit tags only. A dispatch without `republish_from_testpypi` re-fires the whole publish and
+builds again, so it works only while TestPyPI does not hold the version yet. Rung 1 needs a tag whose workflow has
+the republish job: one cut after the one-artifact publish change of 2026-11-15 merged. An older tag's workflow has none.
+
 ## Ecosystem
 
 Part of the [Juniper](https://github.com/pcalnon) ML research platform. See the
