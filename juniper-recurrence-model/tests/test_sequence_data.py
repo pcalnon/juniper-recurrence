@@ -476,7 +476,7 @@ class TestTargetSelection:
             assert parameter.default == DEFAULT_TARGET, entry.__name__
 
     def test_the_default_is_auto_pending_ruling_r8(self, caplog):
-        """Pins R8's alternative (``auto``), applied pending the owner's re-ruling.
+        """Pins R8's alternative (``auto``), applied pending the Overtoad's re-ruling.
 
         The plan recommends ``reg``, but every juniper-data synthetic sequence generator emits its
         regression target as ``y_*`` only (measured 2026-10-05), and the app passes no ``target``.

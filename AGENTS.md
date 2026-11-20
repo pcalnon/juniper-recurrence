@@ -124,7 +124,7 @@ juniper-recurrence/
 ### Temporary files: `tmp/`, never `/tmp` (mandatory)
 
 **No file is ever written under `/tmp`** (nor `/var/tmp`) by this repo's scripts, tests, tools, services, sessions
-or agents (owner directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
+or agents (Overtoad directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
 daily (`q /tmp 1777 root root 10d`): a file untouched for ten days is deleted while still in use, and a reboot
 erases the rest. In the week to 2026-10-26 it emptied a live test stack's pid files and venv three times. macOS
 ages `/tmp` too.
@@ -193,7 +193,7 @@ $PY -s -m pip check | grep -i juniper          # want: no output (CUDA lines are
 Then **restart any recurrence listener started before the repair** (`ss -ltnpH | grep -E ':82[6-8][0-9] '` lists the launcher range; a process keeps importing from the tree it started with — the parent `AGENTS.md` deleted-interpreter trap), and re-run the bench as served: `$PY -m pytest bench/` from the repo root (37 tests).
 
 Record of 2026-10-04: step 1 applied (model 0.3.0 editable at `be081fa`; probe ok; bench 37/37 as served; `POST /v1/crossval` 200 on `equities_seq-6.0.0-15505731cba5b86d` with no `PYTHONPATH`).
-Step 2 **deferred**: a live cascor listener on `:8202` (the canopy E2E stack) imports `juniper_service_core` from this env, and replacing a package under a running service is the owner's call.
+Step 2 **deferred**: a live cascor listener on `:8202` (the canopy E2E stack) imports `juniper_service_core` from this env, and replacing a package under a running service is the Overtoad's call.
 Until it is applied, `pip check` reports exactly one line (`juniper-recurrence 0.5.0 has requirement juniper-service-core<0.8.0,>=0.6.0, but you have juniper-service-core 0.5.0`), `tests/test_app_smoke.py::test_docs_require_auth_when_enabled` fails as served (`200 == 401`, a 0.5.0 behaviour), and the juniper-ml launcher preflight refuses the env unless `--skip-env-preflight` is passed.
 
 ## Sequence-safety nets (required CI)
