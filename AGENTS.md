@@ -138,7 +138,7 @@ ages `/tmp` too.
   derived from `TMPDIR`.
 - Out of scope: GitHub-hosted CI runners and a container's own `/tmp`.
 - Ecosystem rule and rationale: `juniper-ml/notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`.
-- **Owner rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
+- **The Overtoad rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
   - `juniper-check-doc-links` ignores `tmp/`: every invocation passes `--exclude tmp`.
   - pytest does not ignore `tmp/`: no `norecursedirs`, `--ignore` or `collect_ignore` entry names it.
   - A local Docker build ignores `tmp/`: the build context's `.dockerignore` lists it.
