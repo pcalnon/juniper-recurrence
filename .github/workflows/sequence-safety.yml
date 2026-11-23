@@ -14,7 +14,7 @@
 #    Per-PR sequence-safety net (REQUIRED, standalone) -- the compositional-loss screen
 #    rolled out from the juniper-ml pioneers via the published juniper-ci-tools package
 #    (sequence-safety rollout plan Wave 2; ml#873 / #880 / #1008, cascor#482). This repo
-#    joins the net as a rollout EXTENSION (Overtoad decision 2026-08-09): the original Wave-2
+#    joins the net as a rollout EXTENSION (owner decision 2026-08-09): the original Wave-2
 #    repo set predated / omitted the juniper-recurrence monorepo. Runs the AST symbol-loss
 #    screen + the docs deletion-magnitude screen over the PR's base..HEAD, so the
 #    silent-deletion / net-docs-deletion classes that a green-per-PR merge storm can ship
@@ -33,7 +33,7 @@
 #    REQUIRED in the branch ruleset, and deliberately ABSENT from the CI Quality Gate
 #    `needs:`. Those are two different things and this comment used to conflate them: it
 #    opened "ADVISORY, NOT a required check" and promised that promotion "if ever desired"
-#    would be a future Overtoad-only decision. The promotion HAPPENED; nobody edited the
+#    would be a future owner-only decision. The promotion HAPPENED; nobody edited the
 #    header. A reader who trusts it takes a red Sequence Safety for non-blocking; it
 #    blocks. Verified against the live ruleset, which this command prints:
 #
@@ -49,7 +49,7 @@
 #    required is a branch-ruleset property; the Quality Gate is a workflow property.
 #    Enforcement after merge is still the post-merge net (main-verify.yml).
 #
-#    Label hatch (WARN-only): the Overtoad-applied `allow-symbol-loss` / `docs-rewrite` PR
+#    Label hatch (WARN-only): the owner-applied `allow-symbol-loss` / `docs-rewrite` PR
 #    labels demote THAT screen's FAIL to WARN-only for this run (`--advisory`: exit 0 with
 #    findings still printed). A bare label is a blanket per-PR override, intentionally
 #    demoted to WARN-only; the auditable enumerated `Allow-Symbol-Loss:` /
@@ -186,7 +186,7 @@ jobs:
             exit 2
           fi
           if [ "${src}" -ge 1 ] || [ "${drc}" -ge 1 ]; then
-            echo "::error::per-PR compositional-loss finding(s) -- see the screens above and the sequence-safety-report artifact. Waive an intended removal with an Allow-Symbol-Loss / Allow-Docs-Rewrite commit trailer, or (Overtoad) apply the allow-symbol-loss / docs-rewrite label for a WARN-only downgrade."
+            echo "::error::per-PR compositional-loss finding(s) -- see the screens above and the sequence-safety-report artifact. Waive an intended removal with an Allow-Symbol-Loss / Allow-Docs-Rewrite commit trailer, or (owner) apply the allow-symbol-loss / docs-rewrite label for a WARN-only downgrade."
             exit 1
           fi
           echo "::notice::sequence-safety screens clean (or waived) for this PR"

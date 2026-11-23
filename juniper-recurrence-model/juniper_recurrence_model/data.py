@@ -45,7 +45,7 @@ TargetMode = Literal["reg", "class", "auto"]
 TARGET_MODES: tuple[str, ...] = ("reg", "class", "auto")
 
 #: The ``target=`` default of every public entry in this module -- the single place the ruling
-#: lives. ``"auto"`` is ruling R8's alternative, applied pending the Overtoad's re-ruling. The plan
+#: lives. ``"auto"`` is ruling R8's alternative, applied pending the owner's re-ruling. The plan
 #: recommends ``"reg"``, but every juniper-data synthetic sequence generator emits its regression
 #: target as ``y_*`` only (measured 2026-10-05), so ``"reg"`` would refuse them all while the app
 #: passes no ``target``. Moving to ``"reg"`` is this one line, once that is no longer true.

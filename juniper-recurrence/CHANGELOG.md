@@ -12,7 +12,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 ### Added
 
 - **CI runs every lane's tests on Python 3.15 as well, as an informational leg that blocks nothing** (repo-wide,
-  recorded here as the bench is). Phase 1 of the ecosystem's Python 3.15 migration (the Overtoad's request of
+  recorded here as the bench is). Phase 1 of the ecosystem's Python 3.15 migration (the owner's request of
   2026-11-14): 3.15 results are reported, and no merge, commit or deployment waits on them.
   - The `test` jobs of `ci-recurrence-app.yml`, `ci-recurrence-model.yml` and `ci-recurrence-client.yml` gain
     `Test (Python 3.15)`, and `ci-recurrence-bench.yml`'s gains `Bench smoke (Python 3.15)`: an `include` entry
@@ -32,7 +32,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 - **Each PyPI publish sends TestPyPI and PyPI the same files, and checks them by sha256** (repo-wide:
   `publish-recurrence-app.yml`, `publish-recurrence-client.yml` and `publish-recurrence-model.yml`; recorded here, as
-  repo-wide CI changes are). The port of juniper-cascor#763 and #767, after the Overtoad's directive of 2026-11-15:
+  repo-wide CI changes are). The port of juniper-cascor#763 and #767, after the owner's directive of 2026-11-15:
   "deploy to pypi should send the same artifact that was already sent to testpypi. an identical hash check, of the
   artifacts after testpypi deploy and prior to pypi deploy, might also be helpful here to prevent this from slipping
   through the cracks again." These publishers already built once and gave both publish jobs one artifact, and every
@@ -50,7 +50,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
     build backend, could mint an OIDC token. The workflow level is `contents: read`.
   - A dispatch from a release tag with `-f republish_from_testpypi=true` runs a new job alone, `Republish the tested
     files (dispatch only)`: behind the `pypi` gate, it copies TestPyPI's files for that version to PyPI, each checked
-    by sha256, and builds nothing. It is the first rung of the Overtoad's recovery ladder (the README's Publishing
+    by sha256, and builds nothing. It is the first rung of the owner's recovery ladder (the README's Publishing
     section). A dispatch without the input still re-fires the whole publish.
   - The template steps and the republish job are verbatim copies of juniper-cascor's, applied by juniper-ml's
     `util/ad-hoc/2026-11-15_juniper-recurrence_one_artifact_publish_port.py`. `tests/test_publish_one_artifact.py`
@@ -59,7 +59,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
     runs on a pull request that edits only one of them.
 
 - **A failing informational Python 3.15 leg no longer shows as a failed check** (repo-wide, recorded here as the
-  bench is; the Overtoad's report of 2026-11-15: the 3.15 checks "are supposed to produce an informational message
+  bench is; the owner's report of 2026-11-15: the 3.15 checks "are supposed to produce an informational message
   without affecting the ability of code to commit, push, PR, or merge"). juniper-recurrence#234's job-level
   `continue-on-error` keeps each lane's `required checks` aggregate green, but a 3.15 leg that failed would still
   conclude `failure` on its own check: a red X and "Some checks were not successful" on the pull request, a merge
@@ -98,12 +98,12 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 ### Changed
 
-- **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (Overtoad directive, 2026-10-26), and the Overtoad's
+- **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (owner directive, 2026-10-26), and the owner's
   rulings on it are applied** (repo-wide, recorded here as the bench is). `/tmp/` is ignored, and `AGENTS.md` §
   Temporary files carries the rule and the rulings, retention included. `juniper-check-doc-links` passes
   `--exclude tmp` in `ci-docs.yml`, and the app image's build context (`juniper-recurrence/.dockerignore`) lists
   `tmp/`; nothing keeps pytest out of it, and counting scripts are to choose their scope as to `tmp/` deliberately
-  (the Overtoad's revised ruling).
+  (the owner's revised ruling).
 - **The bench's equities rows pool `trainval` and cut a panel's folds on the global date per entity; a multi-ticker row `equities_seq_panel` joins the single-ticker one** (W5.2 of juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`, the owed
   bench half; `bench/` is not part of the published distribution). `bench/run_benchmark.py` cut row-index folds
@@ -186,7 +186,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 - **`POST /v1/train` and every fold of `POST /v1/crossval` report the hyperparameters the fit
   resolved** (W5.10 of juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
-  the response half of F-S7; accepted by the Overtoad 2026-10-18). A new `diagnostics` block
+  the response half of F-S7; accepted by the owner 2026-10-18). A new `diagnostics` block
   (`ReadoutDiagnostics`) on `TrainResponse` and on each `CrossValFoldModel` carries `readout`,
   `theta` (the data-driven median per-window elapsed time a `theta=None` request became -- per
   fold, since each fold resolves its own), `ridge_mode` (`fixed` / `gcv` / null for mlp),
@@ -208,7 +208,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 - **The service's `default_ridge` is `"gcv"`; the floor is `juniper-recurrence-model>=0.5.0`**
   (W5.8 (B) of juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
-  accepted by the Overtoad 2026-10-18, gated on W5.10 above). A linear-readout request that omits
+  accepted by the owner 2026-10-18, gated on W5.10 above). A linear-readout request that omits
   `ridge` -- a bare `POST /v1/train` or `POST /v1/crossval`, canopy's registry seed (no `readout`,
   no `ridge`), the `train` CLI without `--ridge` -- used to get `0.0`, the raw min-norm solve, which
   extrapolates on a non-stationary input (the W5.1 cause of record). It now gets closed-form GCV on
@@ -237,7 +237,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 - **The floors now require `juniper-recurrence-model>=0.4.0` and `juniper-data-client>=0.6.0`**
   (W1.13 of juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
-  the Overtoad ruled this on 2026-10-10, and 0.6.0 shipped without it). 0.6.0 moved its image lock to
+  the owner ruled this on 2026-10-10, and 0.6.0 shipped without it). 0.6.0 moved its image lock to
   those two releases, but its ranges still admitted model `>=0.3.0` and data-client `>=0.4.2`.
   - A fresh `pip install` resolves the new pair.
   - `pip install -U juniper-recurrence` over a 0.5.0 environment does not. pip's default
@@ -384,7 +384,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
 
 - **The `[bench]` and `[bench-equities]` extras admit `juniper-data` 0.15.0** (ceiling `<0.15.0` →
   `<0.16.0`; floor unchanged at `>=0.9.0`). juniper-data 0.15.0 (PyPI, 2026-09-22) is the first
-  release to publish `equities` / `equities_seq` at `generator_version` **5.0.0** — the Overtoad-ruled
+  release to publish `equities` / `equities_seq` at `generator_version` **5.0.0** — the owner-ruled
   causal share history and 15-column feature set (juniper-data#395) plus the fix for #395's
   scale-typo regression (juniper-data#404). The old ceiling excluded exactly that release, so a
   fresh `.[bench,bench-equities]` install resolved 0.14.0 and its **3.0.0** equities generator,
@@ -397,7 +397,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   `<0.18.0`; floor unchanged at `>=0.9.0`). This is a W1.13 prerequisite in juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`.
   - **Why.** juniper-data 0.17.0 (PyPI, 2026-10-10) is the first release to serve `equities_seq` at
-    `generator_version` **6.0.0** with `task_type: regression` (Overtoad ruling X8, juniper-data#437).
+    `generator_version` **6.0.0** with `task_type: regression` (owner ruling X8, juniper-data#437).
     Under the old ceiling, a fresh `.[bench,bench-equities]` install resolved 0.16.0, with its
     5.0.0 / `classification` label.
   - **No bench number moves.** The bench's `equities_seq` row calls `EquitiesSeqGenerator.generate()`
@@ -494,7 +494,7 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   The lock as first written pinned `juniper-recurrence-model` **0.2.0**, because the 0.3.0 Release cut
   2026-09-09 07:22 UTC was still parked on the `pypi` environment approval gate (publish run
   34323535743) and 0.3.0 could not be resolved. **That is closed, and 0.5.0 ships the resolved lock**:
-  the Overtoad approved the gate, and the re-lock landed in this same release, moving
+  the owner approved the gate, and the re-lock landed in this same release, moving
   `juniper-recurrence-model` 0.2.0 -> **0.3.0** and `juniper-data-client` 0.4.2 -> **0.5.0** with the
   pin count unchanged at 31. Both arches built green on that change.
 - **`publish-image.yml` -- the application container image is published to GHCR on every

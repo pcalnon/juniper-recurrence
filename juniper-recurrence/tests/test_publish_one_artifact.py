@@ -1,6 +1,6 @@
 """Pin the one-artifact publish: PyPI takes exactly the files TestPyPI took, and each run checks it by sha256.
 
-The Overtoad's directive of 2026-11-15: "deploy to pypi should send the same artifact that was already sent to testpypi.
+The owner's directive of 2026-11-15: "deploy to pypi should send the same artifact that was already sent to testpypi.
 an identical hash check, of the artifacts after testpypi deploy and prior to pypi deploy, might also be helpful here to
 prevent this from slipping through the cracks again." juniper-cascor's publisher rebuilt the package in its PyPI job,
 so PyPI served a second build of its 0.13.0 and 0.14.0 releases. This repository's three publishers already built once
@@ -15,7 +15,7 @@ juniper-cascor's one-artifact template (juniper-cascor#763 and #767). The build 
 and uploads both as one artifact, kept 90 days; a re-run attempt reuses it rather than build again; each publish job
 checks the files against ``SHA256SUMS`` before it uploads; TestPyPI's JSON must list exactly those sha256 after the
 TestPyPI upload and again before the PyPI one, and PyPI's after; only the uploading jobs hold ``id-token: write``; and a
-dispatch from the release tag with ``republish_from_testpypi`` runs the republish job, the first rung of the Overtoad's
+dispatch from the release tag with ``republish_from_testpypi`` runs the republish job, the first rung of the owner's
 recovery ladder, which copies TestPyPI's files for the version to PyPI and builds nothing. The template steps read only
 ``PUBLISH_PACKAGE`` and ``PUBLISH_DIST_DIR`` from the workflow ``env``, a step's ``INDEX_URL``, and the runner's own
 variables.

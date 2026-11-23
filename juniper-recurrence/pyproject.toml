@@ -38,7 +38,7 @@ classifiers = [
 # torch *at runtime* only — kept optional via the [torch] extra below, never a base dependency
 # (importing MLPReadoutSpec is torch-free; torch is lazily imported inside the readout's fit).
 # Floors raised to juniper-recurrence-model >=0.4.0 and juniper-data-client >=0.6.0 (W1.13 of the
-# juniper-ml recurrence × equities plan; Overtoad ruling 2026-10-10, which 0.6.0 shipped without).
+# juniper-ml recurrence × equities plan; owner ruling 2026-10-10, which 0.6.0 shipped without).
 # model 0.4.0 carries W1.3's target selection, whose `auto` default warns on a one-hot fallback,
 # and the target_dt checks; data-client 0.6.0 carries the W1.4 rules that `validate_npz_contract`
 # applies on every load (float32, finite dt, target_dt, seq_lengths). 0.6.0's ranges still admitted

@@ -175,7 +175,7 @@ copy of juniper-cascor's template:
 
 ### A release that did not reach PyPI
 
-The Overtoad's recovery ladder (2026-11-15), in this order. Every rung publishes the files TestPyPI took, or nothing
+The owner's recovery ladder (2026-11-15), in this order. Every rung publishes the files TestPyPI took, or nothing
 ([juniper-cascor's account](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)).
 
 1. **Republish TestPyPI's files.** Dispatch the package's workflow from its release tag. Only the job
