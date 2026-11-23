@@ -19,13 +19,13 @@
 #    the count of `cursor/`-headed open PRs, compares both to the repo variables
 #    PR_BUDGET_WARN (default 15) / PR_BUDGET_ALARM (default 30), always writes a
 #    step-summary table, and -- only on a breach -- posts a compact notice to the
-#    Juniper Slack channel via the owner-provisioned SLACK_WEBHOOK_URL secret.
+#    Juniper Slack channel via the Overtoad-provisioned SLACK_WEBHOOK_URL secret.
 #
 #    Report-only by construction: a budget breach is a GREEN run (this is an alarm,
 #    not a merge gate -- it never blocks a PR and never turns the cron red). Only a
 #    hard `gh`/`jq` failure to query the PR set would fail the run, and even that is
 #    downgraded to a `::warning::` annotation + a green run so a transient API blip
-#    cannot page the owner. The Slack step mirrors the strictly-non-blocking
+#    cannot page the Overtoad. The Slack step mirrors the strictly-non-blocking
 #    contract of release-train.yml (Q-CHANNEL): a missing secret skips the step and
 #    a POST failure never fails the run (continue-on-error).
 #
@@ -86,7 +86,7 @@ jobs:
           alarm="${PR_BUDGET_ALARM:-30}"
 
           # Query once (read-only). A hard failure is downgraded to a warning +
-          # a green run so the report-only alarm can never page the owner on a
+          # a green run so the report-only alarm can never page the Overtoad on a
           # transient API blip (it stays visible as a yellow ::warning:: though).
           if ! prs_json="$(gh pr list --repo "$GH_REPO" --state open --limit 500 --json number,headRefName 2> gh_err.txt)"; then
             echo "::warning title=pr-budget-alarm::Could not list open PRs: $(tr '\n' ' ' < gh_err.txt)"

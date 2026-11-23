@@ -26,7 +26,7 @@ hardening roadmap live in juniper-ml:
 - `strict_required_status_checks_policy` is **on** — a PR must be current with
   `main` to merge. Retained deliberately as the anti-storm guarantee.
 - `require_last_push_approval` is **off**. With `required_approving_review_count: 0`
-  it added no review workflow and made any owner-authored PR unmergeable except by
+  it added no review workflow and made any Overtoad-authored PR unmergeable except by
   admin bypass.
 - An unsigned commit anywhere on a PR branch blocks the merge under
   `required_signatures`. Squash-merge does **not** rescue it. Commits made through

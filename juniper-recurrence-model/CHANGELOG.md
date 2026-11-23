@@ -19,8 +19,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `tests/test_publish_smoke_pins.py` fails when the smoke's by-name pins and `dependencies` disagree in name,
   range, extras or marker. `ci-recurrence-model.yml`'s change filter and `on.push` paths now name the publish
   workflow, so a PR that edits only the smoke line runs the test. Item 3 of juniper-ml's
-  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-11-06_recurrence-equities-0-8-1-published-owner-rulings-recorded-ml-floor-next.md`;
-  the owner approved the fix on 2026-11-06.
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-11-06_recurrence-equities-0-8-1-published-Overtoad-rulings-recorded-ml-floor-next.md`;
+  the Overtoad approved the fix on 2026-11-06.
 
 ## [0.6.0] - 2026-10-19
 
@@ -46,7 +46,7 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 - **The linear readout standardises the memory block on the train fold whenever `ridge != 0.0`**
   (W5.8 (B) of juniper-ml
   `notes/JUNIPER_2026-10-03_JUNIPER-RECURRENCE_EQUITIES-END-TO-END-AUDIT-AND-DEVELOPMENT-PLAN.md`;
-  accepted by the owner 2026-10-18). `LinearReadout` now applies the per-column train-fold mean / std
+  accepted by the Overtoad 2026-10-18). `LinearReadout` now applies the per-column train-fold mean / std
   (`_standardize_fit`, the statistics the RFF rung already used) to `M` before a `ridge > 0.0` or
   `ridge="gcv"` solve, and again at `predict`; the `extra` side-channel and the bias column are
   never standardised. The statistics ride `save_state` (`mean` / `std` arrays, a `standardized`
@@ -101,7 +101,7 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `y_reg_*`. The juniper-recurrence app passes no `target`, so under `"reg"` it refused all five —
   `POST /v1/train` → 422 `invalid dataset: regression target 'y_reg_train' missing`, reproduced
   through `bench/app_e2e.py`. The default is therefore R8's alternative, `"auto"`, pending the
-  owner's re-ruling. It lives in one constant, `juniper_recurrence_model.data.DEFAULT_TARGET`;
+  Overtoad's re-ruling. It lives in one constant, `juniper_recurrence_model.data.DEFAULT_TARGET`;
   moving to `"reg"` is that line plus the pin test `test_the_default_is_auto_pending_ruling_r8`,
   once the app passes `target` or the producer emits `y_reg_*`. The bench pins `"auto"` either way.
 

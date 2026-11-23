@@ -202,7 +202,7 @@ class Settings(SettingsBase):
     # --- LMU hyperparameter defaults (consumed by the PR-2 training path) -------------
     default_d: int = 16
     default_theta: float | None = None
-    # ``"gcv"`` since 0.7.0 (W5.8 (B) of the juniper-ml recurrence x equities plan; owner ruling
+    # ``"gcv"`` since 0.7.0 (W5.8 (B) of the juniper-ml recurrence x equities plan; Overtoad ruling
     # 2026-10-18). A linear-readout request that omits ``ridge`` -- a bare ``/v1/train`` or
     # ``/v1/crossval``, canopy's registry seed, the ``train`` CLI without ``--ridge`` -- used to get
     # ``0.0``, the raw min-norm solve, which extrapolates on a drifting input: -2.1e4 aggregate r2 on
