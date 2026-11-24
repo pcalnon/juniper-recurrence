@@ -19,7 +19,7 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
   `tests/test_publish_smoke_pins.py` fails when the smoke's by-name pins and `dependencies` disagree in name,
   range, extras or marker. `ci-recurrence-model.yml`'s change filter and `on.push` paths now name the publish
   workflow, so a PR that edits only the smoke line runs the test. Item 3 of juniper-ml's
-  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-11-06_recurrence-equities-0-8-1-published-Overtoad-rulings-recorded-ml-floor-next.md`;
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-11-06_recurrence-equities-0-8-1-published-owner-rulings-recorded-ml-floor-next.md`;
   the Overtoad approved the fix on 2026-11-06.
 
 ## [0.6.0] - 2026-10-19
