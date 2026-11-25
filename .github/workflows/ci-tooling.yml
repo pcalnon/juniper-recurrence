@@ -1,0 +1,66 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-recurrence (repo root: the util/ tooling)
+# File Name:     ci-tooling.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-11-25
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2026 Paul Calnon
+#
+# Description:
+#    The suite of util/run_tests.py, the local test runner. No package lane collects the root
+#    tests/ directory, so each root suite runs in a workflow of its own (memory-budget.yml and
+#    sequence-safety.yml run the other two). util/run_tests.py reads this step, like every other
+#    `python3 -m unittest` step, into its unittest lane.
+#
+#    The pull_request trigger is deliberately UNFILTERED: the runner reads every workflow on every
+#    run, so a workflow change it cannot read must fail here, in the PR that makes it, and not on the
+#    next person's machine. The suite takes about a minute.
+#
+#####################################################################################################################################################################################################
+
+name: CI — repo tooling
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "util/run_tests.py"
+      - "tests/test_run_tests.py"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_TEST_VERSION: "3.14"
+
+jobs:
+  run-tests-suite:
+    name: Local test runner suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+
+      - name: Install the runner's one dependency
+        run: |
+          python -m pip install --upgrade "pip>=26.1.1"
+          pip install "pyyaml>=6.0.1"
+
+      - name: Run util/run_tests.py's suite
+        run: |
+          python3 -m unittest -v tests/test_run_tests.py

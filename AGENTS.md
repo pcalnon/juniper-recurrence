@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.8.1
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-25
 
 ---
 
@@ -168,7 +168,7 @@ cd juniper-recurrence-client && pip install -e ".[test]" && python -m pytest
 pip install -e "juniper-recurrence/.[test,bench]" && python -m pytest bench/
 ```
 
-CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 matrix and enforces `--cov-fail-under=90`. Each lane also runs an informational Python 3.15 leg (`experimental: true`, job-level `continue-on-error`): it reports, but a failure there blocks no gate or merge. The pytest `addopts` carry the ecosystem-standard `-p no:dash -p no:playwright` autoload-SIGSEGV guard.
+CI mirrors these per-package invocations across the Python 3.12 / 3.13 / 3.14 matrix and enforces `--cov-fail-under=90`. Each lane also runs an informational Python 3.15 leg (`experimental: true`, job-level `continue-on-error`): it reports, but a failure there blocks no gate or merge. The pytest `addopts` carry the ecosystem-standard `-p no:dash -p no:playwright` autoload-SIGSEGV guard. `python3 util/run_tests.py` runs any subset as CI does, gates included (README § Running tests locally).
 
 A repo-wide **version-drift** gate (`scripts/check_version_drift.py`, audit CI-06) runs as a `version-drift` pre-commit hook (and so via the `CI — pre-commit` gate): each package's `_version.py` must agree with its CHANGELOG top heading and the root AGENTS.md version table, and the root `**Version**` header must match the app. Pure stdlib; the git-tag check degrades gracefully on a shallow checkout.
 
