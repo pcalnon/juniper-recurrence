@@ -269,8 +269,83 @@ cd juniper-recurrence-client && pip install -e ".[test]"               && python
 pip install -e "juniper-recurrence/.[test,bench]" && python -m pytest bench/
 ```
 
+Or run any subset with the commands CI runs, gates included: `python3 util/run_tests.py` (next section).
+
 See [`AGENTS.md`](./AGENTS.md) for the full contributor guide (conventions, per-package publishing,
 and the design-of-record links).
+
+---
+
+## Running tests locally
+
+`util/run_tests.py` runs any subset of the repo's tests with the commands CI runs. It reads them from the
+workflows on every run, so it cannot drift from CI. It installs nothing: install the packages' `[test]` extras
+(above) into the environment you run it with.
+
+```bash
+python3 util/run_tests.py                       # everything: the unittest lane and every gating lane
+python3 util/run_tests.py model client          # two lanes, each with its coverage floor and per-file gate
+python3 util/run_tests.py juniper-recurrence-model/tests/test_lmu_model.py -- -x -vv
+python3 util/run_tests.py --changed             # the lanes and suites the branch touches (vs origin/main)
+python3 util/run_tests.py --failed              # the failures of the last run, again
+python3 util/run_tests.py --help                # every selector, option and exit code
+```
+
+**Lanes.** Each lane is a job a workflow runs:
+
+| Selector | What it runs |
+|---|---|
+| `app`, `model`, `client` | the `test` job of `ci-recurrence-<lane>.yml`, in the package's directory: pytest with `--cov-fail-under=90`, then `juniper-coverage-gap-map --enforce`. The directory names (`juniper-recurrence-model`) work too |
+| `bench` | `ci-recurrence-bench.yml`'s smoke suite, from the repo root, with this checkout's app on `PYTHONPATH` (CI installs it from `./juniper-recurrence`). The steps CI runs only on a `repository_dispatch` are left out |
+| `unittest` | every root `tests/` suite a workflow runs with `python3 -m unittest`: today `memory-budget.yml`, `sequence-safety.yml` and `ci-tooling.yml`, one suite each |
+| `packages` | `app`, `bench`, `client` and `model` |
+| `all` (the default) | `unittest` and `packages` |
+| `optional`, `model-torch` | a `test-<name>` job CI runs but does not gate on: `model-torch` is `test-torch`, the torch MLP readout, and needs the model's `[torch]` extra. Runs only when named |
+
+A suite can be named by path, file name or stem (`run_tests`), a glob (`'*budget*'`), or narrowed to a class or test
+(`tests/test_run_tests.py::RunTest`). A path under a lane's directory (`bench/test_plots.py`, a node id with `::`)
+runs that lane's pytest on it alone, with the coverage gates off.
+
+**How it runs.** Every selected job runs (CI stops at the first failure), each step in its own process group with
+stdin from /dev/null, `-j auto` jobs at a time. A job that fails alongside others is re-run alone, and passes as
+`RERUN-PASS` if it then passes. Each child gets `PYTHONPATH` set to the directories its workflow installs from this
+checkout, so a lane tests this checkout's code: the preflight refuses a lane whose package would import from
+somewhere else. It also names any missing requirement and the `pip install` that adds it. `TMPDIR` is never the
+system temp directory, `DISPLAY` and `WAYLAND_DISPLAY` are removed, and the D-Bus session address points nowhere.
+Coverage data goes to the run directory, never into the checkout.
+
+| Option | Effect |
+|---|---|
+| `-k EXPR` | only tests whose name matches (unittest `-k` / pytest `-k`; repeatable). Turns the coverage gates off |
+| `--changed`, `--base REF` | add the gating lanes whose workflow's path filter matches a changed file (as CI decides) and the suites that name one, against the merge base with `--base` (default `origin/main`) |
+| `--failed`, `--lf` | add the jobs that failed or timed out in the last recorded run of this checkout |
+| `-l`, `--list` | list what the selectors select, and exit |
+| `-j N`, `--jobs N` | jobs at once (`auto`: half the CPUs, at most 8). `-j 1` runs them in order |
+| `-x`, `--fail-fast` | start nothing new after the first failure |
+| `--timeout SECONDS` | per step (default 900; `0`: none); the step's process group is killed when it expires |
+| `--no-rerun` | do not re-run a failed job alone |
+| `--no-coverage` | run pytest without coverage and skip the coverage gate |
+| `--python PATH` | the interpreter for every command (default: the one running the script), for example `"$VIRTUAL_ENV/bin/python"` |
+| `-n`, `--dry-run` | print the environment, the preflight and every command; run and write nothing |
+| `--clean-env` | also remove `CLAUDE*`, `JUNIPER_*` and `WTC_*` variables from the children, as on a CI runner |
+| `--tmpdir DIR` | the children's `TMPDIR` (default: the inherited one, else the primary checkout's `tmp/`) |
+| `-s`, `--stream` | show each step's output live (the default when one job is selected) |
+| `-q`, `--quiet` | print only failures and the summary |
+| `--tail N` | lines of a failing step's output to print (default 30) |
+| `--color WHEN` | `auto`, `always` or `never` |
+| `--log-dir DIR` | where run directories go |
+| `--checkout DIR` | the checkout to test (default: the one holding the script) |
+
+Arguments after `--` go to the runner of the selected jobs (`-- -x -vv` for pytest).
+
+**Records.** Each run writes one log per step, `summary.json` (schema 1) and `summary.txt` under the primary
+checkout's `tmp/run-tests/<checkout name>/<UTC stamp>/`, with a `latest` link. Nothing is pruned.
+
+**Exit codes.** `0` passed; `1` a job failed or timed out; `2` a usage error, or a workflow the runner cannot read;
+`3` nothing failed, but a lane could not run (UNAVAILABLE); `5` `-k` matched no test; `130` interrupted.
+
+The runner is a copy of juniper-ml's `util/run_tests.py`, adapted to this repo's workflows; its own suite is
+`tests/test_run_tests.py`, which `ci-tooling.yml` runs on every pull request.
 
 ---
 
