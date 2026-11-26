@@ -175,19 +175,18 @@ copy of juniper-cascor's template:
 
 Each workflow has five jobs, and a release runs the first four. `Build and Validate` builds the one artifact, kept 90
 days. `Publish to TestPyPI` uploads it and checks TestPyPI's JSON; it holds `id-token: write` alone and checks nothing
-out. `Verify the TestPyPI install`, a
-job of its own after it (ruling 2 of 2026-11-16), installs the wheel from TestPyPI alone (`--no-deps`, with the version
-read from a sparse checkout of the package's `_version.py`) and imports the package, from `$RUNNER_TEMP`, outside the
-checkout; the model's and the client's runtime dependencies come from PyPI by name. It holds `contents: read` alone,
-with no environment and no `id-token`, so nothing the package runs can mint a credential, and its name holds
-"TestPyPI", so juniper-ml's release-train ceremony reads its failure as `HALT_TESTPYPI`. `Publish to PyPI` needs both
-TestPyPI jobs, waits at the `pypi` gate, checks TestPyPI's JSON again, uploads, and checks PyPI's. The fifth,
-`Republish the tested files (dispatch only)`, runs alone on a dispatch with `republish_from_testpypi`: it is the first
-rung of the recovery ladder, below. The workflow's `env`
-holds the template's three parameters: `PUBLISH_PACKAGE`, `PUBLISH_DIST_DIR` and `PUBLISH_TAG_PREFIX`, the package's
-tag prefix (`juniper-recurrence-v`, `juniper-recurrence-model-v`, `juniper-recurrence-client-v`); the build job's guard
-repeats the prefix, since a job-level `if:` cannot read `env`. Every Release fires all three workflows, and each build
-job skips a sibling's tag; a plain `workflow_dispatch` of a workflow builds only from its own package's tag.
+out. `Verify the TestPyPI install`, a job of its own after it (ruling 2 of 2026-11-16), installs the wheel from TestPyPI
+alone (`--no-deps`, with the version read from a sparse checkout of the package's `_version.py`) and imports the
+package, from `$RUNNER_TEMP`, outside the checkout; the model's and the client's runtime dependencies come from PyPI by
+name. It holds `contents: read` alone, with no environment and no `id-token`, so nothing the package runs can mint a
+credential, and its name holds "TestPyPI", so juniper-ml's release-train ceremony reads its failure as `HALT_TESTPYPI`.
+`Publish to PyPI` needs both TestPyPI jobs, waits at the `pypi` gate, checks TestPyPI's JSON again, uploads, and checks
+PyPI's. The fifth, `Republish the tested files (dispatch only)`, runs alone on a dispatch with
+`republish_from_testpypi`: it is the first rung of the recovery ladder, below. The workflow's `env` holds the template's
+three parameters: `PUBLISH_PACKAGE`, `PUBLISH_DIST_DIR` and `PUBLISH_TAG_PREFIX`, the package's tag prefix
+(`juniper-recurrence-v`, `juniper-recurrence-model-v`, `juniper-recurrence-client-v`); the build job's guard repeats the
+prefix, since a job-level `if:` cannot read `env`. Every Release fires all three workflows, and each build job skips a
+sibling's tag; a plain `workflow_dispatch` of a workflow builds only from its own package's tag.
 
 ### A release that did not reach PyPI
 
@@ -211,8 +210,9 @@ The Overtoad's recovery ladder (2026-11-15), in this order. Every rung publishes
    artifact, kept 90 days, and waits at the gate again.
 3. **Otherwise, cut a new patch version.**
 
-The republish takes the version from the tag, after its `PUBLISH_TAG_PREFIX`, so it refuses another package's tag, and
-any tag that is not the prefix followed by the exact version, before any request: it publishes nothing.
+The republish takes the version from the tag, after its `PUBLISH_TAG_PREFIX`: it refuses another package's tag before
+any request, and a tag that is the prefix followed by anything but the exact version cannot be republished either: the
+job fails later, without publishing.
 
 When rung 1 refuses, or a release run failed:
 
@@ -230,16 +230,16 @@ When rung 1 refuses, or a release run failed:
   refuses it. Rung 2 applies to that dispatch run, within 30 days of it; then rung 3.
 
 A failed `Verify PyPI serves exactly these files` comes after the upload, so the run's files are already on PyPI. The
-step runs in two jobs, `Publish to PyPI` (in the release run) and the republish job (in rung 1's dispatch run), and
-what it needs depends on why it failed:
+step runs in two jobs, `Publish to PyPI` (in the release run, or a plain dispatch's re-fire) and the republish job (in
+rung 1's dispatch run), and what it needs depends on why it failed:
 
 - **PyPI lists a file this run did not build, or one with another sha256**: another upload put it there. Compare PyPI's
   JSON for the version with TestPyPI's to find which one; only a new patch version ships tested files under a clean
   version.
 - **The check gave up waiting** (PyPI's JSON did not list the files in time): index lag, not a wrong file. **Re-run
-  failed jobs** on the run whose check gave up (the release run, or the republish's dispatch run), within 30 days of
-  that run: the job uploads the same bytes again, which the index accepts, and repeats the check. Re-running it needs a
-  fresh `pypi` approval.
+  failed jobs** on the run whose check gave up (the release run, a plain dispatch's re-fire, or rung 1's dispatch run),
+  within 30 days of that run: the job uploads the same bytes again, which the index accepts, and repeats the check.
+  Re-running it needs a fresh `pypi` approval.
 
 **Never "Re-run all jobs"** on a publish run, nor `gh run rerun <id>` without `--failed`. Dispatch from the tag: both
 publish environments admit tags only.

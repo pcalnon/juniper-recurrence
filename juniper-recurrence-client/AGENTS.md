@@ -72,8 +72,7 @@ CHANGELOG section in the release PR.
 Each run builds once, and TestPyPI and PyPI get those same files, checked by sha256 against each index's JSON
 (juniper-cascor's one-artifact template). The install check runs in a job of its own, `Verify the TestPyPI install`,
 which holds `contents: read` alone and which the PyPI job needs. A release that did not reach PyPI, in this order:
-dispatch
-`gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
+dispatch `gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
 which copies TestPyPI's files to PyPI and builds nothing, once the tag's newest release run passed both its TestPyPI
 jobs; if that fails, within 30 days of the release run, **Re-run failed jobs** on it; otherwise cut a new patch
 version. Never "Re-run all jobs" on a publish run. The full ladder, what to do when rung 1 refuses, the two causes of
