@@ -173,6 +173,22 @@ those sha256 after the TestPyPI upload and again before the PyPI upload, and PyP
 copy of juniper-cascor's template:
 [One Artifact, Checked Against TestPyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#one-artifact-checked-against-testpypi).
 
+Each workflow has five jobs, and a release runs the first four. `Build and Validate` builds the one artifact, kept 90
+days. `Publish to TestPyPI` uploads it and checks TestPyPI's JSON; it holds `id-token: write` alone and checks nothing
+out. `Verify the TestPyPI install`, a
+job of its own after it (ruling 2 of 2026-11-16), installs the wheel from TestPyPI alone (`--no-deps`, with the version
+read from a sparse checkout of the package's `_version.py`) and imports the package, from `$RUNNER_TEMP`, outside the
+checkout; the model's and the client's runtime dependencies come from PyPI by name. It holds `contents: read` alone,
+with no environment and no `id-token`, so nothing the package runs can mint a credential, and its name holds
+"TestPyPI", so juniper-ml's release-train ceremony reads its failure as `HALT_TESTPYPI`. `Publish to PyPI` needs both
+TestPyPI jobs, waits at the `pypi` gate, checks TestPyPI's JSON again, uploads, and checks PyPI's. The fifth,
+`Republish the tested files (dispatch only)`, runs alone on a dispatch with `republish_from_testpypi`: it is the first
+rung of the recovery ladder, below. The workflow's `env`
+holds the template's three parameters: `PUBLISH_PACKAGE`, `PUBLISH_DIST_DIR` and `PUBLISH_TAG_PREFIX`, the package's
+tag prefix (`juniper-recurrence-v`, `juniper-recurrence-model-v`, `juniper-recurrence-client-v`); the build job's guard
+repeats the prefix, since a job-level `if:` cannot read `env`. Every Release fires all three workflows, and each build
+job skips a sibling's tag; a plain `workflow_dispatch` of a workflow builds only from its own package's tag.
+
 ### A release that did not reach PyPI
 
 The Overtoad's recovery ladder (2026-11-15), in this order. Every rung publishes the files TestPyPI took, or nothing
@@ -180,7 +196,10 @@ The Overtoad's recovery ladder (2026-11-15), in this order. Every rung publishes
 
 1. **Republish TestPyPI's files.** Dispatch the package's workflow from its release tag. Only the job
    `Republish the tested files (dispatch only)` runs: it waits at the `pypi` gate (an approval, then the 5-minute
-   timer), builds nothing, and copies TestPyPI's files for that version to PyPI, each checked by sha256.
+   timer) and builds nothing. It refuses unless the tag's newest release run of that workflow exists and both its
+   TestPyPI jobs, `Publish to TestPyPI` and `Verify the TestPyPI install`, concluded success in their latest attempt
+   (ruling 1 of 2026-11-16). Then it copies TestPyPI's files for that version to PyPI, each checked by sha256 against
+   TestPyPI's JSON and, while the release run's artifact exists, its `SHA256SUMS`, and checks PyPI's JSON.
 
    ```bash
    gh workflow run publish-recurrence-app.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-v<version> -f republish_from_testpypi=true
@@ -192,21 +211,52 @@ The Overtoad's recovery ladder (2026-11-15), in this order. Every rung publishes
    artifact, kept 90 days, and waits at the gate again.
 3. **Otherwise, cut a new patch version.**
 
+The republish takes the version from the tag, after its `PUBLISH_TAG_PREFIX`, so it refuses another package's tag, and
+any tag that is not the prefix followed by the exact version, before any request: it publishes nothing.
+
+When rung 1 refuses, or a release run failed:
+
+- **A TestPyPI job failed on index lag** (its JSON check gave up waiting, or the install check stopped with an error
+  that names index lag): within 30 days, **Re-run failed jobs** on the release run. A re-run `Publish to TestPyPI`
+  uploads the same bytes, from the run's artifact, which the index accepts, and both checks run again; then the PyPI
+  job waits at the gate, and rung 1 has a release run to accept.
+- **The install check failed for real** (the package does not install or import, and a re-run fails the same way): cut a
+  new patch version. Neither a re-run nor a same-version re-cut can fix it: the index refuses new bytes under a file
+  name it already holds.
+- **A Release that was re-cut**: never delete a Release and publish it again to retry. The re-cut's run builds again,
+  TestPyPI refuses its files, and that failed run is then the tag's newest release run, so rung 1 refuses the tag for
+  good. Rung 2 still applies to the original release run, within 30 days of it; then rung 3.
+- **A version a plain dispatch published** (below): no release run of its tag passed its TestPyPI jobs, so rung 1
+  refuses it. Rung 2 applies to that dispatch run, within 30 days of it; then rung 3.
+
+A failed `Verify PyPI serves exactly these files` comes after the upload, so the run's files are already on PyPI. The
+step runs in two jobs, `Publish to PyPI` (in the release run) and the republish job (in rung 1's dispatch run), and
+what it needs depends on why it failed:
+
+- **PyPI lists a file this run did not build, or one with another sha256**: another upload put it there. Compare PyPI's
+  JSON for the version with TestPyPI's to find which one; only a new patch version ships tested files under a clean
+  version.
+- **The check gave up waiting** (PyPI's JSON did not list the files in time): index lag, not a wrong file. **Re-run
+  failed jobs** on the run whose check gave up (the release run, or the republish's dispatch run), within 30 days of
+  that run: the job uploads the same bytes again, which the index accepts, and repeats the check. Re-running it needs a
+  fresh `pypi` approval.
+
 **Never "Re-run all jobs"** on a publish run, nor `gh run rerun <id>` without `--failed`. Dispatch from the tag: both
 publish environments admit tags only.
 
 **A dispatch without `republish_from_testpypi` is only for a release that never reached TestPyPI.** It re-fires the
-whole publish and builds again. If that re-fire puts its own files on TestPyPI and its PyPI job then fails, the ladder
-above targets the wrong run: while the release run's artifact exists, rung 1 refuses, because that run's `SHA256SUMS`
-disagree with TestPyPI's files, and rung 2 on the release run re-uploads a build TestPyPI rejects. Use **Re-run failed
+whole publish and builds again, from the package's own tag alone. If that re-fire puts its own files on TestPyPI and
+its PyPI job then fails, the ladder above targets the wrong run: rung 1 refuses the version, since no release run of
+its tag passed its TestPyPI jobs, and rung 2 on the release run re-uploads a build TestPyPI rejects. Use **Re-run failed
 jobs** on the dispatch run instead, within 30 days of it.
 
-**The ladder holds only for a tag cut after the one-artifact publish change of 2026-11-15 merged.** An older tag's
-workflow is the old one: no republish job, `skip-existing` on both uploads, no sha256 check, a rebuild on every
-dispatch, and a 7-day artifact. Never dispatch such a tag: a plain dispatch would rebuild, skip the TestPyPI upload,
-test TestPyPI's original files and then push the rebuild to PyPI (the juniper-ci-tools 0.9.1 defect, which "Re-run all
-jobs" caused there). For such a tag, use **Re-run failed jobs** on its release run within 7 days of it; otherwise cut a
-new patch version.
+**Each rung acts on the workflow file as of the tag.** A tag cut before the one-artifact publish change merged
+(juniper-recurrence#236, 2026-11-15), every release so far included, has the old workflow: no republish job,
+`skip-existing` on both uploads, no sha256 check, a rebuild on every dispatch, and a 7-day artifact. Never dispatch
+such a tag: a plain dispatch would rebuild, skip the TestPyPI upload, test TestPyPI's original files and then push the
+rebuild to PyPI (the juniper-ci-tools 0.9.1 defect, which "Re-run all jobs" caused there). For such a tag, use **Re-run
+failed jobs** on its release run within 7 days of it; otherwise cut a new patch version. A tag cut after #236 and before
+this change runs rung 1 without the check of the release run's TestPyPI jobs.
 
 ## Ecosystem
 

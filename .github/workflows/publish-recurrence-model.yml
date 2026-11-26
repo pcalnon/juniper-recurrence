@@ -19,7 +19,7 @@
 #
 #    TRUSTED-PUBLISHER REGISTRATION (must exist before the first tag push):
 #      PyPI + TestPyPI -> add a pending publisher with:
-#        Overtoad       = pcalnon
+#        owner       = pcalnon
 #        repository  = juniper-recurrence
 #        workflow    = publish-recurrence-model.yml
 #        environment = pypi   (PyPI)   /   testpypi  (TestPyPI)
@@ -53,7 +53,8 @@ on:
         type: boolean
         default: false
 
-# Each job adds what it needs to this; only the jobs that upload add id-token: write.
+# A job's own `permissions` replace this block rather than add to it: every job below states all it needs, and only
+# the jobs that upload hold id-token: write. This block is the default for a job added without its own.
 permissions:
   contents: read
 
@@ -66,11 +67,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The one-artifact publish template's two parameters (the template's source is juniper-cascor's publish.yml): the
-  # distribution's name on PyPI and TestPyPI, and the directory the build writes the sdist and wheel to, relative to
-  # the workspace.
+  # The one-artifact publish template's three parameters (the template's source is juniper-cascor's publish.yml): the
+  # distribution's name on PyPI and TestPyPI; the directory the build writes the sdist and wheel to, relative to the
+  # workspace; and the prefix of this package's release tags, whose remainder is the version. A job-level `if:` cannot
+  # read `env`, so the build job's tag guard repeats the prefix.
   PUBLISH_PACKAGE: juniper-recurrence-model
   PUBLISH_DIST_DIR: juniper-recurrence-model/dist
+  PUBLISH_TAG_PREFIX: juniper-recurrence-model-v
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -81,9 +84,10 @@ jobs:
     # For a `release` event, run only when the release is THIS package's tag. The
     # `juniper-recurrence-model-v` prefix is disjoint from the app's `juniper-recurrence-v*` and the
     # client's `juniper-recurrence-client-v*` (they diverge at the char after `juniper-recurrence-`),
-    # so neither sibling release proceeds here. A dispatch runs it, unless it asks for the republish job. Downstream jobs
-    # `needs: build`, so this one guard gates the whole pipeline.
-    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'juniper-recurrence-model-v')) || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi)
+    # so neither sibling release proceeds here. A dispatch runs it only from this package's own tag, and only when it
+    # does not ask for the republish job: from another package's tag it would publish this package's files under that
+    # tag's run. Downstream jobs `needs: build`, so this one guard gates the whole pipeline.
+    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'juniper-recurrence-model-v')) || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi && startsWith(github.ref_name, 'juniper-recurrence-model-v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -212,8 +216,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write  # trusted publishing to TestPyPI
+      id-token: write  # trusted publishing to TestPyPI; this job checks out nothing and runs no install check
     environment:
       name: testpypi
       url: https://test.pypi.org/p/juniper-recurrence-model
@@ -346,26 +349,47 @@ jobs:
           print(f"::error::{url} {state} after {attempts} attempts")
           sys.exit(1)
 
+  # Ruling 2 of 2026-11-16: the install check runs in a job of its own, after the TestPyPI job. It executes the
+  # package TestPyPI serves, so it holds no environment and no id-token: nothing it runs can mint a credential. The
+  # PyPI job needs it, and its name holds "TestPyPI", so juniper-ml's release-train ceremony reads its failure as
+  # HALT_TESTPYPI.
+  verify-testpypi-install:
+    name: Verify the TestPyPI install
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # the sparse checkout below, and nothing else: this job runs the package TestPyPI serves
+    steps:
+      # A sparse checkout, for the file the version is read from: nothing runs from it, and it keeps no credential.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           sparse-checkout: |
             juniper-recurrence-model/juniper_recurrence_model/_version.py
+          persist-credentials: false
 
       - name: Verify install from TestPyPI
         run: |
           set -euo pipefail
-          version=$(grep -E '^__version__' juniper-recurrence-model/juniper_recurrence_model/_version.py | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          # `python -c` puts its working directory first on sys.path: install and import from the runner's temporary
+          # directory, outside the sparse checkout the version is read from.
+          cd "${RUNNER_TEMP}"
+          version=$(grep -E '^__version__' "${GITHUB_WORKSPACE}/juniper-recurrence-model/juniper_recurrence_model/_version.py" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Verifying juniper-recurrence-model==${version}"
           # SECURITY: resolve the published package from TestPyPI ONLY (--no-deps,
           # single --index-url, no production-PyPI fallback) so a squatted
           # production-PyPI package can never be resolved in its place during a
           # trusted publish. TestPyPI index lag is covered by the retry loop.
+          # TestPyPI's simple index can lag behind its JSON: five tries, 10 s apart, and then an error that says so.
           for attempt in 1 2 3 4 5; do
             if pip install \
               --no-deps \
               --index-url https://test.pypi.org/simple/ \
               "juniper-recurrence-model==${version}"; then
               break
+            fi
+            if [ "${attempt}" -eq 5 ]; then
+              echo "::error::juniper-recurrence-model ${version} is not installable from TestPyPI after 5 tries (index lag?): Re-run failed jobs; a real failure repeats"
+              exit 1
             fi
             echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"
             sleep 10
@@ -381,11 +405,10 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: publish-testpypi
+    needs: [publish-testpypi, verify-testpypi-install]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write  # trusted publishing to PyPI
+      id-token: write  # trusted publishing to PyPI; this job checks out nothing
     environment:
       name: pypi
       url: https://pypi.org/p/juniper-recurrence-model
@@ -434,7 +457,8 @@ jobs:
               print(f"OK {digest}  {name}")
 
       # One-artifact publish template, step 5, before the PyPI upload: TestPyPI's record of what it took cannot change
-      # (a file name can never be uploaded twice), so it stands as the witness to what the TestPyPI job tested.
+      # (a file name can never be uploaded twice), so it stands as the witness to the files this run built and
+      # TestPyPI took: the install check installed their wheel; no check installs the sdist.
       - name: Verify TestPyPI still serves exactly these files
         shell: python3 {0}
         env:
@@ -600,9 +624,11 @@ jobs:
   # The Overtoad's recovery ladder, step 1 (2026-11-15): a dispatch from the release tag republishes TestPyPI's files.
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   republish:
-    # No "pypi" in this name, on purpose: juniper-ml's release-train ceremony tells a run's publish jobs apart by the
-    # substrings "testpypi" and "pypi" in their names, and this job is skipped in every release run, so it must count
-    # as neither. A dispatch run is not a release-event run, and the ceremony never reads one.
+    # No "testpypi" or "pypi" in this name, on purpose: juniper-ml's release-train ceremony tells a run's publish jobs
+    # apart by those substrings in their names, and this job is skipped in every release run, so it must count as
+    # neither: counted as a PyPI job, its skipped record would keep the ceremony's check for a PyPI job parked at the
+    # gate from ever passing. Since juniper-ml#2592 the ceremony's monitor also reads this workflow's dispatch runs on
+    # the tag, and it classifies a republish run by the run's own status: waiting, success or failure.
     name: Republish the tested files (dispatch only)
     if: github.event_name == 'workflow_dispatch' && inputs.republish_from_testpypi
     runs-on: ubuntu-latest
@@ -611,18 +637,21 @@ jobs:
       actions: read  # find and download the release run's artifact
       id-token: write  # trusted publishing to PyPI
     steps:
-      # One-artifact publish template, republish step 1: the version from the tag, and the release run's artifact.
+      # One-artifact publish template, republish step 1: the version from the tag; the tag's newest release run, which
+      # must have passed its TestPyPI jobs (ruling 1 of 2026-11-16); and that run's artifact, while it exists.
       - name: Find the release run's artifact
         id: original
         shell: python3 {0}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads PUBLISH_PACKAGE and the
-          # runner's GITHUB_* variables. The dispatch runs on the release tag, v<version> or <package>-v<version> (the
-          # pypi environment admits tags only), and the version comes from it. The newest release run of this workflow
-          # for that tag that still holds an unexpired <package>-dist made the files: its SHA256SUMS is checked against
-          # TestPyPI's JSON as well. An API failure fails the job rather than skip that check unannounced.
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads PUBLISH_PACKAGE,
+          # PUBLISH_TAG_PREFIX and the runner's GITHUB_* variables. The dispatch runs on the release tag (the pypi
+          # environment admits tags only): PUBLISH_TAG_PREFIX, then the version. Anything else is refused before any
+          # request. Ruling 1 of 2026-11-16: the newest release run of this workflow for that tag must exist, and each of
+          # its jobs whose name holds "testpypi" (the upload, and the install check) must have concluded success in its
+          # latest attempt, so this job never copies files whose checks failed or never ran. That run's <package>-dist,
+          # while it exists, is checked against TestPyPI's JSON as well. An API failure fails the job.
           import json
           import os
           import sys
@@ -630,14 +659,13 @@ jobs:
           import urllib.request
 
           package = os.environ["PUBLISH_PACKAGE"]
+          prefix = os.environ["PUBLISH_TAG_PREFIX"]
           tag = os.environ["GITHUB_REF_NAME"]
           version = ""
-          if os.environ.get("GITHUB_REF_TYPE") == "tag" and tag.startswith(f"{package}-v"):
-              version = tag[len(package) + 2 :]
-          elif os.environ.get("GITHUB_REF_TYPE") == "tag" and tag.startswith("v"):
-              version = tag[1:]
+          if os.environ.get("GITHUB_REF_TYPE") == "tag" and prefix and tag.startswith(prefix):
+              version = tag[len(prefix) :]
           if not version:
-              print(f"::error::run this dispatch from a release tag of {package} (v<version> or {package}-v<version>), not {os.environ.get('GITHUB_REF')}")
+              print(f"::error::run this dispatch from a release tag of {package}, {prefix}<version>, not {os.environ.get('GITHUB_REF')}")
               sys.exit(1)
           api = f"{os.environ['GITHUB_API_URL']}/repos/{os.environ['GITHUB_REPOSITORY']}"
           workflow = os.environ["GITHUB_WORKFLOW_REF"].split("@", 1)[0].rsplit("/", 1)[-1]
@@ -649,20 +677,47 @@ jobs:
                   return json.load(response)
 
 
-          name = f"{package}-dist"
-          found = ""
           runs = get(f"actions/workflows/{workflow}/runs?" + urllib.parse.urlencode({"event": "release", "branch": tag, "per_page": 30}))["workflow_runs"]
-          for run in sorted((r for r in runs if r["head_branch"] == tag), key=lambda r: r["id"], reverse=True):
-              artifacts = get(f"actions/runs/{run['id']}/artifacts?" + urllib.parse.urlencode({"name": name, "per_page": 100}))["artifacts"]
-              if any(a["name"] == name and not a["expired"] for a in artifacts):
-                  found = str(run["id"])
+          ids = [r["id"] for r in runs if r["head_branch"] == tag]
+          if not ids:
+              print(f"::error::{workflow} has no release run for {tag}, so no run vouches for TestPyPI's {package} {version}: nothing is republished")
+              sys.exit(1)
+          run_id = max(ids)
+          jobs = []
+          page = 1
+          while True:
+              listing = get(f"actions/runs/{run_id}/jobs?" + urllib.parse.urlencode({"filter": "all", "per_page": 100, "page": page}))
+              jobs.extend(listing["jobs"])
+              if not listing["jobs"] or len(jobs) >= listing["total_count"]:
                   break
+              page += 1
+          # filter=all lists each attempt's record of each job, and a job's latest attempt is its record with the highest
+          # (run_attempt, id). "Re-run failed jobs" gives every job a record in the new attempt: a job it runs again gets
+          # its new result, and one it carries over gets a COPY of its earlier one (a new id, the new run_attempt, the
+          # earlier conclusion). So each job counts with its newest result, whichever attempt produced it.
+          latest = {}
+          for job in jobs:
+              if job["name"] not in latest or (job["run_attempt"], job["id"]) > (latest[job["name"]]["run_attempt"], latest[job["name"]]["id"]):
+                  latest[job["name"]] = job
+          checks = sorted((job for job in latest.values() if "testpypi" in job["name"].lower()), key=lambda job: job["name"])
+          if not checks or any(job["conclusion"] != "success" for job in checks):
+              print(f"::error::release run {run_id} of {workflow} for {tag}: each job whose name holds 'testpypi' must have concluded success in its latest attempt, so TestPyPI's {package} {version} is not republished")
+              for job in checks:
+                  print(f"  {job['name']}: {job['conclusion'] or job['status']} (attempt {job['run_attempt']})")
+              if not checks:
+                  print("  the run has no such job")
+              sys.exit(1)
+          for job in checks:
+              print(f"release run {run_id}: {job['name']} concluded success in the latest attempt ({job['run_attempt']})")
+          name = f"{package}-dist"
+          artifacts = get(f"actions/runs/{run_id}/artifacts?" + urllib.parse.urlencode({"name": name, "per_page": 100}))["artifacts"]
+          found = str(run_id) if any(a["name"] == name and not a["expired"] for a in artifacts) else ""
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"version={version}\nrun-id={found}\n")
           if found:
               print(f"{package} {version}: release run {found} still holds {name}, so its SHA256SUMS is checked against TestPyPI's too")
           else:
-              print(f"::warning::{package} {version}: no release run of {workflow} for {tag} still holds {name} (kept 90 days), so TestPyPI's JSON is the only record the files are checked against")
+              print(f"::warning::{package} {version}: release run {run_id} of {workflow} for {tag} no longer holds {name} (kept 90 days), so TestPyPI's JSON is the only record the files are checked against")
 
       - name: Download the release run's artifact
         if: steps.original.outputs.run-id != ''
