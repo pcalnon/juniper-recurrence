@@ -76,6 +76,55 @@ The model package (`juniper-recurrence-model`) maintains its own changelog under
   - Applied by juniper-ml's `util/ad-hoc/2026-11-15_py315_informational_green_legs.py`, a textual edit checked by
     re-parsing each workflow (same steps in the same order, plus the report step; no other job changed).
 
+- **The install check runs in a job that cannot mint a credential, and the republish job copies nothing its release run
+  did not pass** (repo-wide: `publish-recurrence-app.yml`, `publish-recurrence-client.yml` and
+  `publish-recurrence-model.yml`; rulings 1 and 2 of 2026-11-16, on the one-artifact publish above). This ports
+  juniper-cascor's sweep of the template (juniper-cascor#777) to the three publishers, template verbatim, applied by
+  juniper-ml's `util/ad-hoc/2026-11-26_juniper-recurrence_one_artifact_sweep_port.py`.
+  - **The install check has a job of its own** (ruling 2). `Verify the TestPyPI install` needs `Publish to TestPyPI`,
+    and `Publish to PyPI` needs both. It holds `contents: read` alone: no environment and no `id-token`. Until now the
+    check ran in the TestPyPI job, so the package it imported ran beside that job's OIDC token-request variables. Its
+    steps moved with it: the sparse checkout of the package's `_version.py`, which now keeps no credential
+    (`persist-credentials: false`), and the same `--no-deps` install from TestPyPI alone and the same import, now run
+    from `$RUNNER_TEMP`, with the version read by its path under `$GITHUB_WORKSPACE`. The TestPyPI job holds
+    `id-token: write` alone and ends at its JSON check, and the PyPI job holds `id-token: write` alone too. The new
+    job's name holds "TestPyPI", so juniper-ml's release-train ceremony reads its failure as `HALT_TESTPYPI`.
+  - **After its fifth failed install, the check names the lag.** It fell through to the rest of the check, whose import
+    then failed as if the package were broken; now it fails with "… is not installable from TestPyPI after 5 tries
+    (index lag?): Re-run failed jobs; a real failure repeats".
+  - **The republish job refuses unless the tag's release run passed its TestPyPI jobs** (ruling 1).
+    `Find the release run's artifact` takes the tag's newest release run, whether or not its artifact has expired, and
+    refuses unless each of its jobs whose name holds "TestPyPI" concluded success in its latest attempt
+    (`GET actions/runs/{id}/jobs?filter=all`, each job's record with the highest attempt). It refuses as well when the
+    tag has no release run. Rung 1 of the recovery ladder could otherwise copy files whose install check had failed, or
+    never ran.
+  - **`PUBLISH_TAG_PREFIX`**, the template's third parameter: `juniper-recurrence-v`, `juniper-recurrence-client-v`
+    and `juniper-recurrence-model-v`. The republish job takes the version from the tag only after it, so it refuses
+    another package's tag before any request. A plain dispatch now builds only from the workflow's own package's tag:
+    from another package's it would publish this package's files under that tag's run.
+  - **Comments**: the template's (the republish job's no longer says the ceremony never reads a dispatch run, since
+    juniper-ml#2592's monitor reads them; the PyPI job's says TestPyPI's record witnesses the files the run built, whose
+    wheel the install check installed), the workflow-level `permissions` comment (a job's own block replaces it, rather
+    than adding to it), and the trusted-publisher registration header, whose `owner` field (PyPI's: the GitHub account)
+    the rename had changed.
+  - **Docs**: the README's Publishing section describes each workflow's five jobs, and when rung 1 refuses: a TestPyPI
+    job that failed on index lag is re-run ("Re-run failed jobs" uploads the same bytes, which the index accepts), a
+    failed install check needs a new patch version, a re-cut Release leaves the tag with no run rung 1 accepts, a failed
+    `Verify PyPI serves exactly these files` comes after the upload (a mismatch needs a new patch version; a check that
+    gave up waiting is index lag, which "Re-run failed jobs" repeats on the run whose check gave up), and each rung acts
+    on the workflow file as of the tag. `juniper-recurrence-client/AGENTS.md` follows it.
+  - **Pins**, in `tests/test_publish_one_artifact.py`: the new job's name, `needs`, permissions, steps and lack of an
+    environment; the PyPI job needing both TestPyPI jobs; each job's keys, runner and exact steps; no
+    `continue-on-error` and no `if:` beyond the listed ones; no `PIP_*` variable in any `env`; each build step's
+    command; each install step's exact commands, run from `$RUNNER_TEMP`; no `skip_existing` and no
+    `attestations: false`; retention of exactly 90 days; each workflow's name ending in "to PyPI", which juniper-ml's
+    monitor requires; each tag prefix with its guard; and each action pinned to one ref. The rehearsals run the new
+    find step against the stand-in GitHub API (no release run, a failed upload, a failed or unfinished install check, a
+    failed build, a job a re-run carried over, a failure a re-run repaired, a "Re-run all jobs" whose second attempt
+    failed, each listing order, a listing over two pages, an older run that passed behind a newer one that failed, and
+    each publisher's tag prefix against the others' tags), the fetch step against a release run and a TestPyPI that name
+    different files, and each install step's own shell against stand-in `pip`, `python` and `sleep`.
+
 ### Security
 
 - **The image picks up R-OBS-SC-2's two security patches.** `requirements.lock` moves

@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.3.1
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-26
 
 ---
 
@@ -70,9 +70,11 @@ mirroring the model and app publish workflows. Bump `_version.py` + cut the `[Un
 CHANGELOG section in the release PR.
 
 Each run builds once, and TestPyPI and PyPI get those same files, checked by sha256 against each index's JSON
-(juniper-cascor's one-artifact template). A release that did not reach PyPI, in this order: dispatch
-`gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
-which copies TestPyPI's files to PyPI and builds nothing; if that fails, within 30 days of the release run,
-**Re-run failed jobs** on it; otherwise cut a new patch version. Never "Re-run all jobs" on a publish run. The
-full ladder, and what to do for a tag cut before this change or after a plain dispatch reached TestPyPI:
-`juniper-recurrence/README.md` § Publishing.
+(juniper-cascor's one-artifact template). The install check runs in a job of its own, `Verify the TestPyPI install`,
+which holds `contents: read` alone and which the PyPI job needs. A release that did not reach PyPI, in this order:
+dispatch `gh workflow run publish-recurrence-client.yml --repo pcalnon/juniper-recurrence --ref juniper-recurrence-client-v<version> -f republish_from_testpypi=true`,
+which copies TestPyPI's files to PyPI and builds nothing, once the tag's newest release run passed both its TestPyPI
+jobs; if that fails, within 30 days of the release run, **Re-run failed jobs** on it; otherwise cut a new patch
+version. Never "Re-run all jobs" on a publish run. The full ladder, what to do when rung 1 refuses, the two causes of
+a failed `Verify PyPI serves exactly these files`, and what to do for a tag cut before this change or after a plain
+dispatch reached TestPyPI: `juniper-recurrence/README.md` § Publishing.
