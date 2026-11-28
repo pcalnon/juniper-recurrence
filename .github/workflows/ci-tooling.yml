@@ -16,6 +16,10 @@
 #    sequence-safety.yml run the other two). util/run_tests.py reads this step, like every other
 #    `python3 -m unittest` step, into its unittest lane.
 #
+#    util/run_tests.py is a thin spec over juniper_ci_tools.run_tests, the shared engine in
+#    juniper-ci-tools 0.10. The install step's range is the script's ENGINE_REQUIREMENT, which the
+#    suite checks; the suite parses the workflows with PyYAML itself, so that is installed by name.
+#
 #    The pull_request trigger is deliberately UNFILTERED: the runner reads every workflow on every
 #    run, so a workflow change it cannot read must fail here, in the PR that makes it, and not on the
 #    next person's machine. The suite takes about a minute.
@@ -56,10 +60,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_TEST_VERSION }}
 
-      - name: Install the runner's one dependency
+      - name: Install the runner's engine and PyYAML
         run: |
           python -m pip install --upgrade "pip>=26.1.1"
-          pip install "pyyaml>=6.0.1"
+          pip install "pyyaml>=6.0.1" "juniper-ci-tools>=0.10.0,<0.11.0"
 
       - name: Run util/run_tests.py's suite
         run: |

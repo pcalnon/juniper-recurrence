@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.8.1
-**Last Updated**: 2026-11-25
+**Last Updated**: 2026-11-28
 
 ---
 
@@ -198,7 +198,7 @@ Until it is applied, `pip check` reports exactly one line (`juniper-recurrence 0
 
 ## Sequence-safety nets (required CI)
 
-The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.9.0,<0.10.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`).
+The ecosystem sequence-safety rollout ([the juniper-ml rollout plan](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md)) was extended to this monorepo on 2026-08-09 (the original Wave-2 repo set predated / omitted it). Both workflows consume the published `juniper-ci-tools>=0.9.0,<0.11.0` console scripts (`juniper-symbol-loss-check` / `juniper-docs-additions-check`).
 `sequence-safety.yml` publishes **`Sequence Safety`**, a required context in ruleset `juniper-recurrent-rules` (id `20634527`), so a red run blocks merge into `main`. It is a standalone workflow, so no lane aggregate (`App` / `Model` / `Client` / `Bench required checks`) can list it in `needs:` (a `needs:` entry can only name a job in the same workflow), and green lane aggregates do not mean mergeable.
 `main-verify.yml` runs after the merge and is not a PR status check.
 Live list: `gh api repos/pcalnon/juniper-recurrence/rulesets/20634527 --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'`.

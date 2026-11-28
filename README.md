@@ -280,7 +280,8 @@ and the design-of-record links).
 
 `util/run_tests.py` runs any subset of the repo's tests with the commands CI runs. It reads them from the
 workflows on every run, so it cannot drift from CI. It installs nothing: install the packages' `[test]` extras
-(above) into the environment you run it with.
+(above) and the runner's engine, `juniper-ci-tools>=0.10.0,<0.11.0`, into the environment you run it with. Without
+the engine the script prints the `pip install` that adds it and exits `3`.
 
 ```bash
 python3 util/run_tests.py                       # everything: the unittest lane and every gating lane
@@ -303,7 +304,7 @@ python3 util/run_tests.py --help                # every selector, option and exi
 | `optional`, `model-torch` | a `test-<name>` job CI runs but does not gate on: `model-torch` is `test-torch`, the torch MLP readout, and needs the model's `[torch]` extra. Runs only when named |
 
 A suite can be named by path, file name or stem (`run_tests`), a glob (`'*budget*'`), or narrowed to a class or test
-(`tests/test_run_tests.py::RunTest`). A path under a lane's directory (`bench/test_plots.py`, a node id with `::`)
+(`tests/test_run_tests.py::EngineTest`). A path under a lane's directory (`bench/test_plots.py`, a node id with `::`)
 runs that lane's pytest on it alone, with the coverage gates off.
 
 **How it runs.** Every selected job runs (CI stops at the first failure), each step in its own process group with
@@ -317,14 +318,14 @@ Coverage data goes to the run directory, never into the checkout.
 | Option | Effect |
 |---|---|
 | `-k EXPR` | only tests whose name matches (unittest `-k` / pytest `-k`; repeatable). Turns the coverage gates off |
-| `--changed`, `--base REF` | add the gating lanes whose workflow's path filter matches a changed file (as CI decides) and the suites that name one, against the merge base with `--base` (default `origin/main`) |
+| `--changed`, `--base REF` | add what the branch touches, against the merge base with `--base` (default `origin/main`): the gating lanes whose workflow's path filter matches a changed file (as CI decides), and the suites that are changed or name one. A changed file no lane's filter matches narrows the gating lanes to their test files that name it |
 | `--failed`, `--lf` | add the jobs that failed or timed out in the last recorded run of this checkout |
-| `-l`, `--list` | list what the selectors select, and exit |
+| `-l`, `--list` | list what the selectors select, the steps left out and why a lane is optional, and exit |
 | `-j N`, `--jobs N` | jobs at once (`auto`: half the CPUs, at most 8). `-j 1` runs them in order |
 | `-x`, `--fail-fast` | start nothing new after the first failure |
 | `--timeout SECONDS` | per step (default 900; `0`: none); the step's process group is killed when it expires |
 | `--no-rerun` | do not re-run a failed job alone |
-| `--no-coverage` | run pytest without coverage and skip the coverage gate |
+| `--no-coverage` | run pytest without coverage and skip the coverage gates |
 | `--python PATH` | the interpreter for every command (default: the one running the script), for example `"$VIRTUAL_ENV/bin/python"` |
 | `-n`, `--dry-run` | print the environment, the preflight and every command; run and write nothing |
 | `--clean-env` | also remove `CLAUDE*`, `JUNIPER_*` and `WTC_*` variables from the children, as on a CI runner |
@@ -344,8 +345,14 @@ checkout's `tmp/run-tests/<checkout name>/<UTC stamp>/`, with a `latest` link. N
 **Exit codes.** `0` passed; `1` a job failed or timed out; `2` a usage error, or a workflow the runner cannot read;
 `3` nothing failed, but a lane could not run (UNAVAILABLE); `5` `-k` matched no test; `130` interrupted.
 
-The runner is a copy of juniper-ml's `util/run_tests.py`, adapted to this repo's workflows; its own suite is
-`tests/test_run_tests.py`, which `ci-tooling.yml` runs on every pull request.
+`util/run_tests.py` is a thin spec over the shared engine, `juniper_ci_tools.run_tests` (juniper-ci-tools 0.10,
+whose canonical home is juniper-ml's `juniper-ci-tools/` tree). The spec declares this repo's lane strategies, its
+checkout check and the `--help` text as a `RepoSpec`; everything that runs is the engine's.
+`tests/test_run_tests.py` pins the spec against the real workflows and this section, through the engine's public
+API only, and `ci-tooling.yml` runs it on every pull request; the engine's own suite is juniper-ml's
+`juniper-ci-tools/tests/test_run_tests.py`. `ci-tooling.yml` installs the engine in the script's `ENGINE_REQUIREMENT`
+range. The unittest lane's requirements are the installs of every job that runs a suite, so `sequence-safety.yml`'s
+`juniper-ci-tools` range admits 0.10 as well.
 
 ---
 
